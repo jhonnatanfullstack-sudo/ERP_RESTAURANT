@@ -4,8 +4,8 @@
 
 ## Resumen ejecutivo
 
-- **Fase actual completada:** FASE 2 (PostgreSQL + TypeORM + migraciones, con núcleo de identidad Empresa → Personal → Usuario y catálogos SUNAT).
-- **En curso:** FASE 3 (sistema base del backend: Express, middlewares de seguridad, manejo de errores).
+- **Fase actual completada:** FASE 3 (sistema base del backend: Express, Helmet, CORS, rate limiting, manejo centralizado de errores, `/health`).
+- **En curso:** FASE 4 (sistema base del frontend).
 - **Modo de avance:** el usuario autorizó avanzar de fase en fase sin pedir confirmación ("CONTINUAR") en cada una, siempre validando que no haya errores. Ver `plan-fases.md` → sección "Modo de avance".
 
 ## Cómo retomar el entorno
@@ -37,15 +37,15 @@ pnpm --filter @restaurant-erp/backend build
   1. `EsquemaInicialRbac` — `usuarios`, `roles`, `permisos`, `roles_permisos`, `refresh_tokens`.
   2. `EmpresaPersonalYCatalogosSunat` — `empresas`, `personal`, `tipos_documento_identidad`, `tipos_comprobante`; refactoriza `usuarios` para depender de `personal`.
   3. `SeedCatalogosSunat` — datos semilla de los catálogos SUNAT.
-- **Sin implementar todavía:** servidor Express (`app.ts`/`server.ts`), cualquier endpoint HTTP, frontend (solo scaffolding de carpetas vacías), autenticación JWT, y todos los módulos de negocio (productos, pedidos, ventas, etc.).
-- Detalle completo del esquema: `base-de-datos.md`. Decisiones y su razonamiento: `decisiones-tecnicas.md`. Plan de fases: `plan-fases.md`.
+- **Backend base (FASE 3):** `src/app.ts` (Helmet, CORS con `CORS_ORIGIN`, `express.json`, rate limit global 300/15min), `src/server.ts` (bootstrap: conecta TypeORM, luego levanta el servidor), `GET /health` probado en vivo. Manejo de errores centralizado (`src/middlewares/error-handler.middleware.ts` + `src/utils/http-error.ts`) y formato de respuesta consistente (`src/utils/api-response.ts`: `sendSuccess`/`sendError`). Router `/api` montado pero vacío — se llena a partir de FASE 5.
+- **Sin implementar todavía:** frontend (solo scaffolding de carpetas vacías), autenticación JWT, y todos los módulos de negocio (productos, pedidos, ventas, etc.).
+- Detalle completo del esquema: `base-de-datos.md`. Convenciones de API: `api.md`. Decisiones y su razonamiento: `decisiones-tecnicas.md`. Plan de fases: `plan-fases.md`.
 
 ## Próximos pasos (en orden)
 
-1. **FASE 3 — Sistema base del backend:** `app.ts`/`server.ts`, Helmet, CORS, rate limiting, middleware de manejo centralizado de errores, ruta de salud (`/health`).
-2. **FASE 4 — Sistema base del frontend:** Vite + React + Tailwind, layout admin + rutas públicas de carta (ver decisión de arquitectura de una sola app).
-3. **FASE 5-7 — Usuarios, Roles y permisos, Autenticación:** CRUD de `personal`/`usuarios` (staff), login JWT + refresh token, middleware de autorización por permisos.
-4. A partir de ahí, seguir el orden de `plan-fases.md`.
+1. **FASE 4 — Sistema base del frontend:** Vite + React + Tailwind, layout admin + rutas públicas de carta (ver decisión de arquitectura de una sola app).
+2. **FASE 5-7 — Usuarios, Roles y permisos, Autenticación:** CRUD de `personal`/`usuarios` (staff), login JWT + refresh token, middleware de autorización por permisos.
+3. A partir de ahí, seguir el orden de `plan-fases.md`.
 
 ## Decisiones que ya no requieren volver a discutirse
 
