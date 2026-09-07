@@ -3,5 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
-  "scripts": {}
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typeorm": "tsx ./node_modules/typeorm/cli.js -d src/database/data-source.ts",
+    "migration:generate": "pnpm typeorm migration:generate",
+    "migration:run": "pnpm typeorm migration:run",
+    "migration:revert": "pnpm typeorm migration:revert",
+    "migration:show": "pnpm typeorm migration:show"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "pg": "^8.23.0",
+    "reflect-metadata": "^0.2.2",
+    "typeorm": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
+  }
 }

@@ -1,0 +1,20 @@
+import 'reflect-metadata';
+import { DataSource } from 'typeorm';
+import { env } from '../config/env';
+import { Usuario } from '../modules/usuarios/usuario.entity';
+import { Rol } from '../modules/roles/rol.entity';
+import { Permiso } from '../modules/permisos/permiso.entity';
+import { RefreshToken } from '../modules/auth/refresh-token.entity';
+
+export const AppDataSource = new DataSource({
+  type: 'postgres',
+  host: env.db.host,
+  port: env.db.port,
+  database: env.db.name,
+  username: env.db.user,
+  password: env.db.password,
+  synchronize: false,
+  logging: env.nodeEnv === 'development',
+  entities: [Usuario, Rol, Permiso, RefreshToken],
+  migrations: [__dirname + '/migrations/*.{ts,js}'],
+});
