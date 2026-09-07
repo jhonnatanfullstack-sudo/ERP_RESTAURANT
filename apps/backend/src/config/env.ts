@@ -30,7 +30,7 @@ export const env = {
     refreshExpiresInMs: 7 * 24 * 60 * 60 * 1000,
   },
   apisNetPe: {
-    baseUrl: process.env.APIS_NET_PE_BASE_URL ?? 'https://api.apis.net.pe/v2',
+    baseUrl: process.env.APIS_NET_PE_BASE_URL ?? 'https://api.decolecta.com/v1',
     token: process.env.APIS_NET_PE_TOKEN ?? null,
   },
 };
