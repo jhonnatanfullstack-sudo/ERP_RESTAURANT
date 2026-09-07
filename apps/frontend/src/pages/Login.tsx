@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
+import { ChefHat, Lock, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Alert } from '../components/ui/Alert';
+import { Button } from '../components/ui/Button';
 
 export function Login() {
   const { login } = useAuth();
@@ -26,51 +28,65 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50">
-      <form
-        onSubmit={(e) => void handleSubmit(e)}
-        className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-8 shadow-sm"
-      >
-        <h1 className="mb-6 text-xl font-semibold text-slate-900">Iniciar sesión</h1>
-
-        {error && (
-          <div className="mb-4">
-            <Alert tipo="error" mensaje={error} />
+    <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-600 shadow-sm shadow-orange-600/30">
+            <ChefHat className="h-6 w-6 text-white" strokeWidth={2.25} />
           </div>
-        )}
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-zinc-900">Restaurant ERP</h1>
+            <p className="text-sm text-zinc-500">Ingresa a tu panel de administración</p>
+          </div>
+        </div>
 
-        <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="email">
-          Correo electrónico
-        </label>
-        <input
-          id="email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="mb-4 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-        />
-
-        <label className="mb-1 block text-sm font-medium text-slate-700" htmlFor="password">
-          Contraseña
-        </label>
-        <input
-          id="password"
-          type="password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mb-6 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-        />
-
-        <button
-          type="submit"
-          disabled={enviando}
-          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+        <form
+          onSubmit={(e) => void handleSubmit(e)}
+          className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm"
         >
-          {enviando ? 'Ingresando…' : 'Iniciar sesión'}
-        </button>
-      </form>
+          {error && (
+            <div className="mb-5">
+              <Alert tipo="error" mensaje={error} />
+            </div>
+          )}
+
+          <label className="mb-1.5 block text-sm font-medium text-zinc-700" htmlFor="email">
+            Correo electrónico
+          </label>
+          <div className="relative mb-4">
+            <Mail className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 py-2.5 pr-3 pl-9 text-sm placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
+              placeholder="tucorreo@restaurante.com"
+            />
+          </div>
+
+          <label className="mb-1.5 block text-sm font-medium text-zinc-700" htmlFor="password">
+            Contraseña
+          </label>
+          <div className="relative mb-6">
+            <Lock className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <input
+              id="password"
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-lg border border-zinc-300 py-2.5 pr-3 pl-9 text-sm placeholder:text-zinc-400 focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
+              placeholder="••••••••"
+            />
+          </div>
+
+          <Button type="submit" disabled={enviando} className="w-full">
+            {enviando ? 'Ingresando…' : 'Iniciar sesión'}
+          </Button>
+        </form>
+      </div>
     </div>
   );
 }

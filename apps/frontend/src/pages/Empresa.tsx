@@ -1,14 +1,20 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { Pencil } from 'lucide-react';
 import * as empresaService from '../services/empresa.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
+import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import type { ActualizarEmpresaInput } from '../services/empresa.service';
 import type { Empresa as EmpresaType } from '../types/api';
+
+const inputClass =
+  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
+const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
 export function Empresa() {
   const { tienePermiso } = useAuth();
@@ -35,7 +41,10 @@ export function Empresa() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold text-slate-900">Empresa</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-zinc-900">Empresa</h1>
+        <p className="mt-1 text-sm text-zinc-500">Datos legales y de contacto del restaurante</p>
+      </div>
 
       <Table
         columnas={[
@@ -49,8 +58,9 @@ export function Empresa() {
                 <button
                   type="button"
                   onClick={() => setEmpresaEditando(e)}
-                  className="text-sm font-medium text-slate-600 hover:text-slate-900"
+                  className="flex items-center gap-1.5 text-sm font-medium text-orange-600 hover:text-orange-700"
                 >
+                  <Pencil className="h-3.5 w-3.5" />
                   Editar
                 </button>
               ),
@@ -75,62 +85,58 @@ export function Empresa() {
             )}
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Razón social</label>
+              <label className={labelClass}>Razón social</label>
               <input
                 defaultValue={empresaEditando.razonSocial}
                 {...register('razonSocial', { required: true })}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Nombre comercial
-              </label>
+              <label className={labelClass}>Nombre comercial</label>
               <input
                 defaultValue={empresaEditando.nombreComercial ?? ''}
                 {...register('nombreComercial')}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Dirección fiscal
-              </label>
+              <label className={labelClass}>Dirección fiscal</label>
               <input
                 defaultValue={empresaEditando.direccionFiscal ?? ''}
                 {...register('direccionFiscal')}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Teléfono</label>
+                <label className={labelClass}>Teléfono</label>
                 <input
                   defaultValue={empresaEditando.telefono ?? ''}
                   {...register('telefono')}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  className={inputClass}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Correo</label>
+                <label className={labelClass}>Correo</label>
                 <input
                   defaultValue={empresaEditando.email ?? ''}
                   {...register('email')}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  className={inputClass}
                 />
               </div>
             </div>
 
-            <button
+            <Button
               type="submit"
               disabled={formState.isSubmitting || actualizarMutation.isPending}
-              className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              className="mt-2 w-full"
             >
               Guardar cambios
-            </button>
+            </Button>
           </form>
         )}
       </Modal>

@@ -2,7 +2,14 @@
 
 ## Stack (FASE 4)
 
-React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, configuración CSS-first, sin `tailwind.config.js`) + React Router 8 + TanStack Query 5 + Axios + react-hook-form.
+React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, configuración CSS-first, sin `tailwind.config.js`) + React Router 8 + TanStack Query 5 + Axios + react-hook-form + lucide-react (iconos).
+
+## Sistema visual (2026-09-07)
+
+- **Tipografía:** "Plus Jakarta Sans" (Google Fonts, cargada en `index.html`), configurada como `--font-sans` en `index.css`.
+- **Color de marca:** `orange-600` (acentos, botones primarios, estado activo del sidebar). Neutros en `zinc-*` (más cálido que `slate`, combina con el naranja). Sidebar en `zinc-900` (oscuro) con el resto de la app en `zinc-50`/blanco.
+- **Componentes UI reutilizables** (`components/ui/`): `Button` (variantes primary/secondary/ghost/danger), `Badge` (estados: exito/neutral/peligro), `StatCard` (tarjetas de métricas del dashboard), `EmptyState` (estados vacíos con icono), además de `Table`, `Modal`, `Alert`, `Spinner` ya existentes, todos rediseñados con el mismo lenguaje visual (bordes `zinc-200`, `rounded-lg`/`rounded-xl`, `shadow-sm`).
+- Antes de crear un nuevo elemento visual (botón, badge, tarjeta), revisar `components/ui/` — ya existe casi todo lo necesario para mantener consistencia (regla 8 de `CLAUDE.md`).
 
 ## Estructura
 

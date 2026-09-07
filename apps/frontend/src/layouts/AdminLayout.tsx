@@ -4,11 +4,11 @@ import { Navbar } from '../components/Navbar';
 
 export function AdminLayout() {
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-zinc-50">
       <Sidebar />
       <div className="flex flex-1 flex-col">
         <Navbar />
-        <main className="flex-1 p-6">
+        <main className="animate-fade-in flex-1 overflow-y-auto p-8">
           <Outlet />
         </main>
       </div>

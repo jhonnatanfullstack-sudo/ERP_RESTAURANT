@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { UserPlus } from 'lucide-react';
 import * as personalService from '../services/personal.service';
 import * as empresaService from '../services/empresa.service';
 import * as catalogosService from '../services/catalogos.service';
@@ -8,8 +9,14 @@ import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import type { CrearPersonalInput } from '../services/personal.service';
+
+const inputClass =
+  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
+const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
 export function Personal() {
   const { tienePermiso } = useAuth();
@@ -45,15 +52,14 @@ export function Personal() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Personal</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900">Personal</h1>
+          <p className="mt-1 text-sm text-zinc-500">Personas físicas vinculadas a la empresa</p>
+        </div>
         {tienePermiso('personal.crear') && (
-          <button
-            type="button"
-            onClick={() => setModalAbierto(true)}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
+          <Button icono={<UserPlus className="h-4 w-4" />} onClick={() => setModalAbierto(true)}>
             Nuevo personal
-          </button>
+          </Button>
         )}
       </div>
 
@@ -69,7 +75,14 @@ export function Personal() {
             render: (p) => `${p.tipoDocumentoIdentidad.nombre}: ${p.numeroDocumento}`,
           },
           { encabezado: 'Empresa', render: (p) => p.empresa.razonSocial },
-          { encabezado: 'Estado', render: (p) => (p.activo ? 'Activo' : 'Inactivo') },
+          {
+            encabezado: 'Estado',
+            render: (p) => (
+              <Badge tono={p.activo ? 'exito' : 'neutral'}>
+                {p.activo ? 'Activo' : 'Inactivo'}
+              </Badge>
+            ),
+          },
         ]}
         filas={personalQuery.data ?? []}
         claveFila={(p) => p.id}
@@ -92,11 +105,8 @@ export function Personal() {
           )}
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Empresa</label>
-            <select
-              {...register('empresaId', { required: true })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            >
+            <label className={labelClass}>Empresa</label>
+            <select {...register('empresaId', { required: true })} className={inputClass}>
               <option value="">Seleccionar…</option>
               {empresasQuery.data?.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -108,12 +118,10 @@ export function Personal() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Tipo de documento
-              </label>
+              <label className={labelClass}>Tipo de documento</label>
               <select
                 {...register('tipoDocumentoIdentidadId', { required: true })}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                className={inputClass}
               >
                 <option value="">Seleccionar…</option>
                 {tiposDocQuery.data?.map((t) => (
@@ -124,52 +132,34 @@ export function Personal() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                N° de documento
-              </label>
-              <input
-                {...register('numeroDocumento', { required: true })}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              />
+              <label className={labelClass}>N° de documento</label>
+              <input {...register('numeroDocumento', { required: true })} className={inputClass} />
             </div>
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Nombres</label>
-            <input
-              {...register('nombres', { required: true })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
+            <label className={labelClass}>Nombres</label>
+            <input {...register('nombres', { required: true })} className={inputClass} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Apellido paterno
-              </label>
-              <input
-                {...register('apellidoPaterno')}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              />
+              <label className={labelClass}>Apellido paterno</label>
+              <input {...register('apellidoPaterno')} className={inputClass} />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">
-                Apellido materno
-              </label>
-              <input
-                {...register('apellidoMaterno')}
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              />
+              <label className={labelClass}>Apellido materno</label>
+              <input {...register('apellidoMaterno')} className={inputClass} />
             </div>
           </div>
 
-          <button
+          <Button
             type="submit"
             disabled={formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            className="mt-2 w-full"
           >
             Crear personal
-          </button>
+          </Button>
         </form>
       </Modal>
     </div>

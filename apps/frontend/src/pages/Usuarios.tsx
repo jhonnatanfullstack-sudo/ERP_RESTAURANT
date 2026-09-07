@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
+import { UserPlus } from 'lucide-react';
 import * as usuariosService from '../services/usuarios.service';
 import * as personalService from '../services/personal.service';
 import * as rolesService from '../services/roles.service';
@@ -8,8 +9,14 @@ import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import type { CrearUsuarioInput } from '../services/usuarios.service';
+
+const inputClass =
+  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
+const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
 export function Usuarios() {
   const { tienePermiso } = useAuth();
@@ -46,15 +53,14 @@ export function Usuarios() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Usuarios</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900">Usuarios</h1>
+          <p className="mt-1 text-sm text-zinc-500">Cuentas de acceso del personal al sistema</p>
+        </div>
         {tienePermiso('usuarios.crear') && (
-          <button
-            type="button"
-            onClick={() => setModalAbierto(true)}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
+          <Button icono={<UserPlus className="h-4 w-4" />} onClick={() => setModalAbierto(true)}>
             Nuevo usuario
-          </button>
+          </Button>
         )}
       </div>
 
@@ -66,7 +72,14 @@ export function Usuarios() {
           },
           { encabezado: 'Correo', render: (u) => u.email },
           { encabezado: 'Rol', render: (u) => u.rol.nombre },
-          { encabezado: 'Estado', render: (u) => (u.activo ? 'Activo' : 'Inactivo') },
+          {
+            encabezado: 'Estado',
+            render: (u) => (
+              <Badge tono={u.activo ? 'exito' : 'neutral'}>
+                {u.activo ? 'Activo' : 'Inactivo'}
+              </Badge>
+            ),
+          },
         ]}
         filas={usuariosQuery.data ?? []}
         claveFila={(u) => u.id}
@@ -89,11 +102,8 @@ export function Usuarios() {
           )}
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Personal</label>
-            <select
-              {...register('personalId', { required: true })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            >
+            <label className={labelClass}>Personal</label>
+            <select {...register('personalId', { required: true })} className={inputClass}>
               <option value="">Seleccionar…</option>
               {personalSinUsuario.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -104,11 +114,8 @@ export function Usuarios() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Rol</label>
-            <select
-              {...register('rolId', { required: true })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            >
+            <label className={labelClass}>Rol</label>
+            <select {...register('rolId', { required: true })} className={inputClass}>
               <option value="">Seleccionar…</option>
               {rolesQuery.data?.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -119,32 +126,26 @@ export function Usuarios() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Correo electrónico
-            </label>
-            <input
-              type="email"
-              {...register('email', { required: true })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            />
+            <label className={labelClass}>Correo electrónico</label>
+            <input type="email" {...register('email', { required: true })} className={inputClass} />
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Contraseña</label>
+            <label className={labelClass}>Contraseña</label>
             <input
               type="password"
               {...register('password', { required: true, minLength: 8 })}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              className={inputClass}
             />
           </div>
 
-          <button
+          <Button
             type="submit"
             disabled={formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            className="mt-2 w-full"
           >
             Crear usuario
-          </button>
+          </Button>
         </form>
       </Modal>
     </div>
