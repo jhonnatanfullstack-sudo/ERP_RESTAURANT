@@ -9,6 +9,7 @@ import {
   Tags,
   UserCircle2,
   Users,
+  UtensilsCrossed,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +24,12 @@ interface Enlace {
 const enlaces: Enlace[] = [
   { etiqueta: 'Dashboard', ruta: '/', icono: LayoutDashboard },
   { etiqueta: 'Categorías', ruta: '/categorias', icono: Tags, permiso: 'categorias.ver' },
+  {
+    etiqueta: 'Productos',
+    ruta: '/productos',
+    icono: UtensilsCrossed,
+    permiso: 'productos.ver',
+  },
   { etiqueta: 'Usuarios', ruta: '/usuarios', icono: Users, permiso: 'usuarios.ver' },
   { etiqueta: 'Personal', ruta: '/personal', icono: UserCircle2, permiso: 'personal.ver' },
   { etiqueta: 'Roles', ruta: '/roles', icono: ShieldCheck, permiso: 'roles.ver' },

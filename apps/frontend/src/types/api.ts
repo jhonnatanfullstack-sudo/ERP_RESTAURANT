@@ -58,6 +58,16 @@ export interface Categoria {
   activo: boolean;
 }
 
+export interface Producto {
+  id: string;
+  categoria: Pick<Categoria, 'id' | 'nombre'>;
+  nombre: string;
+  descripcion: string | null;
+  precio: number;
+  imagenUrl: string | null;
+  activo: boolean;
+}
+
 export interface Usuario {
   id: string;
   email: string;

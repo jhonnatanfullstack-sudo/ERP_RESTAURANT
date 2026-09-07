@@ -4,6 +4,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { rateLimit } from 'express-rate-limit';
 import { env } from './config/env';
+import { UPLOADS_DIR } from './config/uploads';
 import { apiRouter } from './routes';
 import { notFoundMiddleware } from './middlewares/not-found.middleware';
 import { errorHandlerMiddleware } from './middlewares/error-handler.middleware';
@@ -28,6 +29,15 @@ app.use(
 app.get('/health', (_req, res) => {
   sendSuccess(res, { status: 'ok', timestamp: new Date().toISOString() });
 });
+
+app.use(
+  '/uploads',
+  (_req, res, next) => {
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  },
+  express.static(UPLOADS_DIR),
+);
 
 app.use('/api', apiRouter);
 

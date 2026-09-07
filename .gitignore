@@ -31,3 +31,6 @@ coverage/
 
 # PostgreSQL (datos locales de Docker)
 apps/backend/postgres-data/
+
+# Archivos subidos por usuarios (imágenes de productos, etc.)
+apps/backend/uploads/

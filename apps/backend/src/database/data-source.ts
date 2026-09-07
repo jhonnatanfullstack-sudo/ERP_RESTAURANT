@@ -10,6 +10,7 @@ import { Personal } from '../modules/personal/personal.entity';
 import { TipoDocumentoIdentidad } from '../modules/catalogos/tipo-documento-identidad.entity';
 import { TipoComprobante } from '../modules/catalogos/tipo-comprobante.entity';
 import { Categoria } from '../modules/categorias/categoria.entity';
+import { Producto } from '../modules/productos/producto.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -30,6 +31,7 @@ export const AppDataSource = new DataSource({
     Permiso,
     RefreshToken,
     Categoria,
+    Producto,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
 });
