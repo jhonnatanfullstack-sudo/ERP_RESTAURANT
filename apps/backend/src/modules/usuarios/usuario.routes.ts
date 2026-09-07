@@ -28,3 +28,9 @@ usuarioRouter.put(
   validateBody(actualizarUsuarioSchema),
   usuarioController.actualizar,
 );
+usuarioRouter.delete(
+  '/:id',
+  requirePermission('usuarios.eliminar'),
+  validateIdParam,
+  usuarioController.eliminar,
+);

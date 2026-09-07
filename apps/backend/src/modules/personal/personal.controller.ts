@@ -36,3 +36,12 @@ export async function actualizar(req: Request, res: Response, next: NextFunction
     next(error);
   }
 }
+
+export async function eliminar(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await personalService.eliminarPersonal(getIdParam(req));
+    sendSuccess(res, null, 'Personal desactivado');
+  } catch (error) {
+    next(error);
+  }
+}

@@ -28,3 +28,9 @@ personalRouter.put(
   validateBody(actualizarPersonalSchema),
   personalController.actualizar,
 );
+personalRouter.delete(
+  '/:id',
+  requirePermission('personal.eliminar'),
+  validateIdParam,
+  personalController.eliminar,
+);

@@ -23,6 +23,12 @@ rolRouter.put(
   validateBody(actualizarRolSchema),
   rolController.actualizar,
 );
+rolRouter.delete(
+  '/:id',
+  requirePermission('roles.eliminar'),
+  validateIdParam,
+  rolController.eliminar,
+);
 rolRouter.put(
   '/:id/permisos',
   requirePermission('roles.editar'),

@@ -93,3 +93,12 @@ export async function actualizarUsuario(id: string, dto: ActualizarUsuarioDto): 
   await usuarioRepository.save(usuario);
   return obtenerUsuario(id);
 }
+
+export async function eliminarUsuario(id: string, idSolicitante: string): Promise<void> {
+  if (id === idSolicitante) {
+    throw new HttpError(400, 'No puedes desactivar tu propia cuenta');
+  }
+  const usuario = await obtenerUsuario(id);
+  usuario.activo = false;
+  await usuarioRepository.save(usuario);
+}

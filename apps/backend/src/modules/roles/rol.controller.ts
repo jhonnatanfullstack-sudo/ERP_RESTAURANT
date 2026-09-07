@@ -37,6 +37,15 @@ export async function actualizar(req: Request, res: Response, next: NextFunction
   }
 }
 
+export async function eliminar(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await rolService.eliminarRol(getIdParam(req));
+    sendSuccess(res, null, 'Rol eliminado');
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function asignarPermisos(
   req: Request,
   res: Response,

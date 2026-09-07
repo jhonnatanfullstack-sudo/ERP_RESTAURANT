@@ -1,6 +1,7 @@
 import { In } from 'typeorm';
 import { HttpError } from '../../utils/http-error';
 import { permisoRepository } from '../permisos/permiso.repository';
+import { usuarioRepository } from '../usuarios/usuario.repository';
 import { rolRepository } from './rol.repository';
 import type { ActualizarRolDto, AsignarPermisosDto, CrearRolDto } from './rol.dto';
 import type { Rol } from './rol.entity';
@@ -55,4 +56,13 @@ export async function asignarPermisos(id: string, dto: AsignarPermisosDto): Prom
   const rol = await obtenerRol(id);
   rol.permisos = await resolverPermisos(dto.permisoIds);
   return rolRepository.save(rol);
+}
+
+export async function eliminarRol(id: string): Promise<void> {
+  const rol = await obtenerRol(id);
+  const usuariosConEsteRol = await usuarioRepository.countBy({ rol: { id: rol.id } });
+  if (usuariosConEsteRol > 0) {
+    throw new HttpError(409, 'No se puede eliminar: hay usuarios con este rol asignado');
+  }
+  await rolRepository.remove(rol);
 }
