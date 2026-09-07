@@ -22,4 +22,11 @@ export const env = {
     user: requireEnv('DB_USER'),
     password: requireEnv('DB_PASSWORD'),
   },
+  jwt: {
+    accessSecret: requireEnv('JWT_ACCESS_SECRET'),
+    accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
+    refreshSecret: requireEnv('JWT_REFRESH_SECRET'),
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+    refreshExpiresInMs: 7 * 24 * 60 * 60 * 1000,
+  },
 };
