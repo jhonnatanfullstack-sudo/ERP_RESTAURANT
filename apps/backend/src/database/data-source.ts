@@ -9,7 +9,9 @@ import { Empresa } from '../modules/empresa/empresa.entity';
 import { Personal } from '../modules/personal/personal.entity';
 import { TipoDocumentoIdentidad } from '../modules/catalogos/tipo-documento-identidad.entity';
 import { TipoComprobante } from '../modules/catalogos/tipo-comprobante.entity';
+import { UnidadMedida } from '../modules/catalogos/unidad-medida.entity';
 import { Categoria } from '../modules/categorias/categoria.entity';
+import { Marca } from '../modules/marcas/marca.entity';
 import { Producto } from '../modules/productos/producto.entity';
 
 export const AppDataSource = new DataSource({
@@ -26,11 +28,13 @@ export const AppDataSource = new DataSource({
     Personal,
     TipoDocumentoIdentidad,
     TipoComprobante,
+    UnidadMedida,
     Usuario,
     Rol,
     Permiso,
     RefreshToken,
     Categoria,
+    Marca,
     Producto,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],

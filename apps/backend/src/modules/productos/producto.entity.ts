@@ -8,6 +8,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Categoria } from '../categorias/categoria.entity';
+import { Marca } from '../marcas/marca.entity';
+import { UnidadMedida } from '../catalogos/unidad-medida.entity';
 
 @Entity('productos')
 export class Producto {
@@ -17,6 +19,14 @@ export class Producto {
   @ManyToOne(() => Categoria, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'categoria_id' })
   categoria!: Categoria;
+
+  @ManyToOne(() => Marca, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'marca_id' })
+  marca!: Marca | null;
+
+  @ManyToOne(() => UnidadMedida, { nullable: false, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'unidad_medida_id' })
+  unidadMedida!: UnidadMedida;
 
   @Column({ type: 'varchar', length: 150 })
   nombre!: string;

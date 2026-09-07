@@ -4,6 +4,8 @@ import { useForm } from 'react-hook-form';
 import { ImagePlus, Package, Pencil, Trash2, UtensilsCrossed } from 'lucide-react';
 import * as productosService from '../services/productos.service';
 import * as categoriasService from '../services/categorias.service';
+import * as marcasService from '../services/marcas.service';
+import * as catalogosService from '../services/catalogos.service';
 import { useAuth } from '../context/AuthContext';
 import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
@@ -67,7 +69,10 @@ function TarjetaProducto({
 
       <div className="p-4">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="font-semibold text-zinc-900">{producto.nombre}</h3>
+          <div>
+            <h3 className="font-semibold text-zinc-900">{producto.nombre}</h3>
+            {producto.marca && <p className="text-xs text-zinc-400">{producto.marca.nombre}</p>}
+          </div>
           <span className="shrink-0 font-bold text-orange-600">
             {formatearPrecio(producto.precio)}
           </span>
@@ -75,6 +80,7 @@ function TarjetaProducto({
         {producto.descripcion && (
           <p className="mt-1 line-clamp-2 text-sm text-zinc-500">{producto.descripcion}</p>
         )}
+        <p className="mt-1 text-xs text-zinc-400">Unidad: {producto.unidadMedida.nombre}</p>
 
         {(puedeEditar || puedeEliminar) && (
           <div className="mt-3 flex items-center gap-3 border-t border-zinc-100 pt-3">
@@ -121,6 +127,11 @@ export function Productos() {
   const categoriasQuery = useQuery({
     queryKey: ['categorias'],
     queryFn: categoriasService.listarCategorias,
+  });
+  const marcasQuery = useQuery({ queryKey: ['marcas'], queryFn: marcasService.listarMarcas });
+  const unidadesMedidaQuery = useQuery({
+    queryKey: ['unidades-medida'],
+    queryFn: catalogosService.listarUnidadesMedida,
   });
 
   const crearForm = useForm<CrearProductoInput>();
@@ -231,6 +242,8 @@ export function Productos() {
                 setProductoEditando(producto);
                 editarForm.reset({
                   categoriaId: producto.categoria.id,
+                  marcaId: producto.marca?.id ?? '',
+                  unidadMedidaId: producto.unidadMedida.id,
                   nombre: producto.nombre,
                   descripcion: producto.descripcion ?? '',
                   precio: producto.precio,
@@ -245,7 +258,9 @@ export function Productos() {
 
       <Modal abierto={modalAbierto} titulo="Nuevo producto" onCerrar={() => setModalAbierto(false)}>
         <form
-          onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
+          onSubmit={crearForm.handleSubmit((values) =>
+            crearMutation.mutate({ ...values, marcaId: values.marcaId || null }),
+          )}
           className="flex flex-col gap-4"
         >
           {crearMutation.isError && (
@@ -268,6 +283,34 @@ export function Productos() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Marca (opcional)</label>
+              <select {...crearForm.register('marcaId')} className={inputClass}>
+                <option value="">Sin marca</option>
+                {marcasQuery.data?.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Unidad de medida</label>
+              <select
+                {...crearForm.register('unidadMedidaId', { required: true })}
+                className={inputClass}
+              >
+                <option value="">Seleccionar…</option>
+                {unidadesMedidaQuery.data?.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div>
@@ -353,7 +396,9 @@ export function Productos() {
             </div>
 
             <form
-              onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
+              onSubmit={editarForm.handleSubmit((values) =>
+                editarMutation.mutate({ ...values, marcaId: values.marcaId || null }),
+              )}
               className="flex flex-col gap-4"
             >
               {editarMutation.isError && (
@@ -375,6 +420,33 @@ export function Productos() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Marca (opcional)</label>
+                  <select {...editarForm.register('marcaId')} className={inputClass}>
+                    <option value="">Sin marca</option>
+                    {marcasQuery.data?.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Unidad de medida</label>
+                  <select
+                    {...editarForm.register('unidadMedidaId', { required: true })}
+                    className={inputClass}
+                  >
+                    {unidadesMedidaQuery.data?.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div>

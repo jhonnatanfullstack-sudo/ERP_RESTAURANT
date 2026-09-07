@@ -1,10 +1,19 @@
 import { useQuery } from '@tanstack/react-query';
-import { Building2, ShieldCheck, Tags, UserCircle2, Users, UtensilsCrossed } from 'lucide-react';
+import {
+  Award,
+  Building2,
+  ShieldCheck,
+  Tags,
+  UserCircle2,
+  Users,
+  UtensilsCrossed,
+} from 'lucide-react';
 import * as usuariosService from '../services/usuarios.service';
 import * as personalService from '../services/personal.service';
 import * as rolesService from '../services/roles.service';
 import * as empresaService from '../services/empresa.service';
 import * as categoriasService from '../services/categorias.service';
+import * as marcasService from '../services/marcas.service';
 import * as productosService from '../services/productos.service';
 import { useAuth } from '../context/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
@@ -29,6 +38,7 @@ export function Dashboard() {
     queryKey: ['categorias'],
     queryFn: categoriasService.listarCategorias,
   });
+  const marcasQuery = useQuery({ queryKey: ['marcas'], queryFn: marcasService.listarMarcas });
   const productosQuery = useQuery({
     queryKey: ['productos'],
     queryFn: productosService.listarProductos,
@@ -41,7 +51,7 @@ export function Dashboard() {
         Resumen general del sistema. Los módulos operativos se irán habilitando por fase.
       </p>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <StatCard
           etiqueta="Usuarios"
           valor={usuariosQuery.data?.length ?? 0}
@@ -71,6 +81,12 @@ export function Dashboard() {
           valor={categoriasQuery.data?.length ?? 0}
           cargando={categoriasQuery.isLoading}
           icono={Tags}
+        />
+        <StatCard
+          etiqueta="Marcas"
+          valor={marcasQuery.data?.length ?? 0}
+          cargando={marcasQuery.isLoading}
+          icono={Award}
         />
         <StatCard
           etiqueta="Productos"

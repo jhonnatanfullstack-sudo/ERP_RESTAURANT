@@ -25,3 +25,15 @@ export async function tiposComprobante(
     next(error);
   }
 }
+
+export async function unidadesMedida(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, await catalogosService.listarUnidadesMedida());
+  } catch (error) {
+    next(error);
+  }
+}

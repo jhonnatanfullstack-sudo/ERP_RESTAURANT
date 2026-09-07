@@ -7,3 +7,4 @@ export const catalogosRouter = Router();
 catalogosRouter.use(requireAuth);
 catalogosRouter.get('/tipos-documento-identidad', catalogosController.tiposDocumentoIdentidad);
 catalogosRouter.get('/tipos-comprobante', catalogosController.tiposComprobante);
+catalogosRouter.get('/unidades-medida', catalogosController.unidadesMedida);

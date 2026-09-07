@@ -2,12 +2,14 @@ import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { HttpError } from '../../utils/http-error';
 import { categoriaRepository } from '../categorias/categoria.repository';
+import { marcaRepository } from '../marcas/marca.repository';
+import { unidadMedidaRepository } from '../catalogos/catalogos.repository';
 import { productoRepository } from './producto.repository';
 import { UPLOADS_DIR } from '../../config/uploads';
 import type { ActualizarProductoDto, CrearProductoDto } from './producto.dto';
 import type { Producto } from './producto.entity';
 
-const RELACIONES = { categoria: true } as const;
+const RELACIONES = { categoria: true, marca: true, unidadMedida: true } as const;
 
 export async function listarProductos(): Promise<Producto[]> {
   return productoRepository.find({ relations: RELACIONES, order: { nombre: 'ASC' } });
@@ -37,10 +39,31 @@ async function resolverCategoria(categoriaId: string) {
   return categoria;
 }
 
+async function resolverMarca(marcaId: string | null | undefined) {
+  if (!marcaId) return null;
+  const marca = await marcaRepository.findOneBy({ id: marcaId });
+  if (!marca) {
+    throw new HttpError(400, 'La marca indicada no existe', ['marcaId inválido']);
+  }
+  return marca;
+}
+
+async function resolverUnidadMedida(unidadMedidaId: string) {
+  const unidadMedida = await unidadMedidaRepository.findOneBy({ id: unidadMedidaId });
+  if (!unidadMedida) {
+    throw new HttpError(400, 'La unidad de medida indicada no existe', ['unidadMedidaId inválido']);
+  }
+  return unidadMedida;
+}
+
 export async function crearProducto(dto: CrearProductoDto): Promise<Producto> {
   const categoria = await resolverCategoria(dto.categoriaId);
+  const marca = await resolverMarca(dto.marcaId);
+  const unidadMedida = await resolverUnidadMedida(dto.unidadMedidaId);
   const producto = productoRepository.create({
     categoria,
+    marca,
+    unidadMedida,
     nombre: dto.nombre,
     descripcion: dto.descripcion ?? null,
     precio: dto.precio,
@@ -57,6 +80,12 @@ export async function actualizarProducto(
 
   if (dto.categoriaId) {
     producto.categoria = await resolverCategoria(dto.categoriaId);
+  }
+  if (dto.marcaId !== undefined) {
+    producto.marca = await resolverMarca(dto.marcaId);
+  }
+  if (dto.unidadMedidaId) {
+    producto.unidadMedida = await resolverUnidadMedida(dto.unidadMedidaId);
   }
   if (dto.nombre !== undefined) producto.nombre = dto.nombre;
   if (dto.descripcion !== undefined) producto.descripcion = dto.descripcion;

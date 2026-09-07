@@ -1,5 +1,6 @@
 import { HttpError } from '../../utils/http-error';
 import { categoriaRepository } from './categoria.repository';
+import { productoRepository } from '../productos/producto.repository';
 import type { ActualizarCategoriaDto, CrearCategoriaDto } from './categoria.dto';
 import type { Categoria } from './categoria.entity';
 
@@ -44,5 +45,9 @@ export async function actualizarCategoria(
 
 export async function eliminarCategoria(id: string): Promise<void> {
   const categoria = await obtenerCategoria(id);
+  const productosConEstaCategoria = await productoRepository.countBy({ categoria: { id } });
+  if (productosConEstaCategoria > 0) {
+    throw new HttpError(409, 'No se puede eliminar: hay productos en esta categoría');
+  }
   await categoriaRepository.remove(categoria);
 }

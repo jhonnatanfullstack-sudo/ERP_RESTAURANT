@@ -58,9 +58,24 @@ export interface Categoria {
   activo: boolean;
 }
 
+export interface Marca {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  activo: boolean;
+}
+
+export interface UnidadMedida {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
 export interface Producto {
   id: string;
   categoria: Pick<Categoria, 'id' | 'nombre'>;
+  marca: Pick<Marca, 'id' | 'nombre'> | null;
+  unidadMedida: UnidadMedida;
   nombre: string;
   descripcion: string | null;
   precio: number;

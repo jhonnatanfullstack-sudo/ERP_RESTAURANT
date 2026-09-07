@@ -3,6 +3,8 @@ import type { ApiSuccess, Producto } from '../types/api';
 
 export interface CrearProductoInput {
   categoriaId: string;
+  marcaId?: string | null;
+  unidadMedidaId: string;
   nombre: string;
   descripcion?: string | null;
   precio: number;
@@ -10,6 +12,8 @@ export interface CrearProductoInput {
 
 export interface ActualizarProductoInput {
   categoriaId?: string;
+  marcaId?: string | null;
+  unidadMedidaId?: string;
   nombre?: string;
   descripcion?: string | null;
   precio?: number;
