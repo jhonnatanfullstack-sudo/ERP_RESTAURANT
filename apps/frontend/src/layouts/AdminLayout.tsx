@@ -24,7 +24,7 @@ export function AdminLayout() {
   }, [colapsado]);
 
   return (
-    <div className="flex min-h-screen bg-zinc-50">
+    <div className="flex h-screen overflow-hidden bg-zinc-50">
       <Sidebar
         colapsado={colapsado}
         onToggleColapsado={() => setColapsado((valor) => !valor)}
@@ -32,7 +32,7 @@ export function AdminLayout() {
         abiertoMovil={abiertoMovil}
         onCerrarMovil={() => setAbiertoMovil(false)}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Navbar onAbrirMenuMovil={() => setAbiertoMovil(true)} />
         <main className="animate-fade-in flex-1 overflow-y-auto p-8">
           <Outlet />
