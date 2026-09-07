@@ -25,6 +25,7 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 | `productos`                 | Productos/platillos de la carta, con foto, marca opcional y unidad de medida (FASE 9)            | `id` uuid                |
 | `salones`                   | Ambientes del local donde se ubican las mesas (FASE 10)                                          | `id` uuid                |
 | `mesas`                     | Mesas físicas, pertenecen a un salón (FASE 10)                                                   | `id` uuid                |
+| `clientes`                  | Clientes del restaurante, sin relación a `personal`/`empresas` (FASE 11)                         | `id` uuid                |
 
 **Relaciones:**
 
@@ -46,7 +47,9 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `usuarios.password_hash` tiene `select: false` a nivel de entidad: no se incluye en consultas por defecto. Nunca se expone en respuestas de la API.
 - `refresh_tokens.token_hash` almacena el hash del token, no el token en texto plano.
 
-**Índices:** únicos en `usuarios.email`, `usuarios.personal_id`, `roles.nombre`, `permisos.codigo`, `refresh_tokens.token_hash`, `empresas.ruc`, `tipos_documento_identidad.codigo`, `tipos_comprobante.codigo`, y compuesto único en `personal(tipo_documento_identidad_id, numero_documento)`; de rendimiento en `roles_permisos(rol_id)` y `roles_permisos(permiso_id)`.
+**Índices:** únicos en `usuarios.email`, `usuarios.personal_id`, `roles.nombre`, `permisos.codigo`, `refresh_tokens.token_hash`, `empresas.ruc`, `tipos_documento_identidad.codigo`, `tipos_comprobante.codigo`, `clientes.numero_documento` (nullable, permite múltiples `NULL`), `clientes.email` (nullable, ídem), y compuesto único en `personal(tipo_documento_identidad_id, numero_documento)`; de rendimiento en `roles_permisos(rol_id)` y `roles_permisos(permiso_id)`.
+
+**Nota sobre `clientes`:** a diferencia de `personal`, no tiene FK a `empresas` ni a `tipos_documento_identidad` — es un registro simple pensado para historial de pedidos/reservas de clientes externos, no para el cumplimiento SUNAT de personal interno. `numero_documento` es un `varchar` libre (no un catálogo), porque en esta fase no se necesita ese nivel de rigor; si más adelante se requiere para facturación electrónica, se evaluará entonces (decisión técnica, no automática).
 
 Este esquema es exclusivamente para el RBAC del personal interno. El login de clientes (portal público) será un dominio de identidad separado — ver `decisiones-tecnicas.md`.
 
@@ -86,5 +89,6 @@ Migraciones aplicadas (en orden):
 9. `SeedUnidadesMedida` / `SeedPermisosMarcas` — datos semilla del catálogo y permisos de marcas.
 10. `ProductoUnidadMedida` — agrega `productos.unidad_medida_id`: se crea **nullable primero**, se hace `UPDATE` de los productos ya existentes a la unidad `NIU` (Unidad), y recién entonces se pone `NOT NULL` + FK. Patrón a seguir cada vez que se agrega una columna obligatoria a una tabla que ya puede tener filas reales (no solo datos de prueba).
 11. `SalonYMesaTablas` / `SeedPermisosSalonesMesas` — crea `salones` y `mesas` (con índice único `(salon_id, numero)`) y sus permisos (FASE 10).
+12. `ClienteTabla` / `SeedPermisosClientes` — crea `clientes` (con índices únicos nullable en `numero_documento` y `email`) y sus permisos (FASE 11).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.

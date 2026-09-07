@@ -4,7 +4,7 @@
 
 ## Resumen ejecutivo
 
-- **Fases completadas:** 0 a 10 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real, y Salones/Mesas). Todo probado de punta a punta en navegador real (Playwright).
+- **Fases completadas:** 0 a 11 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real, Salones/Mesas, y Clientes). Todo probado de punta a punta en navegador real (Playwright).
 - **Modo de avance:** el usuario autorizó avanzar de fase en fase sin pedir confirmación ("CONTINUAR") en cada una, siempre validando que no haya errores. Ver `plan-fases.md` → sección "Modo de avance".
 - **El sistema ya es usable de extremo a extremo**: se puede iniciar sesión, crear personal/usuarios/roles, crear categorías/marcas y productos con foto y unidad de medida, y la carta pública (`/carta`, sin login) ya muestra productos reales agrupados por categoría.
 - **Decisión de alcance (2026-09-07):** el usuario pidió que "el sistema sea completo" e insinuó adelantar Insumos/Recetas (mezcla de ingredientes con cantidades por platillo) ahora mismo. Se le explicó que eso vive en FASE 16 (Inventario) + FASE 18 (Recetas), con manejo de stock/compras/kardex, y **eligió seguir el orden original del plan** — no construir Insumos/Recetas todavía. En su lugar se ampliaron Categorías/Productos con lo que sí correspondía ahora: Marcas y Unidad de Medida SUNAT, más un sidebar con submenús preparado para los grupos que faltan (Ventas, Pedidos, Inventario, etc.). Ver `decisiones-tecnicas.md`.
@@ -20,7 +20,7 @@ pnpm install
 docker compose up -d
 docker inspect restaurant_erp_postgres --format '{{.State.Health.Status}}'  # debe decir "healthy"
 
-# 3. Verificar migraciones aplicadas (deben ser 15)
+# 3. Verificar migraciones aplicadas (deben ser 17)
 pnpm --filter @restaurant-erp/backend migration:show
 
 # 4. Validar que todo compila/lint limpio antes de seguir
@@ -41,24 +41,26 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 ## Qué existe hasta ahora
 
 - **Monorepo pnpm** (`apps/backend`, `apps/frontend`, `packages/*`) — FASE 1.
-- **Base de datos** (FASE 2 en adelante): 15 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
+- **Base de datos** (FASE 2 en adelante): 17 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
 - **Backend base** (FASE 3): Express, Helmet, CORS, rate limiting, manejo de errores, formato de respuesta consistente. Ver `api.md`.
 - **Frontend base** (FASE 4): Vite + React 19 + Tailwind 4 + React Router 8 + TanStack Query. Ver `frontend.md`.
 - **Usuarios/Personal/Empresa/Roles/Permisos (FASE 5-6)**: CRUD completo backend (controller/service/repository/dto con zod) para los 5 módulos, con reglas de negocio reales (unicidad de RUC/documento/email, 1 usuario por personal, etc.). Frontend: páginas `Usuarios`, `Personal`, `Roles`, `Empresa` con tabla + formulario de creación (modal), usando TanStack Query.
 - **Autenticación (FASE 7)**: JWT access token (memoria, corta duración) + refresh token (cookie httpOnly, rotación en cada uso, revocable en BD). Login, logout, refresh, `/me`, cambiar contraseña — backend y frontend completos. Rutas admin protegidas por `ProtectedRoute`, autorización por permiso (no por rol) en cada endpoint. Ver `autenticacion.md` y `roles-y-permisos.md`.
 - **Editar/eliminar + validaciones (2026-09-07)**: Usuarios/Personal/Roles tienen editar y eliminar en el frontend. `personal.eliminar`/`usuarios.eliminar` = desactivar (con cascada personal→usuario); `roles.eliminar` = borrado real (bloqueado si hay usuarios con ese rol). El número de documento de `Personal` valida su formato según el tipo (DNI=8 dígitos, RUC=11) en backend y frontend. Botón de búsqueda RENIEC/SUNAT vía **apis.net.pe** (ahora sobre `api.decolecta.com/v1`, ver corrección en `decisiones-tecnicas.md`) — funciona solo si se configura `APIS_NET_PE_TOKEN` en `.env` (opcional, degrada con 503 si falta). Ver `api.md` y `roles-y-permisos.md`.
 - **Rediseño visual base (2026-09-07)**: tipografía "Plus Jakarta Sans", acento naranja sobre neutros `zinc`, iconos `lucide-react`, componentes `Button`/`Badge`/`StatCard`/`EmptyState`/`ConfirmDialog` reutilizables. Ver `frontend.md`.
-- **Sidebar deslizable/colapsable con submenús (2026-09-07)**: en escritorio se colapsa a solo iconos (persistido en `localStorage`); en móvil es un drawer off-canvas con overlay, abierto desde un botón de menú en el Navbar. Los enlaces se filtran según los permisos reales del usuario. El menú ahora es un acordeón agrupado por dominio — "Carta" (Categorías/Marcas/Productos), "Administración" (Usuarios/Personal/Roles), "Empresa" (Configuración) — preparado para que Ventas/Pedidos/Caja/Inventario agreguen su propio grupo más adelante sin rehacer el componente. Ver `frontend.md`.
+- **Sidebar deslizable/colapsable con submenús (2026-09-07)**: en escritorio se colapsa a solo iconos (persistido en `localStorage`); en móvil es un drawer off-canvas con overlay, abierto desde un botón de menú en el Navbar. Los enlaces se filtran según los permisos reales del usuario. El menú ahora es un acordeón agrupado por dominio — "Carta" (Categorías/Marcas/Productos), "Local" (Salones/Mesas), "Clientes", "Administración" (Usuarios/Personal/Roles), "Empresa" (Configuración) — preparado para que Ventas/Pedidos/Caja/Inventario agreguen su propio grupo más adelante sin rehacer el componente. Ver `frontend.md`.
+- **Dashboard reordenado (2026-09-07)**: las StatCard estaban en una sola grilla plana de 9 tarjetas idénticas sin agrupar (feedback del usuario: "se ve feo"). Ahora se agrupan en secciones tituladas que calzan con los grupos del sidebar, y cada tarjeta es un link a su módulo.
 - **Categorías (FASE 8)**: CRUD completo backend + frontend (`/categorias`), permisos `categorias.*`. `DELETE` bloqueado (409) si tiene productos.
 - **Marcas y Unidad de Medida SUNAT (2026-09-07, ampliación de FASE 9)**: `Marcas` es un catálogo propio del negocio (CRUD completo, `/marcas`, permisos `marcas.*`, opcional en un producto); `unidades_medida` es el Catálogo SUNAT N° 03 (sembrado por migración, solo lectura vía `/api/catalogos/unidades-medida`, igual que tipos de documento/comprobante). Ambos se agregaron a `productos` (`marca_id` nullable, `unidad_medida_id` obligatoria).
 - **Productos (FASE 9)**: CRUD completo backend + frontend (`/productos`) con foto (subida vía `multer`, servida en `/uploads`), marca opcional, unidad de medida, filtro por categoría, tarjetas con zoom al hover. La **carta pública** (`/carta`, sin login) ahora consume `GET /api/productos/publico` y muestra productos reales agrupados por categoría con el mismo tratamiento visual. Ver `api.md` y `decisiones-tecnicas.md`.
 - **Salones y Mesas (FASE 10, 2026-09-07)**: CRUD completo backend + frontend. `Salon` es un catálogo simple (nombre/descripción/activo, igual patrón que Categoría); `Mesa` pertenece a un salón (`salon_id` FK, `ON DELETE RESTRICT`), con `numero` + `capacidad`, único por `(salon_id, numero)` (no puede haber dos "Mesa 1" en el mismo salón, sí en salones distintos). `DELETE` de Salón bloqueado (409) si tiene mesas. Sin estado de ocupación todavía (libre/ocupada) — eso se agregará cuando exista Pedidos (FASE 12) y tenga sentido asignar mesas a órdenes reales.
-- **Sin implementar todavía:** pedidos, comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (reservas/login/pago).
+- **Clientes (FASE 11, 2026-09-07)**: registro simple de clientes (`nombres`, `apellidos`, `numeroDocumento`, `telefono`, `email`, `direccion`, todos opcionales salvo `nombres`), sin la complejidad de tipo de documento SUNAT/empresa que sí tiene `Personal` (son personas externas, no staff). `numeroDocumento` y `email` únicos cuando se proporcionan. `.eliminar` = desactivar (como Personal/Usuarios, es una persona, se conserva el historial), no borrado real. Todavía no ligado a Pedidos/Ventas/Reservas (no existen aún).
+- **Sin implementar todavía:** reservas de mesa, pedidos, comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (login/pago).
 
 ## Próximos pasos (en orden)
 
-1. **FASE 11 — Clientes**, seguido de **11.5 — Reservas de mesa** (ver `plan-fases.md`).
-2. A partir de ahí, seguir el orden de `plan-fases.md`.
+1. **FASE 11.5 — Reservas de mesa** (ver `plan-fases.md`; depende de Clientes y Mesas, ambos ya listos).
+2. A partir de ahí, seguir el orden de `plan-fases.md` (FASE 12 — Pedidos).
 3. **Deuda de diseño pendiente** (no bloqueante): aplicar el mismo estándar visual de Productos/Carta (tarjetas, fotos, efectos) a Usuarios/Personal/Roles/Empresa cuando se retomen esos módulos — ver `decisiones-tecnicas.md`.
 
 ## Decisiones que ya no requieren volver a discutirse

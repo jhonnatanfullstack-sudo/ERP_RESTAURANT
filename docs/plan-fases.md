@@ -12,10 +12,10 @@ Orden base definido en la sección 15 de `CLAUDE.md` (no se modifica ese documen
 | 5        | Usuarios (y Personal/Empresa, base para poder crearlos)                       | `CLAUDE.md` + decisión 2026-09-07 | Completada |
 | 6        | Roles y permisos                                                              | `CLAUDE.md`                       | Completada |
 | 7        | Autenticación y autorización (staff)                                          | `CLAUDE.md`                       | Completada |
-| 8        | Categorías (incluye endpoint público de carta)                                | `CLAUDE.md` + decisión 2026-09-07 | Pendiente  |
-| 9        | Productos (incluye endpoint público de carta)                                 | `CLAUDE.md` + decisión 2026-09-07 | Pendiente  |
-| 10       | Salones y mesas                                                               | `CLAUDE.md`                       | Pendiente  |
-| 11       | Clientes                                                                      | `CLAUDE.md`                       | Pendiente  |
+| 8        | Categorías (incluye endpoint público de carta)                                | `CLAUDE.md` + decisión 2026-09-07 | Completada |
+| 9        | Productos (incluye endpoint público de carta; + Marcas y Unidad de Medida)    | `CLAUDE.md` + decisión 2026-09-07 | Completada |
+| 10       | Salones y mesas                                                               | `CLAUDE.md`                       | Completada |
+| 11       | Clientes                                                                      | `CLAUDE.md`                       | Completada |
 | **11.5** | **Reservas de mesa**                                                          | **Decisión 2026-09-07**           | Pendiente  |
 | 12       | Pedidos                                                                       | `CLAUDE.md`                       | Pendiente  |
 | 13       | Comandas y cocina                                                             | `CLAUDE.md`                       | Pendiente  |
