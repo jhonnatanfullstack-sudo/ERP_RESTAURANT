@@ -10,6 +10,9 @@ React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, conf
 - **Color de marca:** `orange-600` (acentos, botones primarios, estado activo del sidebar). Neutros en `zinc-*` (más cálido que `slate`, combina con el naranja). Sidebar en `zinc-900` (oscuro) con el resto de la app en `zinc-50`/blanco.
 - **Componentes UI reutilizables** (`components/ui/`): `Button` (variantes primary/secondary/ghost/danger), `Badge` (estados: exito/neutral/peligro), `StatCard` (tarjetas de métricas del dashboard), `EmptyState` (estados vacíos con icono), además de `Table`, `Modal`, `Alert`, `Spinner` ya existentes, todos rediseñados con el mismo lenguaje visual (bordes `zinc-200`, `rounded-lg`/`rounded-xl`, `shadow-sm`).
 - Antes de crear un nuevo elemento visual (botón, badge, tarjeta), revisar `components/ui/` — ya existe casi todo lo necesario para mantener consistencia (regla 8 de `CLAUDE.md`).
+- **Sidebar deslizable/colapsable (2026-09-07)**: en escritorio, un botón la colapsa a una barra solo-iconos (con `title` como tooltip), preferencia persistida en `localStorage`; en móvil (`<md`) se convierte en un drawer off-canvas (`position: fixed` + `translate-x`) con backdrop, abierto desde un botón de menú (`Menu` de lucide) en el `Navbar`. Los enlaces se filtran por `tienePermiso(...)` — un usuario sin el permiso `xxx.ver` de un módulo no ve su enlace.
+- **Patrón de tarjetas con foto (desde FASE 9, ver Productos/Carta)**: para catálogos con imagen (no tablas de datos administrativos como Usuarios/Roles), se usa una grilla de tarjetas (`grid grid-cols-*`) con imagen en `aspect-4/3`, `overflow-hidden` + `group-hover:scale-110` `transition-transform` para el efecto de zoom, badge de categoría superpuesto, y precio con `Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })` (helper `utils/formato.ts: formatearPrecio`). Reutilizar este patrón para futuros módulos con imagen en vez de crear uno nuevo.
+- **Deuda de diseño pendiente:** Usuarios/Personal/Roles/Empresa siguen con el diseño de tabla simple original; se elevarán al mismo estándar visual en una fase/commit separado cuando se retomen (decisión del usuario, ver `decisiones-tecnicas.md`), no se rediseñó todo el proyecto de una sola vez.
 
 ## Estructura
 
@@ -18,8 +21,8 @@ src/
   components/     Sidebar, Navbar (shell del layout admin)
   components/ui/  Table, Modal, Alert, Spinner — primitivas reutilizables por todas las páginas
   layouts/         AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header simple+Outlet)
-  pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa
-  pages/public/    Carta (placeholder, datos reales en FASE 8-9)
+  pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa, Categorias, Productos
+  pages/public/    Carta (datos reales desde FASE 9: GET /api/productos/publico)
   routes/          AppRoutes.tsx (árbol de rutas), ProtectedRoute.tsx (guard de auth)
   context/         AuthContext.tsx — sesión, login/logout, tienePermiso(codigo)
   services/        api.ts (instancia Axios + interceptores) y un *.service.ts por módulo
@@ -36,9 +39,11 @@ src/
 | `/personal`         | Admin   | Personal (lista + crear)                               | Sí                    |
 | `/roles`            | Admin   | Roles (lista + crear, con selección de permisos)       | Sí                    |
 | `/empresa`          | Admin   | Empresa (lista + editar)                               | Sí                    |
+| `/categorias`       | Admin   | Categorías (lista + crear + editar + eliminar)         | Sí                    |
+| `/productos`        | Admin   | Productos (tarjetas con foto, filtro por categoría)    | Sí                    |
 | `/cambiar-password` | Admin   | Cambiar contraseña propia                              | Sí                    |
 | `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`) | No                    |
-| `/carta`            | Público | Carta (placeholder, datos reales en FASE 8-9)          | No                    |
+| `/carta`            | Público | Carta (datos reales: productos activos por categoría)  | No                    |
 
 `ProtectedRoute` redirige a `/login` si no hay sesión (tras intentar un refresh silencioso vía cookie httpOnly). Cada página oculta sus acciones de creación/edición si el usuario no tiene el permiso correspondiente (`tienePermiso('xxx.crear')`), aunque la protección real está en el backend.
 

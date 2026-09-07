@@ -50,8 +50,19 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 | GET                 | `/api/permisos`                                                  | Sí + `permisos.ver`        | Catálogo de permisos                                           |
 | GET                 | `/api/catalogos/tipos-documento-identidad`, `/tipos-comprobante` | Sí (cualquier autenticado) | Catálogos SUNAT                                                |
 | GET                 | `/api/personal/consulta-documento?tipo=dni\|ruc&numero=...`      | Sí + `personal.crear`      | Autocompleta nombres desde RENIEC/SUNAT (ver abajo)            |
+| GET/POST/PUT/DELETE | `/api/categorias`, `/api/categorias/:id`                        | Sí + `categorias.*`        | CRUD de categorías de la carta (DELETE = borrado real)         |
+| GET/POST/PUT/DELETE | `/api/productos`, `/api/productos/:id`                          | Sí + `productos.*`         | CRUD de productos (DELETE = borrado real, elimina la foto)     |
+| POST                | `/api/productos/:id/imagen`                                      | Sí + `productos.editar`    | Sube/reemplaza la foto del producto (`multipart/form-data`, campo `imagen`) |
+| GET                 | `/api/productos/publico`                                        | No                         | Productos activos de categorías activas, para la carta pública |
 
-Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 8.
+Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 10.
+
+### Archivos subidos (imágenes de producto)
+
+- Middleware: `multer` (disco), configurado en `src/config/uploads.ts`. Solo acepta `image/*` con extensión `.jpg/.jpeg/.png/.webp`, máximo 5 MB; nombre de archivo generado con UUID (nunca se confía en el nombre original).
+- Almacenamiento: `apps/backend/uploads/<subcarpeta>/` (fuera de git, ver `.gitignore`). Servido estáticamente en `GET /uploads/...` con `Cross-Origin-Resource-Policy: cross-origin` (necesario porque Helmet por defecto bloquea la carga cross-origin de la imagen desde el frontend en otro puerto).
+- Al reemplazar o eliminar un producto, el archivo anterior se borra del disco (`producto.service.ts`) para no acumular huérfanos.
+- Errores de Multer (tamaño excedido, tipo no permitido) se traducen a `400` en `error-handler.middleware.ts`, no a `500`.
 
 ### Consulta de DNI/RUC (RENIEC/SUNAT)
 
@@ -59,7 +70,7 @@ Detalle completo de request/response de auth y roles en `autenticacion.md` y `ro
 - Configuración: variable de entorno `APIS_NET_PE_TOKEN` (ver `.env.example`). **Opcional** — si no está configurada, el endpoint responde `503` con un mensaje claro y el resto del sistema sigue funcionando con normalidad; no bloquea el arranque del backend.
 - Implementación: `src/modules/personal/consulta-documento.service.ts`, usando `fetch` nativo de Node (sin dependencia nueva), con timeout de 8s.
 - Frontend: botón de búsqueda (icono lupa) junto al campo "N° de documento" en el formulario de crear Personal, visible solo cuando el tipo de documento elegido es DNI o RUC. Autocompleta nombres/apellidos.
-- **Nota:** el mapeo de la respuesta de apis.net.pe se hizo según su documentación pública; conviene verificarlo contra una respuesta real la primera vez que se use con un token válido, por si el proveedor cambió el contrato.
+- **IMPORTANTE (corregido 2026-09-07):** apis.net.pe migró su servicio a la infraestructura de **Decolecta** — el dominio/versión vigentes son `https://api.decolecta.com/v1` (no `api.apis.net.pe/v2`), con un esquema de campos distinto (`document_number/first_name/first_last_name/second_last_name` para DNI; `numero_documento/razon_social` para RUC). El código y el `.env.example` ya apuntan al dominio correcto. Si en el futuro la búsqueda vuelve a fallar con "Token inválido" pese a tener un token vigente, sospechar primero de otro cambio de dominio/contrato del proveedor — probar con `curl` contra la URL configurada antes de asumir que es un bug del código.
 
 ## Cómo correr el backend
 

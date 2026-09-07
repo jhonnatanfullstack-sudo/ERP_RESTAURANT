@@ -91,3 +91,26 @@ Decisión explícita del usuario: la base de datos debe alinearse con los catál
 ## Modo de avance: fases continuas sin esperar "CONTINUAR" (2026-09-07)
 
 El usuario autorizó explícitamente avanzar de fase en fase sin esperar confirmación manual ("CONTINUAR"), reemplazando la Regla de Avance por defecto de la sección 16 de `CLAUDE.md` **solo para esta instancia del proyecto**, bajo la condición de que cada fase se valide (sin errores de tipos, lint, build y pruebas de migración) antes de seguir a la siguiente, y que todo quede documentado para poder retomar en una sesión futura (ver `estado-proyecto.md`).
+
+## Corrección: proveedor DNI/RUC migró de dominio (2026-09-07)
+
+- **Problema:** la búsqueda de DNI/RUC no funcionaba pese a tener `APIS_NET_PE_TOKEN` configurado. Causa raíz: **apis.net.pe migró su servicio a la infraestructura de Decolecta** (`https://api.decolecta.com/v1`), con un esquema de campos de respuesta distinto. El código seguía apuntando al dominio/versión antiguos (`api.apis.net.pe/v2`), que ahora rechaza cualquier token con "Token inválido".
+- **Verificación:** se probó contra la API real con `curl` antes de tocar código (ver `api.md`), confirmando el nuevo dominio, el header `Authorization: Bearer` (sin cambios) y los campos reales de la respuesta.
+- **Decisión:** actualizar la URL base por defecto y el mapeo de campos en `consulta-documento.service.ts`, sin cambiar de proveedor (sigue siendo apis.net.pe/Decolecta, ya aprobado). Se documenta aquí para que una futura sesión no repita el diagnóstico desde cero si el proveedor vuelve a cambiar algo.
+
+## Nueva dependencia: `multer` para subida de imágenes (FASE 9, 2026-09-07)
+
+- **Problema:** el usuario pidió imágenes para los productos de la carta. Express no incluye manejo de `multipart/form-data`; no existía ningún patrón de subida de archivos en el proyecto.
+- **Opciones evaluadas:** (1) `multer` — middleware estándar de facto para Express, minimalista, sin servicio externo; (2) subir a un servicio cloud (S3/Cloudinary) — introduce una cuenta/costo externo y complejidad de configuración no solicitada; (3) aceptar imágenes como base64 en el JSON — infla el tamaño de las respuestas/DB innecesariamente.
+- **Decisión:** opción 1, `multer` + almacenamiento en disco local (`apps/backend/uploads/`, fuera de git), servido vía `express.static`. Es una utilidad de la propia capa Express (no reemplaza ni compite con ninguna tecnología de la sección 2 de `CLAUDE.md`), de bajo riesgo y ampliamente usada.
+- **Nota de seguridad aplicada:** Helmet bloquea por defecto la carga cross-origin de estáticos (`Cross-Origin-Resource-Policy: same-origin`); se relajó **solo** para la ruta `/uploads` a `cross-origin`, dejando el resto de cabeceras de Helmet intactas para el resto de la API.
+- **Impacto/migración futura:** si más adelante se necesita CDN o múltiples sucursales con almacenamiento compartido, cambiar de disco local a un bucket es una migración acotada al `producto.service.ts`/`config/uploads.ts` (la URL pública ya es relativa, no absoluta al disco).
+
+## Diseño visual: fotos con efectos en vez de 3D real (2026-09-07)
+
+El usuario pidió "mejor diseño" para todo el proyecto y sugirió mostrar platillos en 3D en la carta.
+
+- **Problema:** un visor 3D real requiere modelos `.glb` por platillo (fotografía 3D o modelado — un proceso de producción de contenido que el proyecto no tiene) más una librería nueva en el frontend (ej. `<model-viewer>` o Three.js), es decir, una decisión de stack + un problema de contenido que no se puede resolver solo con código.
+- **Opciones presentadas al usuario:** (1) fotos modernas con efectos (zoom al hover, tarjetas animadas), sin librerías nuevas; (2) `<model-viewer>` de Google para productos que sí tengan un `.glb` (el usuario debería proveer/producir esos modelos); (3) omitir 3D por ahora.
+- **Decisión del usuario:** opción 1. Además, en vez de rediseñar todas las páginas existentes de una sola vez, se acordó **elevar el estándar visual módulo por módulo** a partir de ahora (empezando por Productos/Carta en FASE 9), en vez de un rediseño transversal único — consistente con la Regla 1/3 de `CLAUDE.md` (desarrollo por fases, no modificar módulos innecesariamente).
+- **Implementado en FASE 9:** tarjetas de producto con imagen, zoom suave al pasar el mouse (`hover:scale-110` con `overflow-hidden`), filtro por categoría, y el mismo tratamiento visual reutilizado entre el panel admin y la carta pública. La idea de 3D queda documentada aquí como posible ampliación futura (junto con QR/delivery/app móvil en la sección 1 de `CLAUDE.md`), condicionada a que el usuario provea o produzca los modelos `.glb`.

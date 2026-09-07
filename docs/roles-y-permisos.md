@@ -15,8 +15,10 @@ El catálogo de permisos es controlado por el código (sembrado en migraciones),
 | `roles.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de roles (`.eliminar` = borrado real, bloqueado si hay usuarios con ese rol) |
 | `permisos.ver`                                      | Consulta del catálogo de permisos                                                    |
 | `empresa.ver` / `.crear` / `.editar`                | Gestión de la empresa (sin `.eliminar`: una empresa no se borra)                     |
+| `categorias.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de categorías de la carta (`.eliminar` = borrado real)                     |
+| `productos.ver` / `.crear` / `.editar` / `.eliminar`  | Gestión de productos (`.eliminar` = borrado real, también borra la foto)           |
 
-Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `productos.*` en FASE 9, `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
+Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `mesas.*` / `salones.*` en FASE 10, `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
 
 ## Semántica de "eliminar" (2026-09-07)
 

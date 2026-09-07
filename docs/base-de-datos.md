@@ -19,6 +19,8 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 | `permisos`                  | Permisos específicos (ej. `usuarios.crear`)                                                      | `id` uuid                |
 | `roles_permisos`            | Relación N:M entre `roles` y `permisos`                                                          | (`rol_id`, `permiso_id`) |
 | `refresh_tokens`            | Tokens de refresco de sesión, por usuario                                                        | `id` uuid                |
+| `categorias`                | Categorías de la carta (FASE 8)                                                                  | `id` uuid                |
+| `productos`                 | Productos/platillos de la carta, con foto opcional (FASE 9)                                      | `id` uuid                |
 
 **Relaciones:**
 
@@ -28,6 +30,7 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `usuarios.rol_id` → `roles.id` (`ON DELETE RESTRICT`)
 - `refresh_tokens.usuario_id` → `usuarios.id` (`ON DELETE CASCADE`)
 - `roles_permisos` conecta `roles` ↔ `permisos` (`ON DELETE CASCADE` en ambos lados)
+- `productos.categoria_id` → `categorias.id` (`ON DELETE RESTRICT`: no se puede borrar una categoría con productos)
 
 **Por qué este orden (Empresa → Personal → Usuario):** decisión explícita del usuario (2026-09-07). Un `usuario` (cuenta de acceso) siempre parte de un registro de `personal` ya existente (persona real, identificada por documento), y todo `personal` pertenece a una `empresa`. Esto evita datos de personas duplicados entre módulos futuros (ej. nombre/apellido no se repiten en `usuarios`) y prepara el sistema para "Múltiples sucursales" (expansión futura de `CLAUDE.md` sección 1): varias sucursales podrán colgar de una misma `empresa` sin rediseñar el núcleo de identidad.
 
@@ -66,5 +69,9 @@ Migraciones aplicadas (en orden):
 1. `EsquemaInicialRbac` — crea `usuarios`, `roles`, `permisos`, `roles_permisos`, `refresh_tokens`.
 2. `EmpresaPersonalYCatalogosSunat` — crea `empresas`, `personal`, `tipos_documento_identidad`, `tipos_comprobante`; agrega `usuarios.personal_id` (FK única) y elimina `usuarios.nombre` (ahora vive en `personal`).
 3. `SeedCatalogosSunat` — datos semilla de los catálogos SUNAT.
+4. `SeedRbacInicial` — permisos base + rol Administrador + empresa/personal/usuario de arranque.
+5. `SeedPermisosEliminar` — permisos `*.eliminar` para usuarios/personal/roles.
+6. `CategoriaTabla` / `SeedPermisosCategorias` — crea `categorias` y sus permisos (FASE 8).
+7. `ProductoTabla` / `SeedPermisosProductos` — crea `productos` (con `precio numeric(10,2)` e `imagen_url` nullable) y sus permisos (FASE 9).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.
