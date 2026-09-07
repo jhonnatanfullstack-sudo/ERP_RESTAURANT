@@ -51,6 +51,13 @@ export interface Personal {
   activo: boolean;
 }
 
+export interface Categoria {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  activo: boolean;
+}
+
 export interface Usuario {
   id: string;
   email: string;

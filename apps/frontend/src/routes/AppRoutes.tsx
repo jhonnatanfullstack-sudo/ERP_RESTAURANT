@@ -6,6 +6,7 @@ import { Login } from '../pages/Login';
 import { Usuarios } from '../pages/Usuarios';
 import { Personal } from '../pages/Personal';
 import { Roles } from '../pages/Roles';
+import { Categorias } from '../pages/Categorias';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
@@ -26,6 +27,7 @@ export function AppRoutes() {
           <Route path="/usuarios" element={<Usuarios />} />
           <Route path="/personal" element={<Personal />} />
           <Route path="/roles" element={<Roles />} />
+          <Route path="/categorias" element={<Categorias />} />
           <Route path="/empresa" element={<Empresa />} />
           <Route path="/cambiar-password" element={<CambiarPassword />} />
         </Route>
