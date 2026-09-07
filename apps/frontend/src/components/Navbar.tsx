@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import { ChevronDown, KeyRound, LogOut } from 'lucide-react';
+import { ChevronDown, KeyRound, LogOut, Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-export function Navbar() {
+interface NavbarProps {
+  onAbrirMenuMovil: () => void;
+}
+
+export function Navbar({ onAbrirMenuMovil }: NavbarProps) {
   const { usuario, logout } = useAuth();
   const [menuAbierto, setMenuAbierto] = useState(false);
 
@@ -15,8 +19,17 @@ export function Navbar() {
     `${usuario.personal.nombres[0] ?? ''}${usuario.personal.apellidoPaterno?.[0] ?? ''}`.toUpperCase();
 
   return (
-    <header className="flex h-16 items-center justify-end border-b border-zinc-200 bg-white px-6">
-      <div className="relative">
+    <header className="flex h-16 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 md:px-6">
+      <button
+        type="button"
+        aria-label="Abrir menú"
+        onClick={onAbrirMenuMovil}
+        className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 md:hidden"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      <div className="relative ml-auto">
         <button
           type="button"
           onClick={() => setMenuAbierto((abierto) => !abierto)}
