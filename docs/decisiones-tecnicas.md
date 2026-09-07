@@ -67,3 +67,27 @@ El usuario preguntó si, además de ver la carta, el cliente podría reservar me
 - No afecta la FASE 2.
 
 **Conclusión:** el portal de clientes es viable y compatible con la arquitectura actual sin cambiar tecnologías. Se desarrolla de forma incremental, igual que el resto del sistema: Reservas se incorpora al plan de fases ahora; Login de clientes y Pago en línea quedan aprobados en concepto pero se diseñan e implementan en su fase correspondiente, no antes.
+
+## Corrección: `moduleResolution` deprecado en tsconfig (2026-09-07)
+
+- **Problema:** `tsconfig.base.json` usaba `"moduleResolution": "node"`. El schema oficial de `tsconfig.json` (usado por el editor) marca ese valor como **deprecado** (alias interno de `"node10"`), lo que el editor mostraba como error/advertencia sobre el archivo.
+- **Decisión:** se cambió a `"module": "NodeNext"` + `"moduleResolution": "NodeNext"`, la configuración moderna recomendada para proyectos Node.js, consistente con la política de usar siempre la opción vigente no deprecada.
+- **Impacto:** ninguno funcional. Se verificó `pnpm --filter @restaurant-erp/backend typecheck` sin errores tras el cambio.
+
+## Rediseño del núcleo de identidad: Empresa → Personal → Usuario + catálogos SUNAT (2026-09-07)
+
+Decisión explícita del usuario: la base de datos debe alinearse con los catálogos que usa SUNAT (ej. tipo de documento de identidad, tipo de comprobante), y todo el sistema debe partir de una tabla `Empresa`, luego `Personal` (que requiere un tipo de documento), y a partir de ese `Personal` se crea el `Usuario`.
+
+**Desviación respecto a la lista de módulos de la sección 4 de `CLAUDE.md`:** esa lista no incluía módulos `empresa`, `personal` ni `catalogos`. Se agregan porque el usuario lo pidió explícitamente en esta conversación (autorización directa, sección 17/sección 4 de `CLAUDE.md` — "puedes adaptar la estructura si hay una razón técnica real, explicando el motivo"). El motivo: cumplimiento SUNAT desde el diseño de datos, y una jerarquía de identidad correcta (empresa → persona física → cuenta de acceso) que evita duplicar nombre/apellido entre `personal` y `usuarios`, y prepara el sistema para "Múltiples sucursales" (expansión futura ya prevista en `CLAUDE.md` sección 1).
+
+**Cambios de esquema** (ver detalle completo en `base-de-datos.md`):
+
+- Nuevas tablas: `empresas`, `personal`, `tipos_documento_identidad` (catálogo SUNAT 06), `tipos_comprobante` (catálogo SUNAT 01).
+- `usuarios` pierde la columna `nombre` (duplicaba datos de persona) y gana `personal_id` (FK única 1:1 a `personal`).
+- Migraciones `EmpresaPersonalYCatalogosSunat` y `SeedCatalogosSunat`, ambas probadas con `run` → `revert` → `run`.
+
+**Alcance de esta fase:** solo el RBAC de personal interno usa esta jerarquía por ahora. El login de clientes (portal público) sigue siendo un dominio de identidad separado (ver sección anterior) y no usará `personal`/`empresas` de la misma forma — se diseñará en su fase correspondiente.
+
+## Modo de avance: fases continuas sin esperar "CONTINUAR" (2026-09-07)
+
+El usuario autorizó explícitamente avanzar de fase en fase sin esperar confirmación manual ("CONTINUAR"), reemplazando la Regla de Avance por defecto de la sección 16 de `CLAUDE.md` **solo para esta instancia del proyecto**, bajo la condición de que cada fase se valide (sin errores de tipos, lint, build y pruebas de migración) antes de seguir a la siguiente, y que todo quede documentado para poder retomar en una sesión futura (ver `estado-proyecto.md`).
