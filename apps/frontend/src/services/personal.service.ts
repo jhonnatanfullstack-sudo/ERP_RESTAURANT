@@ -30,3 +30,17 @@ export async function actualizarPersonal(id: string, input: ActualizarPersonalIn
 export async function eliminarPersonal(id: string) {
   await api.delete(`/api/personal/${id}`);
 }
+
+export interface DatosDocumento {
+  numeroDocumento: string;
+  nombres: string;
+  apellidoPaterno: string | null;
+  apellidoMaterno: string | null;
+}
+
+export async function consultarDocumento(tipo: 'dni' | 'ruc', numero: string) {
+  const res = await api.get<ApiSuccess<DatosDocumento>>('/api/personal/consulta-documento', {
+    params: { tipo, numero },
+  });
+  return res.data.data;
+}

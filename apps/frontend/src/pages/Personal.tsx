@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm, useWatch, type Control } from 'react-hook-form';
-import { Pencil, Trash2, UserPlus } from 'lucide-react';
+import { useForm, useWatch, type Control, type UseFormSetValue } from 'react-hook-form';
+import { Loader2, Pencil, Search, Trash2, UserPlus } from 'lucide-react';
 import * as personalService from '../services/personal.service';
 import * as empresaService from '../services/empresa.service';
 import * as catalogosService from '../services/catalogos.service';
@@ -27,31 +27,79 @@ function mensajeError(error: unknown, fallback: string): string {
   );
 }
 
+/** Códigos del catálogo SUNAT 06 que apis.net.pe puede consultar. */
+const CODIGOS_CONSULTABLES: Record<string, 'dni' | 'ruc'> = { '1': 'dni', '6': 'ruc' };
+
 function CampoNumeroDocumento({
   control,
   tipos,
   register,
+  getValues,
+  setValue,
 }: {
   control: Control<CrearPersonalInput>;
   tipos: TipoDocumentoIdentidad[] | undefined;
   register: ReturnType<typeof useForm<CrearPersonalInput>>['register'];
+  getValues: () => CrearPersonalInput;
+  setValue: UseFormSetValue<CrearPersonalInput>;
 }) {
+  const [buscando, setBuscando] = useState(false);
+  const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
+
   const tipoSeleccionadoId = useWatch({ control, name: 'tipoDocumentoIdentidadId' });
   const codigo = tipos?.find((t) => t.id === tipoSeleccionadoId)?.codigo;
   const formato = codigo ? FORMATOS_DOCUMENTO[codigo] : undefined;
+  const tipoConsulta = codigo ? CODIGOS_CONSULTABLES[codigo] : undefined;
+
+  async function buscar() {
+    if (!tipoConsulta) return;
+    const numero = getValues().numeroDocumento;
+    if (!numero) return;
+
+    setErrorBusqueda(null);
+    setBuscando(true);
+    try {
+      const datos = await personalService.consultarDocumento(tipoConsulta, numero);
+      setValue('nombres', datos.nombres, { shouldValidate: true });
+      if (datos.apellidoPaterno) setValue('apellidoPaterno', datos.apellidoPaterno);
+      if (datos.apellidoMaterno) setValue('apellidoMaterno', datos.apellidoMaterno);
+    } catch (error) {
+      setErrorBusqueda(mensajeError(error, 'No se pudo consultar el documento'));
+    } finally {
+      setBuscando(false);
+    }
+  }
 
   return (
     <div>
       <label className={labelClass}>N° de documento</label>
-      <input
-        {...register('numeroDocumento', {
-          required: true,
-          pattern: formato ? { value: formato.patron, message: formato.ayuda } : undefined,
-        })}
-        maxLength={formato?.maxLength}
-        className={inputClass}
-      />
+      <div className="flex gap-2">
+        <input
+          {...register('numeroDocumento', {
+            required: true,
+            pattern: formato ? { value: formato.patron, message: formato.ayuda } : undefined,
+          })}
+          maxLength={formato?.maxLength}
+          className={inputClass}
+        />
+        {tipoConsulta && (
+          <button
+            type="button"
+            onClick={() => void buscar()}
+            disabled={buscando}
+            title="Buscar en RENIEC/SUNAT"
+            className="flex shrink-0 items-center justify-center rounded-lg border border-zinc-300 px-3 text-zinc-500 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            {buscando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="h-4 w-4" />
+            )}
+          </button>
+        )}
+      </div>
       {formato && <p className="mt-1 text-xs text-zinc-500">{formato.ayuda}</p>}
+      {errorBusqueda && <p className="mt-1 text-xs text-red-600">{errorBusqueda}</p>}
     </div>
   );
 }
@@ -229,6 +277,8 @@ export function Personal() {
               control={crearForm.control}
               tipos={tiposDocQuery.data}
               register={crearForm.register}
+              getValues={crearForm.getValues}
+              setValue={crearForm.setValue}
             />
           </div>
 

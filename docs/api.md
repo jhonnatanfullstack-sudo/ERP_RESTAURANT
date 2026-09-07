@@ -49,8 +49,17 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 | GET/POST/PUT/DELETE | `/api/roles`, `/api/roles/:id`, `/api/roles/:id/permisos`        | Sí + `roles.*`             | CRUD de roles y asignación de permisos (DELETE = borrado real) |
 | GET                 | `/api/permisos`                                                  | Sí + `permisos.ver`        | Catálogo de permisos                                           |
 | GET                 | `/api/catalogos/tipos-documento-identidad`, `/tipos-comprobante` | Sí (cualquier autenticado) | Catálogos SUNAT                                                |
+| GET                 | `/api/personal/consulta-documento?tipo=dni\|ruc&numero=...`      | Sí + `personal.crear`      | Autocompleta nombres desde RENIEC/SUNAT (ver abajo)            |
 
 Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 8.
+
+### Consulta de DNI/RUC (RENIEC/SUNAT)
+
+- Proveedor: **apis.net.pe** (decisión del usuario, 2026-09-07). Un solo token cubre DNI (RENIEC) y RUC (SUNAT).
+- Configuración: variable de entorno `APIS_NET_PE_TOKEN` (ver `.env.example`). **Opcional** — si no está configurada, el endpoint responde `503` con un mensaje claro y el resto del sistema sigue funcionando con normalidad; no bloquea el arranque del backend.
+- Implementación: `src/modules/personal/consulta-documento.service.ts`, usando `fetch` nativo de Node (sin dependencia nueva), con timeout de 8s.
+- Frontend: botón de búsqueda (icono lupa) junto al campo "N° de documento" en el formulario de crear Personal, visible solo cuando el tipo de documento elegido es DNI o RUC. Autocompleta nombres/apellidos.
+- **Nota:** el mapeo de la respuesta de apis.net.pe se hizo según su documentación pública; conviene verificarlo contra una respuesta real la primera vez que se use con un token válido, por si el proveedor cambió el contrato.
 
 ## Cómo correr el backend
 
