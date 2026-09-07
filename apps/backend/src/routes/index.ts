@@ -11,6 +11,7 @@ import { marcaRouter } from '../modules/marcas/marca.routes';
 import { productoRouter } from '../modules/productos/producto.routes';
 import { salonRouter } from '../modules/salones/salon.routes';
 import { mesaRouter } from '../modules/mesas/mesa.routes';
+import { clienteRouter } from '../modules/clientes/cliente.routes';
 
 export const apiRouter = Router();
 
@@ -26,3 +27,4 @@ apiRouter.use('/marcas', marcaRouter);
 apiRouter.use('/productos', productoRouter);
 apiRouter.use('/salones', salonRouter);
 apiRouter.use('/mesas', mesaRouter);
+apiRouter.use('/clientes', clienteRouter);

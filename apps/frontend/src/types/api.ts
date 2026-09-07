@@ -98,6 +98,17 @@ export interface Mesa {
   activo: boolean;
 }
 
+export interface Cliente {
+  id: string;
+  nombres: string;
+  apellidos: string | null;
+  numeroDocumento: string | null;
+  telefono: string | null;
+  email: string | null;
+  direccion: string | null;
+  activo: boolean;
+}
+
 export interface Usuario {
   id: string;
   email: string;

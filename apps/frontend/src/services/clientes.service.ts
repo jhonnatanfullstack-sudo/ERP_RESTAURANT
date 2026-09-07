@@ -1,0 +1,40 @@
+import { api } from './api';
+import type { ApiSuccess, Cliente } from '../types/api';
+
+export interface CrearClienteInput {
+  nombres: string;
+  apellidos?: string | null;
+  numeroDocumento?: string | null;
+  telefono?: string | null;
+  email?: string | null;
+  direccion?: string | null;
+}
+
+export interface ActualizarClienteInput {
+  nombres?: string;
+  apellidos?: string | null;
+  numeroDocumento?: string | null;
+  telefono?: string | null;
+  email?: string | null;
+  direccion?: string | null;
+  activo?: boolean;
+}
+
+export async function listarClientes() {
+  const res = await api.get<ApiSuccess<Cliente[]>>('/api/clientes');
+  return res.data.data;
+}
+
+export async function crearCliente(input: CrearClienteInput) {
+  const res = await api.post<ApiSuccess<Cliente>>('/api/clientes', input);
+  return res.data.data;
+}
+
+export async function actualizarCliente(id: string, input: ActualizarClienteInput) {
+  const res = await api.put<ApiSuccess<Cliente>>(`/api/clientes/${id}`, input);
+  return res.data.data;
+}
+
+export async function eliminarCliente(id: string) {
+  await api.delete(`/api/clientes/${id}`);
+}

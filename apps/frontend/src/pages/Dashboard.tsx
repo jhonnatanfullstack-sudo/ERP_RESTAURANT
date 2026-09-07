@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Award,
   Building2,
+  Contact,
   DoorOpen,
   ShieldCheck,
   Tags,
@@ -19,6 +20,7 @@ import * as marcasService from '../services/marcas.service';
 import * as productosService from '../services/productos.service';
 import * as salonesService from '../services/salones.service';
 import * as mesasService from '../services/mesas.service';
+import * as clientesService from '../services/clientes.service';
 import { useAuth } from '../context/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
 
@@ -49,6 +51,10 @@ export function Dashboard() {
   });
   const salonesQuery = useQuery({ queryKey: ['salones'], queryFn: salonesService.listarSalones });
   const mesasQuery = useQuery({ queryKey: ['mesas'], queryFn: mesasService.listarMesas });
+  const clientesQuery = useQuery({
+    queryKey: ['clientes'],
+    queryFn: clientesService.listarClientes,
+  });
 
   const secciones = [
     {
@@ -75,6 +81,10 @@ export function Dashboard() {
         { etiqueta: 'Salones', ruta: '/salones', icono: DoorOpen, query: salonesQuery },
         { etiqueta: 'Mesas', ruta: '/mesas', icono: Utensils, query: mesasQuery },
       ],
+    },
+    {
+      titulo: 'Clientes',
+      tarjetas: [{ etiqueta: 'Clientes', ruta: '/clientes', icono: Contact, query: clientesQuery }],
     },
     {
       titulo: 'Administración',

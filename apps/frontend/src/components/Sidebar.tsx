@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
+  Contact,
   DoorOpen,
   LayoutDashboard,
   ShieldCheck,
@@ -58,6 +59,12 @@ const menu: ItemMenu[] = [
       { etiqueta: 'Salones', ruta: '/salones', permiso: 'salones.ver' },
       { etiqueta: 'Mesas', ruta: '/mesas', permiso: 'mesas.ver' },
     ],
+  },
+  {
+    tipo: 'grupo',
+    etiqueta: 'Clientes',
+    icono: Contact,
+    hijos: [{ etiqueta: 'Clientes', ruta: '/clientes', permiso: 'clientes.ver' }],
   },
   {
     tipo: 'grupo',
