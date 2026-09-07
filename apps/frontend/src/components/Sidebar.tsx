@@ -1,6 +1,12 @@
 import { NavLink } from 'react-router';
 
-const enlaces = [{ etiqueta: 'Dashboard', ruta: '/' }];
+const enlaces = [
+  { etiqueta: 'Dashboard', ruta: '/' },
+  { etiqueta: 'Usuarios', ruta: '/usuarios' },
+  { etiqueta: 'Personal', ruta: '/personal' },
+  { etiqueta: 'Roles', ruta: '/roles' },
+  { etiqueta: 'Empresa', ruta: '/empresa' },
+];
 
 export function Sidebar() {
   return (
