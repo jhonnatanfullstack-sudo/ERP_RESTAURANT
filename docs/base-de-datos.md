@@ -26,6 +26,7 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 | `salones`                   | Ambientes del local donde se ubican las mesas (FASE 10)                                          | `id` uuid                |
 | `mesas`                     | Mesas físicas, pertenecen a un salón (FASE 10)                                                   | `id` uuid                |
 | `clientes`                  | Clientes del restaurante, sin relación a `personal`/`empresas` (FASE 11)                         | `id` uuid                |
+| `reservas`                  | Reservas de mesa por cliente, con estado y control de solapamiento (FASE 11.5)                   | `id` uuid                |
 
 **Relaciones:**
 
@@ -40,6 +41,8 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `productos.unidad_medida_id` → `unidades_medida.id`, obligatoria (`ON DELETE RESTRICT`)
 - `mesas.salon_id` → `salones.id`, obligatoria (`ON DELETE RESTRICT`); índice único compuesto `(salon_id, numero)` — el mismo número de mesa puede repetirse en salones distintos, no dentro del mismo salón
 - `clientes.tipo_documento_identidad_id` → `tipos_documento_identidad.id`, **nullable** (`ON DELETE RESTRICT`); índice único compuesto `(tipo_documento_identidad_id, numero_documento)` — mismo patrón que `personal`, pero ambas columnas son nullable: un cliente puede no tener documento registrado, y si lo tiene, debe venir el tipo y el número juntos (validado en `cliente.service.ts`, no solo por la constraint de BD)
+- `reservas.cliente_id` → `clientes.id`, obligatoria (`ON DELETE RESTRICT`)
+- `reservas.mesa_id` → `mesas.id`, obligatoria (`ON DELETE RESTRICT`)
 
 **Por qué este orden (Empresa → Personal → Usuario):** decisión explícita del usuario (2026-09-07). Un `usuario` (cuenta de acceso) siempre parte de un registro de `personal` ya existente (persona real, identificada por documento), y todo `personal` pertenece a una `empresa`. Esto evita datos de personas duplicados entre módulos futuros (ej. nombre/apellido no se repiten en `usuarios`) y prepara el sistema para "Múltiples sucursales" (expansión futura de `CLAUDE.md` sección 1): varias sucursales podrán colgar de una misma `empresa` sin rediseñar el núcleo de identidad.
 
@@ -92,5 +95,7 @@ Migraciones aplicadas (en orden):
 11. `SalonYMesaTablas` / `SeedPermisosSalonesMesas` — crea `salones` y `mesas` (con índice único `(salon_id, numero)`) y sus permisos (FASE 10).
 12. `ClienteTabla` / `SeedPermisosClientes` — crea `clientes` (con índice único nullable en `email`, `numero_documento` sin catálogo todavía) y sus permisos (FASE 11).
 13. `ClienteTipoDocumento` — acopla `clientes` a SUNAT (decisión del usuario, 2026-09-07): agrega `clientes.tipo_documento_identidad_id` (FK nullable a `tipos_documento_identidad`), reemplaza el índice único simple de `numero_documento` por uno compuesto `(tipo_documento_identidad_id, numero_documento)`, igual que `personal`.
+14. `ReservaTabla` — crea `reservas`, con `estado` como **enum nativo de Postgres** (`reservas_estado_enum`: `pendiente`/`confirmada`/`cancelada`/`completada`, no un `varchar` libre) y FKs a `clientes`/`mesas`.
+15. `SeedPermisosReservas` — permisos del módulo (FASE 11.5).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.

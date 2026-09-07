@@ -59,8 +59,15 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 | GET/POST/PUT/DELETE | `/api/mesas`, `/api/mesas/:id`                                                       | Sí + `mesas.*`             | CRUD de mesas (único `numero` por salón, DELETE = borrado real)                     |
 | GET/POST/PUT/DELETE | `/api/clientes`, `/api/clientes/:id`                                                 | Sí + `clientes.*`          | CRUD de clientes (DELETE = desactivar; documento/email únicos si se dan)            |
 | GET                 | `/api/clientes/consulta-documento?tipo=dni\|ruc&numero=...`                          | Sí + `clientes.crear`      | Autocompleta nombres desde RENIEC/SUNAT para Clientes (mismo servicio que Personal) |
+| GET/POST/PUT/DELETE | `/api/reservas`, `/api/reservas/:id`                                                 | Sí + `reservas.*`          | CRUD de reservas de mesa (DELETE = cancelar, ver reglas de negocio abajo)           |
 
-Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 11.5.
+Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 12.
+
+### Reservas de mesa (FASE 11.5)
+
+- **Reglas de negocio** (`reserva.service.ts`): el cliente y la mesa deben existir y estar activos; `cantidadPersonas` no puede exceder `mesa.capacidad`; `fechaHora` debe ser futura; y no puede haber otra reserva **pendiente o confirmada** para la misma mesa cuyo rango `[fechaHora, fechaHora + duracionMinutos)` se solape con el nuevo — el solape se calcula con una condición SQL sobre `fecha_hora` y `duracion_minutos` (`reserva.fecha_hora + (duracion_minutos || ' minutes')::interval > :inicio`), no en memoria.
+- **Estados** (`estado`, enum de Postgres): `pendiente` (por defecto) → `confirmada` → `completada`, o `cancelada` desde pendiente/confirmada. `DELETE /api/reservas/:id` es azúcar sintáctica para "poner `estado = cancelada`" (mismo patrón de borrado lógico que Personal/Usuarios/Clientes, aplicado aquí al ciclo de vida de la reserva en vez de a un campo `activo`).
+- Body de `POST`/`PUT`: `clienteId`, `mesaId`, `fechaHora` (ISO 8601 **con offset/zulu**, ej. `2026-09-09T19:00:00.000Z` — ver nota de frontend abajo), `duracionMinutos` (opcional, default 90), `cantidadPersonas`, `notas` (opcional), y en `PUT` también `estado`.
 
 ### Archivos subidos (imágenes de producto)
 

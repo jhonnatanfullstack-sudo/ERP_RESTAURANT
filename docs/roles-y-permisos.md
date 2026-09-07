@@ -21,8 +21,9 @@ El catálogo de permisos es controlado por el código (sembrado en migraciones),
 | `salones.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de salones (`.eliminar` bloqueado si tiene mesas)                            |
 | `mesas.ver` / `.crear` / `.editar` / `.eliminar`      | Gestión de mesas (`.eliminar` = borrado real)                                        |
 | `clientes.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de clientes (`.eliminar` = desactivar)                                       |
+| `reservas.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de reservas de mesa (`.eliminar` = cancelar)                                 |
 
-Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `reservas.*` en FASE 11.5, `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
+Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `pedidos.*` en FASE 12, `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
 
 ## Semántica de "eliminar" (2026-09-07)
 
@@ -30,6 +31,7 @@ Se amplía este catálogo (con una nueva migración) a medida que se implementen
 - **Roles** no tiene columna `activo`: "eliminar" es un **borrado real** (`DELETE FROM roles`), bloqueado con 409 si algún usuario todavía tiene ese rol asignado.
 - **Categorías, Marcas y Salones**: mismo patrón que Roles — borrado real, bloqueado con 409 si algún producto/mesa todavía las referencia (FK `ON DELETE RESTRICT`; el pre-check en el service evita que la violación de FK llegue como un 500 sin explicación).
 - **Mesas**: borrado real sin restricción (nada las referencia todavía); único `(salon_id, numero)` — crear/editar con un número repetido en el mismo salón responde 409, no una violación de índice sin explicación.
+- **Reservas**: no tiene columna `activo` — su ciclo de vida vive en `estado` (`pendiente`/`confirmada`/`cancelada`/`completada`). `DELETE /api/reservas/:id` no borra la fila, pone `estado = 'cancelada'` (mismo espíritu de "no perder el historial" que Usuarios/Personal/Clientes, aplicado a un enum en vez de a un booleano).
 - **Empresa** no tiene endpoint de eliminar — una empresa no se borra desde la UI.
 
 ## Rol de arranque

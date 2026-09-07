@@ -4,7 +4,7 @@
 
 ## Resumen ejecutivo
 
-- **Fases completadas:** 0 a 11 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real, Salones/Mesas, y Clientes). Todo probado de punta a punta en navegador real (Playwright).
+- **Fases completadas:** 0 a 11.5 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real, Salones/Mesas, Clientes acoplado a SUNAT, y Reservas de mesa). Todo probado de punta a punta en navegador real (Playwright).
 - **Modo de avance:** el usuario autorizó avanzar de fase en fase sin pedir confirmación ("CONTINUAR") en cada una, siempre validando que no haya errores. Ver `plan-fases.md` → sección "Modo de avance".
 - **El sistema ya es usable de extremo a extremo**: se puede iniciar sesión, crear personal/usuarios/roles, crear categorías/marcas y productos con foto y unidad de medida, y la carta pública (`/carta`, sin login) ya muestra productos reales agrupados por categoría.
 - **Decisión de alcance (2026-09-07):** el usuario pidió que "el sistema sea completo" e insinuó adelantar Insumos/Recetas (mezcla de ingredientes con cantidades por platillo) ahora mismo. Se le explicó que eso vive en FASE 16 (Inventario) + FASE 18 (Recetas), con manejo de stock/compras/kardex, y **eligió seguir el orden original del plan** — no construir Insumos/Recetas todavía. En su lugar se ampliaron Categorías/Productos con lo que sí correspondía ahora: Marcas y Unidad de Medida SUNAT, más un sidebar con submenús preparado para los grupos que faltan (Ventas, Pedidos, Inventario, etc.). Ver `decisiones-tecnicas.md`.
@@ -20,7 +20,7 @@ pnpm install
 docker compose up -d
 docker inspect restaurant_erp_postgres --format '{{.State.Health.Status}}'  # debe decir "healthy"
 
-# 3. Verificar migraciones aplicadas (deben ser 18)
+# 3. Verificar migraciones aplicadas (deben ser 20)
 pnpm --filter @restaurant-erp/backend migration:show
 
 # 4. Validar que todo compila/lint limpio antes de seguir
@@ -41,7 +41,7 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 ## Qué existe hasta ahora
 
 - **Monorepo pnpm** (`apps/backend`, `apps/frontend`, `packages/*`) — FASE 1.
-- **Base de datos** (FASE 2 en adelante): 18 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
+- **Base de datos** (FASE 2 en adelante): 20 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
 - **Backend base** (FASE 3): Express, Helmet, CORS, rate limiting, manejo de errores, formato de respuesta consistente. Ver `api.md`.
 - **Frontend base** (FASE 4): Vite + React 19 + Tailwind 4 + React Router 8 + TanStack Query. Ver `frontend.md`.
 - **Usuarios/Personal/Empresa/Roles/Permisos (FASE 5-6)**: CRUD completo backend (controller/service/repository/dto con zod) para los 5 módulos, con reglas de negocio reales (unicidad de RUC/documento/email, 1 usuario por personal, etc.). Frontend: páginas `Usuarios`, `Personal`, `Roles`, `Empresa` con tabla + formulario de creación (modal), usando TanStack Query.
@@ -57,12 +57,13 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 - **Clientes (FASE 11, 2026-09-07)**: registro de clientes (`nombres`, `apellidos`, `telefono`, `email`, `direccion`, todos opcionales salvo `nombres`). `email` único cuando se proporciona. `.eliminar` = desactivar (como Personal/Usuarios, es una persona, se conserva el historial), no borrado real. Todavía no ligado a Pedidos/Ventas/Reservas (no existen aún).
 - **Cliente acoplado a SUNAT (2026-09-07, corrección tras feedback del usuario "todo está acoplado de acuerdo a SUNAT")**: `Cliente` ahora tiene `tipoDocumentoIdentidad` (FK nullable al mismo Catálogo SUNAT 06 que usa `Personal`) en vez de un `numeroDocumento` de texto libre; ambos campos son opcionales pero van juntos (si se da uno, se exige el otro). Se agregó el mismo botón de búsqueda RENIEC/SUNAT que tiene Personal. Para no duplicar código, `consulta-documento.service.ts` y la validación de formato por tipo de documento se movieron de `modules/personal/` a `modules/catalogos/` (compartidos), y el componente de búsqueda del frontend se extrajo a `components/CampoBusquedaDocumento.tsx` (genérico sobre el formulario), usado ahora por Personal y Clientes.
 - **Fix de layout: sidebar más corto que la página (2026-09-07)**: `AdminLayout` usaba `min-h-screen` en el contenedor exterior pero el `<aside>` tenía `h-screen` (100vh fijo) — cuando el contenido de una página excedía la altura de pantalla, el sidebar se quedaba corto y se veía el fondo claro debajo. Se cambió el shell completo a `h-screen overflow-hidden`, de forma que solo el `<main>` hace scroll interno y el sidebar siempre cubre el 100% de la pantalla, sin importar cuánto contenido tenga la página.
-- **Sin implementar todavía:** reservas de mesa, pedidos, comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (login/pago).
+- **Reservas de mesa (FASE 11.5, 2026-09-07)**: CRUD backend + frontend (`/reservas`). Reglas de negocio reales: cliente y mesa deben existir y estar activos, `cantidadPersonas` no puede exceder la capacidad de la mesa, la fecha debe ser futura, y no se permite solapamiento de horario para la misma mesa (calculado en SQL sobre `fecha_hora` + `duracion_minutos`, no en memoria). Ciclo de vida vía `estado` (enum de Postgres: `pendiente`→`confirmada`→`completada`, o `cancelada`); `DELETE` = poner `estado = cancelada`, no borra la fila. Frontend con filtro por estado y acciones rápidas (Confirmar/Completar/Cancelar) según el estado actual. **Bug real encontrado y corregido durante las pruebas**: un campo numérico opcional vacío con `valueAsNumber` de react-hook-form viajaba como `null` (via `NaN`) y el backend lo rechazaba con 400 — ver `frontend.md`.
+- **Sin implementar todavía:** pedidos, comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (login/pago).
 
 ## Próximos pasos (en orden)
 
-1. **FASE 11.5 — Reservas de mesa** (ver `plan-fases.md`; depende de Clientes y Mesas, ambos ya listos).
-2. A partir de ahí, seguir el orden de `plan-fases.md` (FASE 12 — Pedidos).
+1. **FASE 12 — Pedidos** (ver `plan-fases.md`).
+2. A partir de ahí, seguir el orden de `plan-fases.md`.
 3. **Deuda de diseño pendiente** (no bloqueante): aplicar el mismo estándar visual de Productos/Carta (tarjetas, fotos, efectos) a Usuarios/Personal/Roles/Empresa cuando se retomen esos módulos — ver `decisiones-tecnicas.md`.
 
 ## Decisiones que ya no requieren volver a discutirse

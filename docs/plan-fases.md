@@ -16,7 +16,7 @@ Orden base definido en la sección 15 de `CLAUDE.md` (no se modifica ese documen
 | 9        | Productos (incluye endpoint público de carta; + Marcas y Unidad de Medida)    | `CLAUDE.md` + decisión 2026-09-07 | Completada |
 | 10       | Salones y mesas                                                               | `CLAUDE.md`                       | Completada |
 | 11       | Clientes                                                                      | `CLAUDE.md`                       | Completada |
-| **11.5** | **Reservas de mesa**                                                          | **Decisión 2026-09-07**           | Pendiente  |
+| **11.5** | **Reservas de mesa**                                                          | **Decisión 2026-09-07**           | Completada |
 | 12       | Pedidos                                                                       | `CLAUDE.md`                       | Pendiente  |
 | 13       | Comandas y cocina                                                             | `CLAUDE.md`                       | Pendiente  |
 | 14       | Ventas y pagos                                                                | `CLAUDE.md`                       | Pendiente  |

@@ -12,10 +12,11 @@ React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, conf
 - Antes de crear un nuevo elemento visual (botón, badge, tarjeta), revisar `components/ui/` — ya existe casi todo lo necesario para mantener consistencia (regla 8 de `CLAUDE.md`).
 - **Sidebar deslizable/colapsable (2026-09-07)**: en escritorio, un botón la colapsa a una barra solo-iconos (con `title` como tooltip), preferencia persistida en `localStorage`; en móvil (`<md`) se convierte en un drawer off-canvas (`position: fixed` + `translate-x`) con backdrop, abierto desde un botón de menú (`Menu` de lucide) en el `Navbar`. Los enlaces se filtran por `tienePermiso(...)` — un usuario sin el permiso `xxx.ver` de un módulo no ve su enlace (ni el grupo completo si ninguno de sus hijos es visible).
 - **Fix de layout — shell fijo al viewport (2026-09-07)**: `AdminLayout` tenía el contenedor exterior en `min-h-screen` (crece con el contenido) pero el `<aside>` en `h-screen` (100vh fijo); si una página tenía más contenido que la pantalla, el sidebar quedaba corto y se veía el fondo claro debajo (reporte del usuario: "el sidebar es más pequeño que el tamaño de la página"). Ahora el contenedor exterior es `h-screen overflow-hidden` y la columna derecha `overflow-hidden` también, de forma que **solo `<main>` hace scroll** (`flex-1 overflow-y-auto`) y el sidebar siempre cubre el 100% del viewport sin importar cuánto contenido tenga la página. Patrón a mantener: nunca poner `h-screen` en un hijo cuyo padre no esté también fijado a `h-screen` — o el hijo se desincroniza cuando el contenido crece.
-- **Sidebar con submenús (2026-09-07)**: `components/Sidebar.tsx` define `menu: ItemMenu[]` como una lista de enlaces simples o grupos (`{ tipo: 'grupo', etiqueta, icono, hijos: [...] }`); los grupos actuales son "Carta" (Categorías/Marcas/Productos), "Local" (Salones/Mesas), "Clientes", "Administración" (Usuarios/Personal/Roles) y "Empresa" (Configuración) — pensados para que las fases futuras (Ventas, Pedidos, Caja, Inventario...) agreguen su propio grupo en vez de reestructurar el componente. Cada grupo es un acordeón (estado `Set<string>` de grupos abiertos, sin `useEffect` — el grupo de la ruta activa se abre vía el inicializador perezoso de `useState`, no reactivamente, para evitar el lint `react-hooks/set-state-in-effect`); en el modo colapsado (solo iconos), tocar un grupo fuerza expandir la barra completa (`onExpandir`) y lo abre.
+- **Sidebar con submenús (2026-09-07)**: `components/Sidebar.tsx` define `menu: ItemMenu[]` como una lista de enlaces simples o grupos (`{ tipo: 'grupo', etiqueta, icono, hijos: [...] }`); los grupos actuales son "Carta" (Categorías/Marcas/Productos), "Local" (Salones/Mesas), "Clientes" (Clientes/Reservas), "Administración" (Usuarios/Personal/Roles) y "Empresa" (Configuración) — pensados para que las fases futuras (Ventas, Pedidos, Caja, Inventario...) agreguen su propio grupo en vez de reestructurar el componente. Cada grupo es un acordeón (estado `Set<string>` de grupos abiertos, sin `useEffect` — el grupo de la ruta activa se abre vía el inicializador perezoso de `useState`, no reactivamente, para evitar el lint `react-hooks/set-state-in-effect`); en el modo colapsado (solo iconos), tocar un grupo fuerza expandir la barra completa (`onExpandir`) y lo abre.
 - **Dashboard agrupado por sección (2026-09-07)**: `Dashboard.tsx` arma un arreglo `secciones` (título + lista de tarjetas con su `useQuery` correspondiente) y renderiza cada una con un encabezado `uppercase` seguido de una grilla — mismo agrupamiento que el sidebar. Reemplazó una grilla única de 9 `StatCard` sin agrupar que quedaba con saltos de columna incómodos. `StatCard` ahora acepta una prop `ruta` opcional: si se pasa, la tarjeta completa es un `Link` a esa página.
 - **Patrón de tarjetas con foto (desde FASE 9, ver Productos/Carta)**: para catálogos con imagen (no tablas de datos administrativos como Usuarios/Roles), se usa una grilla de tarjetas (`grid grid-cols-*`) con imagen en `aspect-4/3`, `overflow-hidden` + `group-hover:scale-110` `transition-transform` para el efecto de zoom, badge de categoría superpuesto, y precio con `Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN' })` (helper `utils/formato.ts: formatearPrecio`). Reutilizar este patrón para futuros módulos con imagen en vez de crear uno nuevo.
 - **Búsqueda de documento SUNAT compartida (2026-09-07)**: `components/CampoBusquedaDocumento.tsx` es un componente genérico (sobre el tipo de formulario, vía generics de react-hook-form: `Control<T>`, `Path<T>`, etc.) que renderiza el campo "N° de documento" + botón de búsqueda RENIEC/SUNAT. Antes vivía duplicado dentro de `Personal.tsx`; ahora lo usan tanto `Personal.tsx` como `Clientes.tsx`, cada uno pasando su propia función `consultar` (`personalService.consultarDocumento` / `clientesService.consultarDocumento`) y su propio `onEncontrado` para mapear el resultado a sus campos (Personal separa apellido paterno/materno; Clientes los concatena en un solo campo `apellidos`). Antes de crear un campo de documento nuevo, usar este componente, no duplicarlo.
+- **Reservas (FASE 11.5, 2026-09-07)**: `Reservas.tsx` usa un `<input type="datetime-local">` para `fechaHora`; helpers nuevos en `utils/formato.ts` — `aInputDatetimeLocal(iso)` convierte un ISO de la API a la forma local que ese input espera (al editar), y `formatearFechaHora(iso)` la formatea para mostrar en la tabla (`Intl.DateTimeFormat('es-PE', ...)`). **Gotcha real encontrado y corregido:** con `valueAsNumber: true` en un campo numérico opcional (`duracionMinutos`) dejado vacío, react-hook-form produce `NaN` (no `undefined`), que `JSON.stringify` convierte en `null` — y el schema zod del backend (`.optional()`, sin `.nullable()`) lo rechaza con 400 "Datos de entrada inválidos". Antes de enviar, hay que convertir `NaN` a `undefined` explícitamente (`Number.isNaN(valor) ? undefined : valor`) para que la clave se omita del body en vez de viajar como `null`. Aplica a cualquier campo numérico opcional con `valueAsNumber`, no solo a este.
 - **Deuda de diseño pendiente:** Usuarios/Personal/Roles/Empresa siguen con el diseño de tabla simple original; se elevarán al mismo estándar visual en una fase/commit separado cuando se retomen (decisión del usuario, ver `decisiones-tecnicas.md`), no se rediseñó todo el proyecto de una sola vez.
 
 ## Estructura
@@ -25,7 +26,7 @@ src/
   components/     Sidebar, Navbar (shell del layout admin)
   components/ui/  Table, Modal, Alert, Spinner — primitivas reutilizables por todas las páginas
   layouts/         AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header simple+Outlet)
-  pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa, Categorias, Marcas, Productos, Salones, Mesas, Clientes
+  pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa, Categorias, Marcas, Productos, Salones, Mesas, Clientes, Reservas
   pages/public/    Carta (datos reales desde FASE 9: GET /api/productos/publico)
   routes/          AppRoutes.tsx (árbol de rutas), ProtectedRoute.tsx (guard de auth)
   context/         AuthContext.tsx — sesión, login/logout, tienePermiso(codigo)
@@ -36,22 +37,23 @@ src/
 
 ## Rutas actuales
 
-| Ruta                | Layout  | Página                                                 | Protegida             |
-| ------------------- | ------- | ------------------------------------------------------ | --------------------- |
-| `/`                 | Admin   | Dashboard                                              | Sí (`ProtectedRoute`) |
-| `/usuarios`         | Admin   | Usuarios (lista + crear)                               | Sí                    |
-| `/personal`         | Admin   | Personal (lista + crear)                               | Sí                    |
-| `/roles`            | Admin   | Roles (lista + crear, con selección de permisos)       | Sí                    |
-| `/empresa`          | Admin   | Empresa (lista + editar)                               | Sí                    |
-| `/categorias`       | Admin   | Categorías (lista + crear + editar + eliminar)         | Sí                    |
-| `/marcas`           | Admin   | Marcas (lista + crear + editar + eliminar)             | Sí                    |
-| `/productos`        | Admin   | Productos (tarjetas con foto, marca, unidad de medida) | Sí                    |
-| `/salones`          | Admin   | Salones (lista + crear + editar + eliminar)            | Sí                    |
-| `/mesas`            | Admin   | Mesas (tabla + filtro por salón)                       | Sí                    |
-| `/clientes`         | Admin   | Clientes (lista + crear + editar + desactivar)         | Sí                    |
-| `/cambiar-password` | Admin   | Cambiar contraseña propia                              | Sí                    |
-| `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`) | No                    |
-| `/carta`            | Público | Carta (datos reales: productos activos por categoría)  | No                    |
+| Ruta                | Layout  | Página                                                             | Protegida             |
+| ------------------- | ------- | ------------------------------------------------------------------ | --------------------- |
+| `/`                 | Admin   | Dashboard                                                          | Sí (`ProtectedRoute`) |
+| `/usuarios`         | Admin   | Usuarios (lista + crear)                                           | Sí                    |
+| `/personal`         | Admin   | Personal (lista + crear)                                           | Sí                    |
+| `/roles`            | Admin   | Roles (lista + crear, con selección de permisos)                   | Sí                    |
+| `/empresa`          | Admin   | Empresa (lista + editar)                                           | Sí                    |
+| `/categorias`       | Admin   | Categorías (lista + crear + editar + eliminar)                     | Sí                    |
+| `/marcas`           | Admin   | Marcas (lista + crear + editar + eliminar)                         | Sí                    |
+| `/productos`        | Admin   | Productos (tarjetas con foto, marca, unidad de medida)             | Sí                    |
+| `/salones`          | Admin   | Salones (lista + crear + editar + eliminar)                        | Sí                    |
+| `/mesas`            | Admin   | Mesas (tabla + filtro por salón)                                   | Sí                    |
+| `/clientes`         | Admin   | Clientes (lista + crear + editar + desactivar)                     | Sí                    |
+| `/reservas`         | Admin   | Reservas (tabla + filtro por estado, confirmar/completar/cancelar) | Sí                    |
+| `/cambiar-password` | Admin   | Cambiar contraseña propia                                          | Sí                    |
+| `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`)             | No                    |
+| `/carta`            | Público | Carta (datos reales: productos activos por categoría)              | No                    |
 
 `ProtectedRoute` redirige a `/login` si no hay sesión (tras intentar un refresh silencioso vía cookie httpOnly). Cada página oculta sus acciones de creación/edición si el usuario no tiene el permiso correspondiente (`tienePermiso('xxx.crear')`), aunque la protección real está en el backend.
 
