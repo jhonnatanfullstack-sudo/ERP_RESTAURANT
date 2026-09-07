@@ -18,14 +18,17 @@ El catálogo de permisos es controlado por el código (sembrado en migraciones),
 | `categorias.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de categorías de la carta (`.eliminar` bloqueado si tiene productos)         |
 | `marcas.ver` / `.crear` / `.editar` / `.eliminar`     | Gestión de marcas de producto (`.eliminar` bloqueado si tiene productos)             |
 | `productos.ver` / `.crear` / `.editar` / `.eliminar`  | Gestión de productos (`.eliminar` = borrado real, también borra la foto)             |
+| `salones.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de salones (`.eliminar` bloqueado si tiene mesas)                            |
+| `mesas.ver` / `.crear` / `.editar` / `.eliminar`      | Gestión de mesas (`.eliminar` = borrado real)                                        |
 
-Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `mesas.*` / `salones.*` en FASE 10, `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
+Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `clientes.*` en FASE 11, `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
 
 ## Semántica de "eliminar" (2026-09-07)
 
 - **Usuarios y Personal** tienen columna `activo`: "eliminar" es un **borrado lógico** (`DELETE` en la API pone `activo = false`), no se pierde el registro ni se rompe integridad referencial. Al desactivar un `personal`, su `usuario` (si tiene uno) también se desactiva automáticamente. Un usuario no puede desactivarse a sí mismo (protección contra bloqueo accidental).
 - **Roles** no tiene columna `activo`: "eliminar" es un **borrado real** (`DELETE FROM roles`), bloqueado con 409 si algún usuario todavía tiene ese rol asignado.
-- **Categorías y Marcas**: mismo patrón que Roles — borrado real, bloqueado con 409 si algún producto todavía las referencia (`producto.categoria_id` / `producto.marca_id` son `ON DELETE RESTRICT`; el pre-check en el service evita que la violación de FK llegue como un 500 sin explicación).
+- **Categorías, Marcas y Salones**: mismo patrón que Roles — borrado real, bloqueado con 409 si algún producto/mesa todavía las referencia (FK `ON DELETE RESTRICT`; el pre-check en el service evita que la violación de FK llegue como un 500 sin explicación).
+- **Mesas**: borrado real sin restricción (nada las referencia todavía); único `(salon_id, numero)` — crear/editar con un número repetido en el mismo salón responde 409, no una violación de índice sin explicación.
 - **Empresa** no tiene endpoint de eliminar — una empresa no se borra desde la UI.
 
 ## Rol de arranque

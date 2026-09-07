@@ -55,8 +55,10 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 | GET/POST/PUT/DELETE | `/api/productos`, `/api/productos/:id`                                               | Sí + `productos.*`         | CRUD de productos (DELETE = borrado real, elimina la foto)                  |
 | POST                | `/api/productos/:id/imagen`                                                          | Sí + `productos.editar`    | Sube/reemplaza la foto del producto (`multipart/form-data`, campo `imagen`) |
 | GET                 | `/api/productos/publico`                                                             | No                         | Productos activos de categorías activas, para la carta pública              |
+| GET/POST/PUT/DELETE | `/api/salones`, `/api/salones/:id`                                                   | Sí + `salones.*`           | CRUD de salones (DELETE = bloqueado si tiene mesas)                         |
+| GET/POST/PUT/DELETE | `/api/mesas`, `/api/mesas/:id`                                                       | Sí + `mesas.*`             | CRUD de mesas (único `numero` por salón, DELETE = borrado real)             |
 
-Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 10.
+Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 11.
 
 ### Archivos subidos (imágenes de producto)
 

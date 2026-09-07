@@ -23,6 +23,8 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 | `marcas`                    | Marcas de producto (ej. una gaseosa embotellada); opcional en `productos`                        | `id` uuid                |
 | `unidades_medida`           | Catálogo SUNAT N° 03 (Unidad, Kilogramo, Gramo, Litro, etc.)                                     | `id` uuid                |
 | `productos`                 | Productos/platillos de la carta, con foto, marca opcional y unidad de medida (FASE 9)            | `id` uuid                |
+| `salones`                   | Ambientes del local donde se ubican las mesas (FASE 10)                                          | `id` uuid                |
+| `mesas`                     | Mesas físicas, pertenecen a un salón (FASE 10)                                                   | `id` uuid                |
 
 **Relaciones:**
 
@@ -35,6 +37,7 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `productos.categoria_id` → `categorias.id` (`ON DELETE RESTRICT`: no se puede borrar una categoría con productos)
 - `productos.marca_id` → `marcas.id`, **nullable** (`ON DELETE RESTRICT`: no todo producto tiene marca, pero si la tiene no se puede borrar esa marca)
 - `productos.unidad_medida_id` → `unidades_medida.id`, obligatoria (`ON DELETE RESTRICT`)
+- `mesas.salon_id` → `salones.id`, obligatoria (`ON DELETE RESTRICT`); índice único compuesto `(salon_id, numero)` — el mismo número de mesa puede repetirse en salones distintos, no dentro del mismo salón
 
 **Por qué este orden (Empresa → Personal → Usuario):** decisión explícita del usuario (2026-09-07). Un `usuario` (cuenta de acceso) siempre parte de un registro de `personal` ya existente (persona real, identificada por documento), y todo `personal` pertenece a una `empresa`. Esto evita datos de personas duplicados entre módulos futuros (ej. nombre/apellido no se repiten en `usuarios`) y prepara el sistema para "Múltiples sucursales" (expansión futura de `CLAUDE.md` sección 1): varias sucursales podrán colgar de una misma `empresa` sin rediseñar el núcleo de identidad.
 
@@ -82,5 +85,6 @@ Migraciones aplicadas (en orden):
 8. `MarcaYUnidadMedidaTablas` — crea `marcas` y `unidades_medida`, agrega `productos.marca_id` (nullable).
 9. `SeedUnidadesMedida` / `SeedPermisosMarcas` — datos semilla del catálogo y permisos de marcas.
 10. `ProductoUnidadMedida` — agrega `productos.unidad_medida_id`: se crea **nullable primero**, se hace `UPDATE` de los productos ya existentes a la unidad `NIU` (Unidad), y recién entonces se pone `NOT NULL` + FK. Patrón a seguir cada vez que se agrega una columna obligatoria a una tabla que ya puede tener filas reales (no solo datos de prueba).
+11. `SalonYMesaTablas` / `SeedPermisosSalonesMesas` — crea `salones` y `mesas` (con índice único `(salon_id, numero)`) y sus permisos (FASE 10).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.

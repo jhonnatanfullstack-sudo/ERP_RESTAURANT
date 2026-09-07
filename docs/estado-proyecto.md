@@ -4,7 +4,7 @@
 
 ## Resumen ejecutivo
 
-- **Fases completadas:** 0 a 9 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, y Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real). Todo probado de punta a punta en navegador real (Playwright).
+- **Fases completadas:** 0 a 10 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real, y Salones/Mesas). Todo probado de punta a punta en navegador real (Playwright).
 - **Modo de avance:** el usuario autorizó avanzar de fase en fase sin pedir confirmación ("CONTINUAR") en cada una, siempre validando que no haya errores. Ver `plan-fases.md` → sección "Modo de avance".
 - **El sistema ya es usable de extremo a extremo**: se puede iniciar sesión, crear personal/usuarios/roles, crear categorías/marcas y productos con foto y unidad de medida, y la carta pública (`/carta`, sin login) ya muestra productos reales agrupados por categoría.
 - **Decisión de alcance (2026-09-07):** el usuario pidió que "el sistema sea completo" e insinuó adelantar Insumos/Recetas (mezcla de ingredientes con cantidades por platillo) ahora mismo. Se le explicó que eso vive en FASE 16 (Inventario) + FASE 18 (Recetas), con manejo de stock/compras/kardex, y **eligió seguir el orden original del plan** — no construir Insumos/Recetas todavía. En su lugar se ampliaron Categorías/Productos con lo que sí correspondía ahora: Marcas y Unidad de Medida SUNAT, más un sidebar con submenús preparado para los grupos que faltan (Ventas, Pedidos, Inventario, etc.). Ver `decisiones-tecnicas.md`.
@@ -20,7 +20,7 @@ pnpm install
 docker compose up -d
 docker inspect restaurant_erp_postgres --format '{{.State.Health.Status}}'  # debe decir "healthy"
 
-# 3. Verificar migraciones aplicadas (deben ser 13)
+# 3. Verificar migraciones aplicadas (deben ser 15)
 pnpm --filter @restaurant-erp/backend migration:show
 
 # 4. Validar que todo compila/lint limpio antes de seguir
@@ -41,7 +41,7 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 ## Qué existe hasta ahora
 
 - **Monorepo pnpm** (`apps/backend`, `apps/frontend`, `packages/*`) — FASE 1.
-- **Base de datos** (FASE 2 en adelante): 13 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
+- **Base de datos** (FASE 2 en adelante): 15 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
 - **Backend base** (FASE 3): Express, Helmet, CORS, rate limiting, manejo de errores, formato de respuesta consistente. Ver `api.md`.
 - **Frontend base** (FASE 4): Vite + React 19 + Tailwind 4 + React Router 8 + TanStack Query. Ver `frontend.md`.
 - **Usuarios/Personal/Empresa/Roles/Permisos (FASE 5-6)**: CRUD completo backend (controller/service/repository/dto con zod) para los 5 módulos, con reglas de negocio reales (unicidad de RUC/documento/email, 1 usuario por personal, etc.). Frontend: páginas `Usuarios`, `Personal`, `Roles`, `Empresa` con tabla + formulario de creación (modal), usando TanStack Query.
@@ -52,14 +52,14 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 - **Categorías (FASE 8)**: CRUD completo backend + frontend (`/categorias`), permisos `categorias.*`. `DELETE` bloqueado (409) si tiene productos.
 - **Marcas y Unidad de Medida SUNAT (2026-09-07, ampliación de FASE 9)**: `Marcas` es un catálogo propio del negocio (CRUD completo, `/marcas`, permisos `marcas.*`, opcional en un producto); `unidades_medida` es el Catálogo SUNAT N° 03 (sembrado por migración, solo lectura vía `/api/catalogos/unidades-medida`, igual que tipos de documento/comprobante). Ambos se agregaron a `productos` (`marca_id` nullable, `unidad_medida_id` obligatoria).
 - **Productos (FASE 9)**: CRUD completo backend + frontend (`/productos`) con foto (subida vía `multer`, servida en `/uploads`), marca opcional, unidad de medida, filtro por categoría, tarjetas con zoom al hover. La **carta pública** (`/carta`, sin login) ahora consume `GET /api/productos/publico` y muestra productos reales agrupados por categoría con el mismo tratamiento visual. Ver `api.md` y `decisiones-tecnicas.md`.
-- **Sin implementar todavía:** salones/mesas, pedidos, comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (reservas/login/pago).
+- **Salones y Mesas (FASE 10, 2026-09-07)**: CRUD completo backend + frontend. `Salon` es un catálogo simple (nombre/descripción/activo, igual patrón que Categoría); `Mesa` pertenece a un salón (`salon_id` FK, `ON DELETE RESTRICT`), con `numero` + `capacidad`, único por `(salon_id, numero)` (no puede haber dos "Mesa 1" en el mismo salón, sí en salones distintos). `DELETE` de Salón bloqueado (409) si tiene mesas. Sin estado de ocupación todavía (libre/ocupada) — eso se agregará cuando exista Pedidos (FASE 12) y tenga sentido asignar mesas a órdenes reales.
+- **Sin implementar todavía:** pedidos, comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (reservas/login/pago).
 
 ## Próximos pasos (en orden)
 
-1. **FASE 10 — Salones y mesas.**
-2. **FASE 11 — Clientes**, seguido de **11.5 — Reservas de mesa** (ver `plan-fases.md`).
-3. A partir de ahí, seguir el orden de `plan-fases.md`.
-4. **Deuda de diseño pendiente** (no bloqueante): aplicar el mismo estándar visual de Productos/Carta (tarjetas, fotos, efectos) a Usuarios/Personal/Roles/Empresa cuando se retomen esos módulos — ver `decisiones-tecnicas.md`.
+1. **FASE 11 — Clientes**, seguido de **11.5 — Reservas de mesa** (ver `plan-fases.md`).
+2. A partir de ahí, seguir el orden de `plan-fases.md`.
+3. **Deuda de diseño pendiente** (no bloqueante): aplicar el mismo estándar visual de Productos/Carta (tarjetas, fotos, efectos) a Usuarios/Personal/Roles/Empresa cuando se retomen esos módulos — ver `decisiones-tecnicas.md`.
 
 ## Decisiones que ya no requieren volver a discutirse
 
