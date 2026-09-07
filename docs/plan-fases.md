@@ -6,7 +6,7 @@ Orden base definido en la sección 15 de `CLAUDE.md` (no se modifica ese documen
 | -------- | ----------------------------------------------------------- | --------------------------------- | ---------- |
 | 0        | Arquitectura y configuración inicial                        | `CLAUDE.md`                       | Completada |
 | 1        | Monorepo y configuración del proyecto                       | `CLAUDE.md`                       | Completada |
-| 2        | PostgreSQL + TypeORM + migraciones                          | `CLAUDE.md`                       | En curso   |
+| 2        | PostgreSQL + TypeORM + migraciones                          | `CLAUDE.md`                       | Completada |
 | 3        | Sistema base del backend                                    | `CLAUDE.md`                       | Pendiente  |
 | 4        | Sistema base del frontend (incluye rutas públicas de carta) | `CLAUDE.md` + decisión 2026-09-07 | Pendiente  |
 | 5        | Usuarios                                                    | `CLAUDE.md`                       | Pendiente  |
