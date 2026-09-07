@@ -28,6 +28,7 @@ export function AdminLayout() {
       <Sidebar
         colapsado={colapsado}
         onToggleColapsado={() => setColapsado((valor) => !valor)}
+        onExpandir={() => setColapsado(false)}
         abiertoMovil={abiertoMovil}
         onCerrarMovil={() => setAbiertoMovil(false)}
       />
