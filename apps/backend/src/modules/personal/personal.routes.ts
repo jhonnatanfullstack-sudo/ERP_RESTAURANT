@@ -8,6 +8,12 @@ export const personalRouter = Router();
 
 personalRouter.use(requireAuth);
 
+personalRouter.get(
+  '/consulta-documento',
+  requirePermission('personal.crear'),
+  personalController.consultarDocumentoExterno,
+);
+
 personalRouter.get('/', requirePermission('personal.ver'), personalController.listar);
 personalRouter.get(
   '/:id',
