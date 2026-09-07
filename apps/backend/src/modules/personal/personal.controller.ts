@@ -3,7 +3,7 @@ import { sendSuccess } from '../../utils/api-response';
 import { getIdParam } from '../../utils/request-params';
 import { HttpError } from '../../utils/http-error';
 import * as personalService from './personal.service';
-import { consultarDocumento } from './consulta-documento.service';
+import { consultarDocumento } from '../catalogos/consulta-documento.service';
 
 export async function listar(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {

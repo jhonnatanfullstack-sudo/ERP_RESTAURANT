@@ -1,43 +1,13 @@
 import { HttpError } from '../../utils/http-error';
 import { empresaRepository } from '../empresa/empresa.repository';
 import { tipoDocumentoIdentidadRepository } from '../catalogos/catalogos.repository';
+import { validarFormatoDocumento } from '../catalogos/formato-documento.util';
 import { usuarioRepository } from '../usuarios/usuario.repository';
 import { personalRepository } from './personal.repository';
 import type { ActualizarPersonalDto, CrearPersonalDto } from './personal.dto';
 import type { Personal } from './personal.entity';
-import type { TipoDocumentoIdentidad } from '../catalogos/tipo-documento-identidad.entity';
 
 const RELACIONES = { empresa: true, tipoDocumentoIdentidad: true } as const;
-
-/**
- * Formato esperado del número de documento por código de catálogo SUNAT 06.
- * DNI (1) y RUC (6) tienen formato oficial fijo; CE (4) y Pasaporte (7) son
- * alfanuméricos de longitud variable; "Sin documento" (0) no se valida.
- */
-const FORMATOS_DOCUMENTO: Record<string, { patron: RegExp; mensaje: string }> = {
-  '1': { patron: /^\d{8}$/, mensaje: 'El DNI debe tener exactamente 8 dígitos' },
-  '6': { patron: /^\d{11}$/, mensaje: 'El RUC debe tener exactamente 11 dígitos' },
-  '4': {
-    patron: /^[A-Za-z0-9]{6,12}$/,
-    mensaje: 'El Carné de Extranjería debe tener entre 6 y 12 caracteres alfanuméricos',
-  },
-  '7': {
-    patron: /^[A-Za-z0-9]{6,12}$/,
-    mensaje: 'El Pasaporte debe tener entre 6 y 12 caracteres alfanuméricos',
-  },
-};
-
-function validarFormatoDocumento(
-  tipoDocumentoIdentidad: TipoDocumentoIdentidad,
-  numeroDocumento: string,
-): void {
-  const formato = FORMATOS_DOCUMENTO[tipoDocumentoIdentidad.codigo];
-  if (formato && !formato.patron.test(numeroDocumento)) {
-    throw new HttpError(400, formato.mensaje, [
-      'numeroDocumento no coincide con el tipo de documento',
-    ]);
-  }
-}
 
 export async function listarPersonal(): Promise<Personal[]> {
   return personalRepository.find({ relations: RELACIONES, order: { creadoEn: 'DESC' } });

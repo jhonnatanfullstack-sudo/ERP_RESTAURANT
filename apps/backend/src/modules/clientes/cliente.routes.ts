@@ -8,6 +8,12 @@ export const clienteRouter = Router();
 
 clienteRouter.use(requireAuth);
 
+clienteRouter.get(
+  '/consulta-documento',
+  requirePermission('clientes.crear'),
+  clienteController.consultarDocumentoExterno,
+);
+
 clienteRouter.get('/', requirePermission('clientes.ver'), clienteController.listar);
 clienteRouter.get(
   '/:id',

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { Pencil, Trash2, UserPlus } from 'lucide-react';
 import * as clientesService from '../services/clientes.service';
+import * as catalogosService from '../services/catalogos.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
@@ -11,6 +12,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { CampoBusquedaDocumento } from '../components/CampoBusquedaDocumento';
 import type { ActualizarClienteInput, CrearClienteInput } from '../services/clientes.service';
 import type { Cliente } from '../types/api';
 
@@ -39,6 +41,10 @@ export function Clientes() {
     queryKey: ['clientes'],
     queryFn: clientesService.listarClientes,
   });
+  const tiposDocQuery = useQuery({
+    queryKey: ['tipos-documento-identidad'],
+    queryFn: catalogosService.listarTiposDocumentoIdentidad,
+  });
 
   const crearForm = useForm<CrearClienteInput>();
   const editarForm = useForm<ActualizarClienteInput>();
@@ -48,6 +54,7 @@ export function Clientes() {
       clientesService.crearCliente({
         ...values,
         apellidos: vacioANull(values.apellidos),
+        tipoDocumentoIdentidadId: vacioANull(values.tipoDocumentoIdentidadId),
         numeroDocumento: vacioANull(values.numeroDocumento),
         telefono: vacioANull(values.telefono),
         email: vacioANull(values.email),
@@ -65,6 +72,7 @@ export function Clientes() {
       clientesService.actualizarCliente(clienteEditando!.id, {
         ...values,
         apellidos: vacioANull(values.apellidos),
+        tipoDocumentoIdentidadId: vacioANull(values.tipoDocumentoIdentidadId),
         numeroDocumento: vacioANull(values.numeroDocumento),
         telefono: vacioANull(values.telefono),
         email: vacioANull(values.email),
@@ -106,7 +114,13 @@ export function Clientes() {
             encabezado: 'Nombre completo',
             render: (c) => `${c.nombres} ${c.apellidos ?? ''}`.trim(),
           },
-          { encabezado: 'Documento', render: (c) => c.numeroDocumento ?? '—' },
+          {
+            encabezado: 'Documento',
+            render: (c) =>
+              c.numeroDocumento
+                ? `${c.tipoDocumentoIdentidad?.nombre ?? ''}: ${c.numeroDocumento}`.trim()
+                : '—',
+          },
           { encabezado: 'Teléfono', render: (c) => c.telefono ?? '—' },
           { encabezado: 'Correo', render: (c) => c.email ?? '—' },
           {
@@ -129,6 +143,7 @@ export function Clientes() {
                       editarForm.reset({
                         nombres: c.nombres,
                         apellidos: c.apellidos ?? '',
+                        tipoDocumentoIdentidadId: c.tipoDocumentoIdentidad?.id ?? '',
                         numeroDocumento: c.numeroDocumento ?? '',
                         telefono: c.telefono ?? '',
                         email: c.email ?? '',
@@ -189,18 +204,43 @@ export function Clientes() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelClass}>N° de documento</label>
-              <input {...crearForm.register('numeroDocumento')} className={inputClass} />
+              <label className={labelClass}>Tipo de documento</label>
+              <select {...crearForm.register('tipoDocumentoIdentidadId')} className={inputClass}>
+                <option value="">Sin documento</option>
+                {tiposDocQuery.data?.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </select>
             </div>
+            <CampoBusquedaDocumento
+              control={crearForm.control}
+              tipos={tiposDocQuery.data}
+              register={crearForm.register}
+              getValues={crearForm.getValues}
+              campoTipo="tipoDocumentoIdentidadId"
+              campoNumero="numeroDocumento"
+              consultar={clientesService.consultarDocumento}
+              onEncontrado={(datos) => {
+                crearForm.setValue('nombres', datos.nombres, { shouldValidate: true });
+                const apellidos = [datos.apellidoPaterno, datos.apellidoMaterno]
+                  .filter(Boolean)
+                  .join(' ');
+                if (apellidos) crearForm.setValue('apellidos', apellidos);
+              }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Teléfono</label>
               <input {...crearForm.register('telefono')} className={inputClass} />
             </div>
-          </div>
-
-          <div>
-            <label className={labelClass}>Correo electrónico</label>
-            <input type="email" {...crearForm.register('email')} className={inputClass} />
+            <div>
+              <label className={labelClass}>Correo electrónico</label>
+              <input type="email" {...crearForm.register('email')} className={inputClass} />
+            </div>
           </div>
 
           <div>
@@ -251,18 +291,43 @@ export function Clientes() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className={labelClass}>N° de documento</label>
-                <input {...editarForm.register('numeroDocumento')} className={inputClass} />
+                <label className={labelClass}>Tipo de documento</label>
+                <select {...editarForm.register('tipoDocumentoIdentidadId')} className={inputClass}>
+                  <option value="">Sin documento</option>
+                  {tiposDocQuery.data?.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.nombre}
+                    </option>
+                  ))}
+                </select>
               </div>
+              <CampoBusquedaDocumento
+                control={editarForm.control}
+                tipos={tiposDocQuery.data}
+                register={editarForm.register}
+                getValues={editarForm.getValues}
+                campoTipo="tipoDocumentoIdentidadId"
+                campoNumero="numeroDocumento"
+                consultar={clientesService.consultarDocumento}
+                onEncontrado={(datos) => {
+                  editarForm.setValue('nombres', datos.nombres, { shouldValidate: true });
+                  const apellidos = [datos.apellidoPaterno, datos.apellidoMaterno]
+                    .filter(Boolean)
+                    .join(' ');
+                  if (apellidos) editarForm.setValue('apellidos', apellidos);
+                }}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelClass}>Teléfono</label>
                 <input {...editarForm.register('telefono')} className={inputClass} />
               </div>
-            </div>
-
-            <div>
-              <label className={labelClass}>Correo electrónico</label>
-              <input type="email" {...editarForm.register('email')} className={inputClass} />
+              <div>
+                <label className={labelClass}>Correo electrónico</label>
+                <input type="email" {...editarForm.register('email')} className={inputClass} />
+              </div>
             </div>
 
             <div>

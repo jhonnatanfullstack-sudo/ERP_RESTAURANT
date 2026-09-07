@@ -15,6 +15,9 @@ export interface DatosDocumento {
  * antiguos). Requiere APIS_NET_PE_TOKEN configurado; si no está presente,
  * el servicio se considera no disponible (503) en vez de fallar el arranque
  * de la app, ya que es una integración opcional.
+ *
+ * Compartido entre Personal y Clientes (ambos permiten buscar datos por
+ * documento SUNAT), para no duplicar la integración externa.
  */
 export async function consultarDocumento(
   tipo: 'dni' | 'ruc',

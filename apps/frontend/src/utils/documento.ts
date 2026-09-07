@@ -17,3 +17,6 @@ export const FORMATOS_DOCUMENTO: Record<
   },
   '7': { maxLength: 12, patron: /^[A-Za-z0-9]{0,12}$/, ayuda: 'Pasaporte: 6-12 caracteres' },
 };
+
+/** Códigos del catálogo SUNAT 06 que apis.net.pe puede consultar (DNI/RUC). */
+export const CODIGOS_CONSULTABLES: Record<string, 'dni' | 'ruc'> = { '1': 'dni', '6': 'ruc' };

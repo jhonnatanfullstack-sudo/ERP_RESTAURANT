@@ -1,9 +1,10 @@
 import { api } from './api';
-import type { ApiSuccess, Cliente } from '../types/api';
+import type { ApiSuccess, Cliente, DatosDocumento } from '../types/api';
 
 export interface CrearClienteInput {
   nombres: string;
   apellidos?: string | null;
+  tipoDocumentoIdentidadId?: string | null;
   numeroDocumento?: string | null;
   telefono?: string | null;
   email?: string | null;
@@ -13,6 +14,7 @@ export interface CrearClienteInput {
 export interface ActualizarClienteInput {
   nombres?: string;
   apellidos?: string | null;
+  tipoDocumentoIdentidadId?: string | null;
   numeroDocumento?: string | null;
   telefono?: string | null;
   email?: string | null;
@@ -37,4 +39,11 @@ export async function actualizarCliente(id: string, input: ActualizarClienteInpu
 
 export async function eliminarCliente(id: string) {
   await api.delete(`/api/clientes/${id}`);
+}
+
+export async function consultarDocumento(tipo: 'dni' | 'ruc', numero: string) {
+  const res = await api.get<ApiSuccess<DatosDocumento>>('/api/clientes/consulta-documento', {
+    params: { tipo, numero },
+  });
+  return res.data.data;
 }

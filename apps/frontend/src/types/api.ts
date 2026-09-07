@@ -102,11 +102,19 @@ export interface Cliente {
   id: string;
   nombres: string;
   apellidos: string | null;
+  tipoDocumentoIdentidad: TipoDocumentoIdentidad | null;
   numeroDocumento: string | null;
   telefono: string | null;
   email: string | null;
   direccion: string | null;
   activo: boolean;
+}
+
+export interface DatosDocumento {
+  numeroDocumento: string;
+  nombres: string;
+  apellidoPaterno: string | null;
+  apellidoMaterno: string | null;
 }
 
 export interface Usuario {

@@ -3,11 +3,15 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { TipoDocumentoIdentidad } from '../catalogos/tipo-documento-identidad.entity';
 
 @Entity('clientes')
+@Index(['tipoDocumentoIdentidad', 'numeroDocumento'], { unique: true })
 export class Cliente {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -18,7 +22,10 @@ export class Cliente {
   @Column({ type: 'varchar', length: 150, nullable: true })
   apellidos!: string | null;
 
-  @Index({ unique: true })
+  @ManyToOne(() => TipoDocumentoIdentidad, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'tipo_documento_identidad_id' })
+  tipoDocumentoIdentidad!: TipoDocumentoIdentidad | null;
+
   @Column({ name: 'numero_documento', type: 'varchar', length: 20, nullable: true })
   numeroDocumento!: string | null;
 

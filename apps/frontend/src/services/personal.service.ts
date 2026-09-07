@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { ApiSuccess, Personal } from '../types/api';
+import type { ApiSuccess, DatosDocumento, Personal } from '../types/api';
 
 export interface CrearPersonalInput {
   empresaId: string;
@@ -29,13 +29,6 @@ export async function actualizarPersonal(id: string, input: ActualizarPersonalIn
 
 export async function eliminarPersonal(id: string) {
   await api.delete(`/api/personal/${id}`);
-}
-
-export interface DatosDocumento {
-  numeroDocumento: string;
-  nombres: string;
-  apellidoPaterno: string | null;
-  apellidoMaterno: string | null;
 }
 
 export async function consultarDocumento(tipo: 'dni' | 'ruc', numero: string) {
