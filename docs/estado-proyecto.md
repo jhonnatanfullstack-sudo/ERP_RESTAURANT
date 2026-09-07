@@ -4,8 +4,9 @@
 
 ## Resumen ejecutivo
 
-- **Fase actual completada:** FASE 3 (sistema base del backend: Express, Helmet, CORS, rate limiting, manejo centralizado de errores, `/health`).
-- **En curso:** FASE 4 (sistema base del frontend).
+- **Fase actual completada:** FASE 4 (sistema base del frontend: Vite + React 19 + Tailwind 4 + React Router 8 + TanStack Query, layout admin + layout público, páginas placeholder).
+- **En curso:** FASE 5 (módulo Usuarios).
+- **Pendiente de verificación humana:** el frontend no se probó visualmente en un navegador real en esta sesión (sin herramienta de navegador disponible) — solo se validó con `curl`, `tsc` y `vite build`. Abrir `http://localhost:5173` y revisar la consola antes de confiar en que la UI renderiza sin errores de runtime.
 - **Modo de avance:** el usuario autorizó avanzar de fase en fase sin pedir confirmación ("CONTINUAR") en cada una, siempre validando que no haya errores. Ver `plan-fases.md` → sección "Modo de avance".
 
 ## Cómo retomar el entorno
@@ -38,14 +39,16 @@ pnpm --filter @restaurant-erp/backend build
   2. `EmpresaPersonalYCatalogosSunat` — `empresas`, `personal`, `tipos_documento_identidad`, `tipos_comprobante`; refactoriza `usuarios` para depender de `personal`.
   3. `SeedCatalogosSunat` — datos semilla de los catálogos SUNAT.
 - **Backend base (FASE 3):** `src/app.ts` (Helmet, CORS con `CORS_ORIGIN`, `express.json`, rate limit global 300/15min), `src/server.ts` (bootstrap: conecta TypeORM, luego levanta el servidor), `GET /health` probado en vivo. Manejo de errores centralizado (`src/middlewares/error-handler.middleware.ts` + `src/utils/http-error.ts`) y formato de respuesta consistente (`src/utils/api-response.ts`: `sendSuccess`/`sendError`). Router `/api` montado pero vacío — se llena a partir de FASE 5.
-- **Sin implementar todavía:** frontend (solo scaffolding de carpetas vacías), autenticación JWT, y todos los módulos de negocio (productos, pedidos, ventas, etc.).
-- Detalle completo del esquema: `base-de-datos.md`. Convenciones de API: `api.md`. Decisiones y su razonamiento: `decisiones-tecnicas.md`. Plan de fases: `plan-fases.md`.
+- **Frontend base (FASE 4):** `apps/frontend` con Vite+React+Tailwind+React Router+TanStack Query funcionando (`pnpm --filter @restaurant-erp/frontend dev`/`build` verificados). `AdminLayout` (Sidebar+Navbar) y `PublicLayout`, páginas `Dashboard`, `Login` (solo UI, botón deshabilitado — auth real en FASE 7) y `Carta` (placeholder — datos reales en FASE 8-9). Ver `frontend.md`.
+- **Sin implementar todavía:** autenticación JWT, y todos los módulos de negocio (productos, pedidos, ventas, etc.). El router `/` (Dashboard) no tiene guard de autenticación real todavía.
+- Detalle completo del esquema: `base-de-datos.md`. Convenciones de API: `api.md`. Frontend: `frontend.md`. Decisiones y su razonamiento: `decisiones-tecnicas.md`. Plan de fases: `plan-fases.md`.
 
 ## Próximos pasos (en orden)
 
-1. **FASE 4 — Sistema base del frontend:** Vite + React + Tailwind, layout admin + rutas públicas de carta (ver decisión de arquitectura de una sola app).
-2. **FASE 5-7 — Usuarios, Roles y permisos, Autenticación:** CRUD de `personal`/`usuarios` (staff), login JWT + refresh token, middleware de autorización por permisos.
-3. A partir de ahí, seguir el orden de `plan-fases.md`.
+1. **FASE 5 — Usuarios:** CRUD de `personal` y `usuarios` (staff) en backend (controller/service/repository) + UI en frontend.
+2. **FASE 6 — Roles y permisos:** CRUD de `roles`/`permisos`, asignación rol↔permisos.
+3. **FASE 7 — Autenticación y autorización:** login JWT + refresh token (staff), middleware de autorización por permisos, conectar `Login.tsx` y proteger `AdminLayout` de verdad.
+4. A partir de ahí, seguir el orden de `plan-fases.md`.
 
 ## Decisiones que ya no requieren volver a discutirse
 
