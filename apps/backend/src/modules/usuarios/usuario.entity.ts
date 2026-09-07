@@ -5,18 +5,21 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { Rol } from '../roles/rol.entity';
+import { Personal } from '../personal/personal.entity';
 
 @Entity('usuarios')
 export class Usuario {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'varchar', length: 150 })
-  nombre!: string;
+  @OneToOne(() => Personal, { nullable: false, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'personal_id' })
+  personal!: Personal;
 
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 150, unique: true })

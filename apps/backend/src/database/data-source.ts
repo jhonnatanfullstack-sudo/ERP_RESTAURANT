@@ -5,6 +5,10 @@ import { Usuario } from '../modules/usuarios/usuario.entity';
 import { Rol } from '../modules/roles/rol.entity';
 import { Permiso } from '../modules/permisos/permiso.entity';
 import { RefreshToken } from '../modules/auth/refresh-token.entity';
+import { Empresa } from '../modules/empresa/empresa.entity';
+import { Personal } from '../modules/personal/personal.entity';
+import { TipoDocumentoIdentidad } from '../modules/catalogos/tipo-documento-identidad.entity';
+import { TipoComprobante } from '../modules/catalogos/tipo-comprobante.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -15,6 +19,15 @@ export const AppDataSource = new DataSource({
   password: env.db.password,
   synchronize: false,
   logging: env.nodeEnv === 'development',
-  entities: [Usuario, Rol, Permiso, RefreshToken],
+  entities: [
+    Empresa,
+    Personal,
+    TipoDocumentoIdentidad,
+    TipoComprobante,
+    Usuario,
+    Rol,
+    Permiso,
+    RefreshToken,
+  ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
 });
