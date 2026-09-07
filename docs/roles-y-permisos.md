@@ -8,15 +8,16 @@
 
 El catálogo de permisos es controlado por el código (sembrado en migraciones), no editable vía API — solo se puede **consultar** (`GET /api/permisos`) y **asignar a un rol** (`PUT /api/roles/:id/permisos`). Esto evita que se creen códigos de permiso que ningún middleware verifica realmente.
 
-| Código                                              | Descripción                                                                          |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `usuarios.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de cuentas de usuario (`.eliminar` = desactivar)                             |
-| `personal.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de personal (`.eliminar` = desactivar, cascada a su usuario)                 |
-| `roles.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de roles (`.eliminar` = borrado real, bloqueado si hay usuarios con ese rol) |
-| `permisos.ver`                                      | Consulta del catálogo de permisos                                                    |
-| `empresa.ver` / `.crear` / `.editar`                | Gestión de la empresa (sin `.eliminar`: una empresa no se borra)                     |
-| `categorias.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de categorías de la carta (`.eliminar` = borrado real)                     |
-| `productos.ver` / `.crear` / `.editar` / `.eliminar`  | Gestión de productos (`.eliminar` = borrado real, también borra la foto)           |
+| Código                                                | Descripción                                                                          |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `usuarios.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de cuentas de usuario (`.eliminar` = desactivar)                             |
+| `personal.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de personal (`.eliminar` = desactivar, cascada a su usuario)                 |
+| `roles.ver` / `.crear` / `.editar` / `.eliminar`      | Gestión de roles (`.eliminar` = borrado real, bloqueado si hay usuarios con ese rol) |
+| `permisos.ver`                                        | Consulta del catálogo de permisos                                                    |
+| `empresa.ver` / `.crear` / `.editar`                  | Gestión de la empresa (sin `.eliminar`: una empresa no se borra)                     |
+| `categorias.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de categorías de la carta (`.eliminar` bloqueado si tiene productos)         |
+| `marcas.ver` / `.crear` / `.editar` / `.eliminar`     | Gestión de marcas de producto (`.eliminar` bloqueado si tiene productos)             |
+| `productos.ver` / `.crear` / `.editar` / `.eliminar`  | Gestión de productos (`.eliminar` = borrado real, también borra la foto)             |
 
 Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `mesas.*` / `salones.*` en FASE 10, `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
 
@@ -24,6 +25,7 @@ Se amplía este catálogo (con una nueva migración) a medida que se implementen
 
 - **Usuarios y Personal** tienen columna `activo`: "eliminar" es un **borrado lógico** (`DELETE` en la API pone `activo = false`), no se pierde el registro ni se rompe integridad referencial. Al desactivar un `personal`, su `usuario` (si tiene uno) también se desactiva automáticamente. Un usuario no puede desactivarse a sí mismo (protección contra bloqueo accidental).
 - **Roles** no tiene columna `activo`: "eliminar" es un **borrado real** (`DELETE FROM roles`), bloqueado con 409 si algún usuario todavía tiene ese rol asignado.
+- **Categorías y Marcas**: mismo patrón que Roles — borrado real, bloqueado con 409 si algún producto todavía las referencia (`producto.categoria_id` / `producto.marca_id` son `ON DELETE RESTRICT`; el pre-check en el service evita que la violación de FK llegue como un 500 sin explicación).
 - **Empresa** no tiene endpoint de eliminar — una empresa no se borra desde la UI.
 
 ## Rol de arranque

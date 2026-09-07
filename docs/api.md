@@ -35,25 +35,26 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 
 ## Endpoints existentes
 
-| Método              | Ruta                                                             | Auth                       | Descripción                                                    |
-| ------------------- | ---------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------- |
-| GET                 | `/health`                                                        | No                         | Estado del servidor                                            |
-| POST                | `/api/auth/login`                                                | No                         | Iniciar sesión                                                 |
-| POST                | `/api/auth/refresh`                                              | No (cookie)                | Renovar access token                                           |
-| POST                | `/api/auth/logout`                                               | No                         | Cerrar sesión                                                  |
-| GET                 | `/api/auth/me`                                                   | Sí                         | Usuario autenticado actual                                     |
-| POST                | `/api/auth/cambiar-password`                                     | Sí                         | Cambiar contraseña propia                                      |
-| GET/POST/PUT        | `/api/empresas`, `/api/empresas/:id`                             | Sí + `empresa.*`           | CRUD de empresa                                                |
-| GET/POST/PUT/DELETE | `/api/personal`, `/api/personal/:id`                             | Sí + `personal.*`          | CRUD de personal (DELETE = desactivar)                         |
-| GET/POST/PUT/DELETE | `/api/usuarios`, `/api/usuarios/:id`                             | Sí + `usuarios.*`          | CRUD de usuarios (DELETE = desactivar)                         |
-| GET/POST/PUT/DELETE | `/api/roles`, `/api/roles/:id`, `/api/roles/:id/permisos`        | Sí + `roles.*`             | CRUD de roles y asignación de permisos (DELETE = borrado real) |
-| GET                 | `/api/permisos`                                                  | Sí + `permisos.ver`        | Catálogo de permisos                                           |
-| GET                 | `/api/catalogos/tipos-documento-identidad`, `/tipos-comprobante` | Sí (cualquier autenticado) | Catálogos SUNAT                                                |
-| GET                 | `/api/personal/consulta-documento?tipo=dni\|ruc&numero=...`      | Sí + `personal.crear`      | Autocompleta nombres desde RENIEC/SUNAT (ver abajo)            |
-| GET/POST/PUT/DELETE | `/api/categorias`, `/api/categorias/:id`                        | Sí + `categorias.*`        | CRUD de categorías de la carta (DELETE = borrado real)         |
-| GET/POST/PUT/DELETE | `/api/productos`, `/api/productos/:id`                          | Sí + `productos.*`         | CRUD de productos (DELETE = borrado real, elimina la foto)     |
-| POST                | `/api/productos/:id/imagen`                                      | Sí + `productos.editar`    | Sube/reemplaza la foto del producto (`multipart/form-data`, campo `imagen`) |
-| GET                 | `/api/productos/publico`                                        | No                         | Productos activos de categorías activas, para la carta pública |
+| Método              | Ruta                                                                                 | Auth                       | Descripción                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------ | -------------------------- | --------------------------------------------------------------------------- |
+| GET                 | `/health`                                                                            | No                         | Estado del servidor                                                         |
+| POST                | `/api/auth/login`                                                                    | No                         | Iniciar sesión                                                              |
+| POST                | `/api/auth/refresh`                                                                  | No (cookie)                | Renovar access token                                                        |
+| POST                | `/api/auth/logout`                                                                   | No                         | Cerrar sesión                                                               |
+| GET                 | `/api/auth/me`                                                                       | Sí                         | Usuario autenticado actual                                                  |
+| POST                | `/api/auth/cambiar-password`                                                         | Sí                         | Cambiar contraseña propia                                                   |
+| GET/POST/PUT        | `/api/empresas`, `/api/empresas/:id`                                                 | Sí + `empresa.*`           | CRUD de empresa                                                             |
+| GET/POST/PUT/DELETE | `/api/personal`, `/api/personal/:id`                                                 | Sí + `personal.*`          | CRUD de personal (DELETE = desactivar)                                      |
+| GET/POST/PUT/DELETE | `/api/usuarios`, `/api/usuarios/:id`                                                 | Sí + `usuarios.*`          | CRUD de usuarios (DELETE = desactivar)                                      |
+| GET/POST/PUT/DELETE | `/api/roles`, `/api/roles/:id`, `/api/roles/:id/permisos`                            | Sí + `roles.*`             | CRUD de roles y asignación de permisos (DELETE = borrado real)              |
+| GET                 | `/api/permisos`                                                                      | Sí + `permisos.ver`        | Catálogo de permisos                                                        |
+| GET                 | `/api/catalogos/tipos-documento-identidad`, `/tipos-comprobante`, `/unidades-medida` | Sí (cualquier autenticado) | Catálogos SUNAT                                                             |
+| GET                 | `/api/personal/consulta-documento?tipo=dni\|ruc&numero=...`                          | Sí + `personal.crear`      | Autocompleta nombres desde RENIEC/SUNAT (ver abajo)                         |
+| GET/POST/PUT/DELETE | `/api/categorias`, `/api/categorias/:id`                                             | Sí + `categorias.*`        | CRUD de categorías de la carta (DELETE = bloqueado si tiene productos)      |
+| GET/POST/PUT/DELETE | `/api/marcas`, `/api/marcas/:id`                                                     | Sí + `marcas.*`            | CRUD de marcas de producto (DELETE = bloqueado si tiene productos)          |
+| GET/POST/PUT/DELETE | `/api/productos`, `/api/productos/:id`                                               | Sí + `productos.*`         | CRUD de productos (DELETE = borrado real, elimina la foto)                  |
+| POST                | `/api/productos/:id/imagen`                                                          | Sí + `productos.editar`    | Sube/reemplaza la foto del producto (`multipart/form-data`, campo `imagen`) |
+| GET                 | `/api/productos/publico`                                                             | No                         | Productos activos de categorías activas, para la carta pública              |
 
 Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 10.
 

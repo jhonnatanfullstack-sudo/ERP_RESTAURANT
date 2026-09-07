@@ -4,9 +4,10 @@
 
 ## Resumen ejecutivo
 
-- **Fases completadas:** 0 a 9 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, y Productos con fotos + carta pública real). Todo probado de punta a punta en navegador real (Playwright).
+- **Fases completadas:** 0 a 9 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, y Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real). Todo probado de punta a punta en navegador real (Playwright).
 - **Modo de avance:** el usuario autorizó avanzar de fase en fase sin pedir confirmación ("CONTINUAR") en cada una, siempre validando que no haya errores. Ver `plan-fases.md` → sección "Modo de avance".
-- **El sistema ya es usable de extremo a extremo**: se puede iniciar sesión, crear personal/usuarios/roles, crear categorías y productos con foto, y la carta pública (`/carta`, sin login) ya muestra productos reales agrupados por categoría.
+- **El sistema ya es usable de extremo a extremo**: se puede iniciar sesión, crear personal/usuarios/roles, crear categorías/marcas y productos con foto y unidad de medida, y la carta pública (`/carta`, sin login) ya muestra productos reales agrupados por categoría.
+- **Decisión de alcance (2026-09-07):** el usuario pidió que "el sistema sea completo" e insinuó adelantar Insumos/Recetas (mezcla de ingredientes con cantidades por platillo) ahora mismo. Se le explicó que eso vive en FASE 16 (Inventario) + FASE 18 (Recetas), con manejo de stock/compras/kardex, y **eligió seguir el orden original del plan** — no construir Insumos/Recetas todavía. En su lugar se ampliaron Categorías/Productos con lo que sí correspondía ahora: Marcas y Unidad de Medida SUNAT, más un sidebar con submenús preparado para los grupos que faltan (Ventas, Pedidos, Inventario, etc.). Ver `decisiones-tecnicas.md`.
 - **Diseño visual:** se acordó con el usuario elevar el estándar visual **módulo por módulo** (no un rediseño transversal único) — fotos con efectos hover en vez de 3D real. Ver `decisiones-tecnicas.md` → "Diseño visual: fotos con efectos en vez de 3D real". Los módulos anteriores a FASE 9 (Usuarios/Personal/Roles/Empresa) siguen con el diseño de tabla simple y quedan pendientes de esa misma mejora visual cuando se retomen.
 
 ## Cómo retomar el entorno
@@ -19,7 +20,7 @@ pnpm install
 docker compose up -d
 docker inspect restaurant_erp_postgres --format '{{.State.Health.Status}}'  # debe decir "healthy"
 
-# 3. Verificar migraciones aplicadas (deben ser 9)
+# 3. Verificar migraciones aplicadas (deben ser 13)
 pnpm --filter @restaurant-erp/backend migration:show
 
 # 4. Validar que todo compila/lint limpio antes de seguir
@@ -40,17 +41,18 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 ## Qué existe hasta ahora
 
 - **Monorepo pnpm** (`apps/backend`, `apps/frontend`, `packages/*`) — FASE 1.
-- **Base de datos** (FASE 2 en adelante): 9 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
+- **Base de datos** (FASE 2 en adelante): 13 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
 - **Backend base** (FASE 3): Express, Helmet, CORS, rate limiting, manejo de errores, formato de respuesta consistente. Ver `api.md`.
 - **Frontend base** (FASE 4): Vite + React 19 + Tailwind 4 + React Router 8 + TanStack Query. Ver `frontend.md`.
 - **Usuarios/Personal/Empresa/Roles/Permisos (FASE 5-6)**: CRUD completo backend (controller/service/repository/dto con zod) para los 5 módulos, con reglas de negocio reales (unicidad de RUC/documento/email, 1 usuario por personal, etc.). Frontend: páginas `Usuarios`, `Personal`, `Roles`, `Empresa` con tabla + formulario de creación (modal), usando TanStack Query.
 - **Autenticación (FASE 7)**: JWT access token (memoria, corta duración) + refresh token (cookie httpOnly, rotación en cada uso, revocable en BD). Login, logout, refresh, `/me`, cambiar contraseña — backend y frontend completos. Rutas admin protegidas por `ProtectedRoute`, autorización por permiso (no por rol) en cada endpoint. Ver `autenticacion.md` y `roles-y-permisos.md`.
 - **Editar/eliminar + validaciones (2026-09-07)**: Usuarios/Personal/Roles tienen editar y eliminar en el frontend. `personal.eliminar`/`usuarios.eliminar` = desactivar (con cascada personal→usuario); `roles.eliminar` = borrado real (bloqueado si hay usuarios con ese rol). El número de documento de `Personal` valida su formato según el tipo (DNI=8 dígitos, RUC=11) en backend y frontend. Botón de búsqueda RENIEC/SUNAT vía **apis.net.pe** (ahora sobre `api.decolecta.com/v1`, ver corrección en `decisiones-tecnicas.md`) — funciona solo si se configura `APIS_NET_PE_TOKEN` en `.env` (opcional, degrada con 503 si falta). Ver `api.md` y `roles-y-permisos.md`.
 - **Rediseño visual base (2026-09-07)**: tipografía "Plus Jakarta Sans", acento naranja sobre neutros `zinc`, iconos `lucide-react`, componentes `Button`/`Badge`/`StatCard`/`EmptyState`/`ConfirmDialog` reutilizables. Ver `frontend.md`.
-- **Sidebar deslizable/colapsable (2026-09-07)**: en escritorio se colapsa a solo iconos (persistido en `localStorage`); en móvil es un drawer off-canvas con overlay, abierto desde un botón de menú en el Navbar. Los enlaces se filtran según los permisos reales del usuario.
-- **Categorías (FASE 8)**: CRUD completo backend + frontend (`/categorias`), permisos `categorias.*`.
-- **Productos (FASE 9)**: CRUD completo backend + frontend (`/productos`) con foto por producto (subida vía `multer`, servida en `/uploads`), filtro por categoría, tarjetas con zoom al hover. La **carta pública** (`/carta`, sin login) ahora consume `GET /api/productos/publico` y muestra productos reales agrupados por categoría con el mismo tratamiento visual. Ver `api.md` y `decisiones-tecnicas.md`.
-- **Sin implementar todavía:** salones/mesas, pedidos, comandas/cocina, ventas, caja, inventario, proveedores/compras, recetas, reportes, auditoría, configuración, y el portal de clientes (reservas/login/pago).
+- **Sidebar deslizable/colapsable con submenús (2026-09-07)**: en escritorio se colapsa a solo iconos (persistido en `localStorage`); en móvil es un drawer off-canvas con overlay, abierto desde un botón de menú en el Navbar. Los enlaces se filtran según los permisos reales del usuario. El menú ahora es un acordeón agrupado por dominio — "Carta" (Categorías/Marcas/Productos), "Administración" (Usuarios/Personal/Roles), "Empresa" (Configuración) — preparado para que Ventas/Pedidos/Caja/Inventario agreguen su propio grupo más adelante sin rehacer el componente. Ver `frontend.md`.
+- **Categorías (FASE 8)**: CRUD completo backend + frontend (`/categorias`), permisos `categorias.*`. `DELETE` bloqueado (409) si tiene productos.
+- **Marcas y Unidad de Medida SUNAT (2026-09-07, ampliación de FASE 9)**: `Marcas` es un catálogo propio del negocio (CRUD completo, `/marcas`, permisos `marcas.*`, opcional en un producto); `unidades_medida` es el Catálogo SUNAT N° 03 (sembrado por migración, solo lectura vía `/api/catalogos/unidades-medida`, igual que tipos de documento/comprobante). Ambos se agregaron a `productos` (`marca_id` nullable, `unidad_medida_id` obligatoria).
+- **Productos (FASE 9)**: CRUD completo backend + frontend (`/productos`) con foto (subida vía `multer`, servida en `/uploads`), marca opcional, unidad de medida, filtro por categoría, tarjetas con zoom al hover. La **carta pública** (`/carta`, sin login) ahora consume `GET /api/productos/publico` y muestra productos reales agrupados por categoría con el mismo tratamiento visual. Ver `api.md` y `decisiones-tecnicas.md`.
+- **Sin implementar todavía:** salones/mesas, pedidos, comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (reservas/login/pago).
 
 ## Próximos pasos (en orden)
 

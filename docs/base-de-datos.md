@@ -20,7 +20,9 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 | `roles_permisos`            | Relación N:M entre `roles` y `permisos`                                                          | (`rol_id`, `permiso_id`) |
 | `refresh_tokens`            | Tokens de refresco de sesión, por usuario                                                        | `id` uuid                |
 | `categorias`                | Categorías de la carta (FASE 8)                                                                  | `id` uuid                |
-| `productos`                 | Productos/platillos de la carta, con foto opcional (FASE 9)                                      | `id` uuid                |
+| `marcas`                    | Marcas de producto (ej. una gaseosa embotellada); opcional en `productos`                        | `id` uuid                |
+| `unidades_medida`           | Catálogo SUNAT N° 03 (Unidad, Kilogramo, Gramo, Litro, etc.)                                     | `id` uuid                |
+| `productos`                 | Productos/platillos de la carta, con foto, marca opcional y unidad de medida (FASE 9)            | `id` uuid                |
 
 **Relaciones:**
 
@@ -31,6 +33,8 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `refresh_tokens.usuario_id` → `usuarios.id` (`ON DELETE CASCADE`)
 - `roles_permisos` conecta `roles` ↔ `permisos` (`ON DELETE CASCADE` en ambos lados)
 - `productos.categoria_id` → `categorias.id` (`ON DELETE RESTRICT`: no se puede borrar una categoría con productos)
+- `productos.marca_id` → `marcas.id`, **nullable** (`ON DELETE RESTRICT`: no todo producto tiene marca, pero si la tiene no se puede borrar esa marca)
+- `productos.unidad_medida_id` → `unidades_medida.id`, obligatoria (`ON DELETE RESTRICT`)
 
 **Por qué este orden (Empresa → Personal → Usuario):** decisión explícita del usuario (2026-09-07). Un `usuario` (cuenta de acceso) siempre parte de un registro de `personal` ya existente (persona real, identificada por documento), y todo `personal` pertenece a una `empresa`. Esto evita datos de personas duplicados entre módulos futuros (ej. nombre/apellido no se repiten en `usuarios`) y prepara el sistema para "Múltiples sucursales" (expansión futura de `CLAUDE.md` sección 1): varias sucursales podrán colgar de una misma `empresa` sin rediseñar el núcleo de identidad.
 
@@ -53,6 +57,8 @@ Los catálogos se poblaron con los códigos oficiales más usados (subconjunto e
 
 `tipos_comprobante` no tiene todavía ninguna tabla que lo referencie (se usará en FASE 14 Ventas / futura facturación electrónica SUNAT); se sembró ahora porque el usuario pidió que el diseño de base de datos siga los catálogos SUNAT desde el inicio.
 
+**`unidades_medida`** (Catálogo 03, subconjunto de uso común): `NIU` Unidad, `KGM` Kilogramo, `GRM` Gramo, `LTR` Litro, `MLT` Mililitro, `PK` Paquete, `BX` Caja, `ZZ` Servicio. Usado hoy por `productos.unidad_medida_id`; se reutilizará para las cantidades de insumos cuando se implemente Recetas (FASE 18).
+
 ## Migraciones
 
 Ubicación: `apps/backend/src/database/migrations/`.
@@ -73,5 +79,8 @@ Migraciones aplicadas (en orden):
 5. `SeedPermisosEliminar` — permisos `*.eliminar` para usuarios/personal/roles.
 6. `CategoriaTabla` / `SeedPermisosCategorias` — crea `categorias` y sus permisos (FASE 8).
 7. `ProductoTabla` / `SeedPermisosProductos` — crea `productos` (con `precio numeric(10,2)` e `imagen_url` nullable) y sus permisos (FASE 9).
+8. `MarcaYUnidadMedidaTablas` — crea `marcas` y `unidades_medida`, agrega `productos.marca_id` (nullable).
+9. `SeedUnidadesMedida` / `SeedPermisosMarcas` — datos semilla del catálogo y permisos de marcas.
+10. `ProductoUnidadMedida` — agrega `productos.unidad_medida_id`: se crea **nullable primero**, se hace `UPDATE` de los productos ya existentes a la unidad `NIU` (Unidad), y recién entonces se pone `NOT NULL` + FK. Patrón a seguir cada vez que se agrega una columna obligatoria a una tabla que ya puede tener filas reales (no solo datos de prueba).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.
