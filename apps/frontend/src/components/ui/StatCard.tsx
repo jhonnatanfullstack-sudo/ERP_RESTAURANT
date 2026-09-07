@@ -1,15 +1,17 @@
 import type { LucideIcon } from 'lucide-react';
+import { Link } from 'react-router';
 
 interface StatCardProps {
   etiqueta: string;
   valor: number | string;
   icono: LucideIcon;
   cargando?: boolean;
+  ruta?: string;
 }
 
-export function StatCard({ etiqueta, valor, icono: Icono, cargando }: StatCardProps) {
-  return (
-    <div className="flex items-center gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+export function StatCard({ etiqueta, valor, icono: Icono, cargando, ruta }: StatCardProps) {
+  const contenido = (
+    <>
       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600">
         <Icono className="h-5 w-5" strokeWidth={2} />
       </div>
@@ -23,6 +25,19 @@ export function StatCard({ etiqueta, valor, icono: Icono, cargando }: StatCardPr
           )}
         </p>
       </div>
-    </div>
+    </>
   );
+
+  const clases =
+    'flex items-center gap-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm transition-all';
+
+  if (ruta) {
+    return (
+      <Link to={ruta} className={`${clases} hover:-translate-y-0.5 hover:shadow-md`}>
+        {contenido}
+      </Link>
+    );
+  }
+
+  return <div className={clases}>{contenido}</div>;
 }
