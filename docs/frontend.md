@@ -2,31 +2,44 @@
 
 ## Stack (FASE 4)
 
-React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, configuración CSS-first, sin `tailwind.config.js`) + React Router 8 + TanStack Query 5 + Axios.
+React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, configuración CSS-first, sin `tailwind.config.js`) + React Router 8 + TanStack Query 5 + Axios + react-hook-form.
 
 ## Estructura
 
 ```
 src/
-  components/   Sidebar, Navbar (shell del layout admin)
-  layouts/      AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header simple+Outlet)
-  pages/        Dashboard, Login (UI, sin lógica de auth todavía)
-  pages/public/ Carta (placeholder, datos reales en FASE 8-9)
-  routes/       AppRoutes.tsx — árbol de rutas
-  services/     api.ts — instancia de Axios (VITE_API_URL)
-  context/      (vacío, se usa desde FASE 7 para el contexto de auth)
-  hooks/        (vacío, se usa a partir de los módulos de negocio)
+  components/     Sidebar, Navbar (shell del layout admin)
+  components/ui/  Table, Modal, Alert, Spinner — primitivas reutilizables por todas las páginas
+  layouts/         AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header simple+Outlet)
+  pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa
+  pages/public/    Carta (placeholder, datos reales en FASE 8-9)
+  routes/          AppRoutes.tsx (árbol de rutas), ProtectedRoute.tsx (guard de auth)
+  context/         AuthContext.tsx — sesión, login/logout, tienePermiso(codigo)
+  services/        api.ts (instancia Axios + interceptores) y un *.service.ts por módulo
+  types/api.ts     Tipos compartidos de las respuestas de la API
+  hooks/           (vacío, se usa a partir de los módulos de negocio)
 ```
 
 ## Rutas actuales
 
-| Ruta     | Layout  | Página                         | Protegida                            |
-| -------- | ------- | ------------------------------ | ------------------------------------ |
-| `/`      | Admin   | Dashboard (placeholder)        | Sí (pendiente de guard real, FASE 7) |
-| `/login` | —       | Login (solo UI, deshabilitado) | No                                   |
-| `/carta` | Público | Carta (placeholder)            | No                                   |
+| Ruta                | Layout  | Página                                                 | Protegida             |
+| ------------------- | ------- | ------------------------------------------------------ | --------------------- |
+| `/`                 | Admin   | Dashboard                                              | Sí (`ProtectedRoute`) |
+| `/usuarios`         | Admin   | Usuarios (lista + crear)                               | Sí                    |
+| `/personal`         | Admin   | Personal (lista + crear)                               | Sí                    |
+| `/roles`            | Admin   | Roles (lista + crear, con selección de permisos)       | Sí                    |
+| `/empresa`          | Admin   | Empresa (lista + editar)                               | Sí                    |
+| `/cambiar-password` | Admin   | Cambiar contraseña propia                              | Sí                    |
+| `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`) | No                    |
+| `/carta`            | Público | Carta (placeholder, datos reales en FASE 8-9)          | No                    |
+
+`ProtectedRoute` redirige a `/login` si no hay sesión (tras intentar un refresh silencioso vía cookie httpOnly). Cada página oculta sus acciones de creación/edición si el usuario no tiene el permiso correspondiente (`tienePermiso('xxx.crear')`), aunque la protección real está en el backend.
 
 La separación pública/admin en una sola app sigue la decisión documentada en `decisiones-tecnicas.md` (carta pública para clientes).
+
+## Autenticación en el frontend
+
+Ver `autenticacion.md` para el detalle completo del flujo. En resumen: `AuthContext` restaura la sesión al montar la app (refresh silencioso), el `accessToken` vive solo en memoria (módulo `services/api.ts`), y el interceptor de Axios reintenta una vez con refresh ante un 401.
 
 ## Variables de entorno
 
@@ -43,5 +56,4 @@ pnpm --filter @restaurant-erp/frontend preview  # sirve el build de producción
 ## Verificación realizada
 
 - `tsc` (typecheck) y `vite build` (producción) sin errores.
-- Servidor de desarrollo probado con `curl`: HTML raíz, ruta SPA `/carta` (200), CSS de Tailwind compilado y servido, `main.tsx` transpilado sin errores.
-- **No verificado visualmente en navegador** en esta sesión (sin herramienta de navegador disponible). Antes de dar por buena la interfaz, abrir `http://localhost:5173` en un navegador real y revisar consola por errores de runtime.
+- **Verificado visualmente en navegador real** (Chromium vía Playwright, instalado temporalmente fuera del proyecto solo para pruebas): flujo completo probado — redirección a `/login` sin sesión, login con el usuario semilla, navegación a Usuarios/Personal/Roles/Empresa con datos reales de la base de datos, persistencia de sesión tras recargar la página, cambio de contraseña, y logout. Sin errores de consola (aparte de los 401 esperados de la verificación de sesión al cargar sin estar logueado).

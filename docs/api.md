@@ -28,16 +28,29 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 
 - **Helmet**: cabeceras de seguridad por defecto (`X-Content-Type-Options`, `X-Frame-Options`, `Strict-Transport-Security`, etc.).
 - **CORS**: origen restringido a `CORS_ORIGIN` (env), con credenciales habilitadas (necesario para el futuro flujo de refresh token).
-- **Rate limiting**: 300 solicitudes / 15 min por IP, aplicado globalmente. Los endpoints públicos (carta, futuros) llevarán un límite propio más estricto cuando se implementen (FASE 8-9).
+- **Rate limiting**: 300 solicitudes / 15 min por IP, aplicado globalmente; `/api/auth/login` tiene su propio límite más estricto (10/15min). Los endpoints públicos (carta, futuros) llevarán un límite propio cuando se implementen (FASE 8-9).
 - **Body parser**: `express.json()` con límite de 1MB.
+- **Validación**: `zod` en `src/middlewares/validate.middleware.ts` (`validateBody`, `validateIdParam`). Todo endpoint que recibe body o `:id` valida antes de llegar al controller.
+- **Autenticación/autorización**: `requireAuth` + `requirePermission(codigo)` (`src/middlewares/auth.middleware.ts`). Ver `autenticacion.md` y `roles-y-permisos.md`.
 
 ## Endpoints existentes
 
-| Método | Ruta      | Descripción                                          | Auth |
-| ------ | --------- | ---------------------------------------------------- | ---- |
-| GET    | `/health` | Estado del servidor (para monitoreo/infraestructura) | No   |
+| Método       | Ruta                                                             | Auth                       | Descripción                            |
+| ------------ | ---------------------------------------------------------------- | -------------------------- | -------------------------------------- |
+| GET          | `/health`                                                        | No                         | Estado del servidor                    |
+| POST         | `/api/auth/login`                                                | No                         | Iniciar sesión                         |
+| POST         | `/api/auth/refresh`                                              | No (cookie)                | Renovar access token                   |
+| POST         | `/api/auth/logout`                                               | No                         | Cerrar sesión                          |
+| GET          | `/api/auth/me`                                                   | Sí                         | Usuario autenticado actual             |
+| POST         | `/api/auth/cambiar-password`                                     | Sí                         | Cambiar contraseña propia              |
+| GET/POST/PUT | `/api/empresas`, `/api/empresas/:id`                             | Sí + `empresa.*`           | CRUD de empresa                        |
+| GET/POST/PUT | `/api/personal`, `/api/personal/:id`                             | Sí + `personal.*`          | CRUD de personal                       |
+| GET/POST/PUT | `/api/usuarios`, `/api/usuarios/:id`                             | Sí + `usuarios.*`          | CRUD de usuarios                       |
+| GET/POST/PUT | `/api/roles`, `/api/roles/:id`, `/api/roles/:id/permisos`        | Sí + `roles.*`             | CRUD de roles y asignación de permisos |
+| GET          | `/api/permisos`                                                  | Sí + `permisos.ver`        | Catálogo de permisos                   |
+| GET          | `/api/catalogos/tipos-documento-identidad`, `/tipos-comprobante` | Sí (cualquier autenticado) | Catálogos SUNAT                        |
 
-Todas las rutas de negocio futuras se montan bajo `/api` (`src/routes/index.ts` → `apiRouter`), que por ahora está vacío — se irá completando módulo por módulo a partir de FASE 5.
+Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 8.
 
 ## Cómo correr el backend
 

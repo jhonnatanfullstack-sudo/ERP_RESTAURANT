@@ -13,7 +13,7 @@
 | Migraciones                       | Iniciado (`base-de-datos.md`)                | FASE 2   |
 | API (endpoints)                   | Iniciado (`api.md`)                          | FASE 3+  |
 | Frontend                          | Iniciado (`frontend.md`)                     | FASE 4   |
-| Autenticación                     | Pendiente                                    | FASE 7   |
-| Roles y permisos                  | Pendiente                                    | FASE 6   |
+| Autenticación                     | Completo (`autenticacion.md`)                | FASE 7   |
+| Roles y permisos                  | Completo (`roles-y-permisos.md`)             | FASE 6   |
 | Decisiones técnicas               | Iniciado (`decisiones-tecnicas.md`)          | Continuo |
 | Estado del proyecto (continuidad) | Iniciado (`estado-proyecto.md`)              | Continuo |

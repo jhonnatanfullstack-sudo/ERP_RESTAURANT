@@ -9,9 +9,9 @@ Orden base definido en la sección 15 de `CLAUDE.md` (no se modifica ese documen
 | 2        | PostgreSQL + TypeORM + migraciones (Empresa, Personal, catálogos SUNAT, RBAC) | `CLAUDE.md` + decisión 2026-09-07 | Completada |
 | 3        | Sistema base del backend                                                      | `CLAUDE.md`                       | Completada |
 | 4        | Sistema base del frontend (incluye rutas públicas de carta)                   | `CLAUDE.md` + decisión 2026-09-07 | Completada |
-| 5        | Usuarios                                                                      | `CLAUDE.md`                       | Pendiente  |
-| 6        | Roles y permisos                                                              | `CLAUDE.md`                       | Pendiente  |
-| 7        | Autenticación y autorización (staff)                                          | `CLAUDE.md`                       | Pendiente  |
+| 5        | Usuarios (y Personal/Empresa, base para poder crearlos)                       | `CLAUDE.md` + decisión 2026-09-07 | Completada |
+| 6        | Roles y permisos                                                              | `CLAUDE.md`                       | Completada |
+| 7        | Autenticación y autorización (staff)                                          | `CLAUDE.md`                       | Completada |
 | 8        | Categorías (incluye endpoint público de carta)                                | `CLAUDE.md` + decisión 2026-09-07 | Pendiente  |
 | 9        | Productos (incluye endpoint público de carta)                                 | `CLAUDE.md` + decisión 2026-09-07 | Pendiente  |
 | 10       | Salones y mesas                                                               | `CLAUDE.md`                       | Pendiente  |
