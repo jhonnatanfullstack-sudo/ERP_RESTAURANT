@@ -39,6 +39,7 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `productos.marca_id` → `marcas.id`, **nullable** (`ON DELETE RESTRICT`: no todo producto tiene marca, pero si la tiene no se puede borrar esa marca)
 - `productos.unidad_medida_id` → `unidades_medida.id`, obligatoria (`ON DELETE RESTRICT`)
 - `mesas.salon_id` → `salones.id`, obligatoria (`ON DELETE RESTRICT`); índice único compuesto `(salon_id, numero)` — el mismo número de mesa puede repetirse en salones distintos, no dentro del mismo salón
+- `clientes.tipo_documento_identidad_id` → `tipos_documento_identidad.id`, **nullable** (`ON DELETE RESTRICT`); índice único compuesto `(tipo_documento_identidad_id, numero_documento)` — mismo patrón que `personal`, pero ambas columnas son nullable: un cliente puede no tener documento registrado, y si lo tiene, debe venir el tipo y el número juntos (validado en `cliente.service.ts`, no solo por la constraint de BD)
 
 **Por qué este orden (Empresa → Personal → Usuario):** decisión explícita del usuario (2026-09-07). Un `usuario` (cuenta de acceso) siempre parte de un registro de `personal` ya existente (persona real, identificada por documento), y todo `personal` pertenece a una `empresa`. Esto evita datos de personas duplicados entre módulos futuros (ej. nombre/apellido no se repiten en `usuarios`) y prepara el sistema para "Múltiples sucursales" (expansión futura de `CLAUDE.md` sección 1): varias sucursales podrán colgar de una misma `empresa` sin rediseñar el núcleo de identidad.
 
@@ -47,9 +48,9 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `usuarios.password_hash` tiene `select: false` a nivel de entidad: no se incluye en consultas por defecto. Nunca se expone en respuestas de la API.
 - `refresh_tokens.token_hash` almacena el hash del token, no el token en texto plano.
 
-**Índices:** únicos en `usuarios.email`, `usuarios.personal_id`, `roles.nombre`, `permisos.codigo`, `refresh_tokens.token_hash`, `empresas.ruc`, `tipos_documento_identidad.codigo`, `tipos_comprobante.codigo`, `clientes.numero_documento` (nullable, permite múltiples `NULL`), `clientes.email` (nullable, ídem), y compuesto único en `personal(tipo_documento_identidad_id, numero_documento)`; de rendimiento en `roles_permisos(rol_id)` y `roles_permisos(permiso_id)`.
+**Índices:** únicos en `usuarios.email`, `usuarios.personal_id`, `roles.nombre`, `permisos.codigo`, `refresh_tokens.token_hash`, `empresas.ruc`, `tipos_documento_identidad.codigo`, `tipos_comprobante.codigo`, `clientes.email` (nullable, permite múltiples `NULL`), y compuesto único en `personal(tipo_documento_identidad_id, numero_documento)` y `clientes(tipo_documento_identidad_id, numero_documento)` (también nullable en ambas columnas: múltiples clientes sin documento no chocan entre sí); de rendimiento en `roles_permisos(rol_id)` y `roles_permisos(permiso_id)`.
 
-**Nota sobre `clientes`:** a diferencia de `personal`, no tiene FK a `empresas` ni a `tipos_documento_identidad` — es un registro simple pensado para historial de pedidos/reservas de clientes externos, no para el cumplimiento SUNAT de personal interno. `numero_documento` es un `varchar` libre (no un catálogo), porque en esta fase no se necesita ese nivel de rigor; si más adelante se requiere para facturación electrónica, se evaluará entonces (decisión técnica, no automática).
+**Nota sobre `clientes`:** a diferencia de `personal`, no tiene FK a `empresas` (no pertenece a una empresa, es un cliente externo) y su `tipo_documento_identidad_id` es **nullable** (no toda venta a un cliente requiere documento). Cuando se proporciona un documento, sí queda acoplado al mismo Catálogo SUNAT 06 que usa `personal` (decisión del usuario, 2026-09-07: "todo está acoplado de acuerdo a SUNAT") — reutiliza la misma validación de formato y el mismo botón de búsqueda RENIEC/SUNAT.
 
 Este esquema es exclusivamente para el RBAC del personal interno. El login de clientes (portal público) será un dominio de identidad separado — ver `decisiones-tecnicas.md`.
 
@@ -89,6 +90,7 @@ Migraciones aplicadas (en orden):
 9. `SeedUnidadesMedida` / `SeedPermisosMarcas` — datos semilla del catálogo y permisos de marcas.
 10. `ProductoUnidadMedida` — agrega `productos.unidad_medida_id`: se crea **nullable primero**, se hace `UPDATE` de los productos ya existentes a la unidad `NIU` (Unidad), y recién entonces se pone `NOT NULL` + FK. Patrón a seguir cada vez que se agrega una columna obligatoria a una tabla que ya puede tener filas reales (no solo datos de prueba).
 11. `SalonYMesaTablas` / `SeedPermisosSalonesMesas` — crea `salones` y `mesas` (con índice único `(salon_id, numero)`) y sus permisos (FASE 10).
-12. `ClienteTabla` / `SeedPermisosClientes` — crea `clientes` (con índices únicos nullable en `numero_documento` y `email`) y sus permisos (FASE 11).
+12. `ClienteTabla` / `SeedPermisosClientes` — crea `clientes` (con índice único nullable en `email`, `numero_documento` sin catálogo todavía) y sus permisos (FASE 11).
+13. `ClienteTipoDocumento` — acopla `clientes` a SUNAT (decisión del usuario, 2026-09-07): agrega `clientes.tipo_documento_identidad_id` (FK nullable a `tipos_documento_identidad`), reemplaza el índice único simple de `numero_documento` por uno compuesto `(tipo_documento_identidad_id, numero_documento)`, igual que `personal`.
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.

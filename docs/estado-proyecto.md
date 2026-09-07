@@ -20,7 +20,7 @@ pnpm install
 docker compose up -d
 docker inspect restaurant_erp_postgres --format '{{.State.Health.Status}}'  # debe decir "healthy"
 
-# 3. Verificar migraciones aplicadas (deben ser 17)
+# 3. Verificar migraciones aplicadas (deben ser 18)
 pnpm --filter @restaurant-erp/backend migration:show
 
 # 4. Validar que todo compila/lint limpio antes de seguir
@@ -41,7 +41,7 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 ## Qué existe hasta ahora
 
 - **Monorepo pnpm** (`apps/backend`, `apps/frontend`, `packages/*`) — FASE 1.
-- **Base de datos** (FASE 2 en adelante): 17 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
+- **Base de datos** (FASE 2 en adelante): 18 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
 - **Backend base** (FASE 3): Express, Helmet, CORS, rate limiting, manejo de errores, formato de respuesta consistente. Ver `api.md`.
 - **Frontend base** (FASE 4): Vite + React 19 + Tailwind 4 + React Router 8 + TanStack Query. Ver `frontend.md`.
 - **Usuarios/Personal/Empresa/Roles/Permisos (FASE 5-6)**: CRUD completo backend (controller/service/repository/dto con zod) para los 5 módulos, con reglas de negocio reales (unicidad de RUC/documento/email, 1 usuario por personal, etc.). Frontend: páginas `Usuarios`, `Personal`, `Roles`, `Empresa` con tabla + formulario de creación (modal), usando TanStack Query.
@@ -54,7 +54,9 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 - **Marcas y Unidad de Medida SUNAT (2026-09-07, ampliación de FASE 9)**: `Marcas` es un catálogo propio del negocio (CRUD completo, `/marcas`, permisos `marcas.*`, opcional en un producto); `unidades_medida` es el Catálogo SUNAT N° 03 (sembrado por migración, solo lectura vía `/api/catalogos/unidades-medida`, igual que tipos de documento/comprobante). Ambos se agregaron a `productos` (`marca_id` nullable, `unidad_medida_id` obligatoria).
 - **Productos (FASE 9)**: CRUD completo backend + frontend (`/productos`) con foto (subida vía `multer`, servida en `/uploads`), marca opcional, unidad de medida, filtro por categoría, tarjetas con zoom al hover. La **carta pública** (`/carta`, sin login) ahora consume `GET /api/productos/publico` y muestra productos reales agrupados por categoría con el mismo tratamiento visual. Ver `api.md` y `decisiones-tecnicas.md`.
 - **Salones y Mesas (FASE 10, 2026-09-07)**: CRUD completo backend + frontend. `Salon` es un catálogo simple (nombre/descripción/activo, igual patrón que Categoría); `Mesa` pertenece a un salón (`salon_id` FK, `ON DELETE RESTRICT`), con `numero` + `capacidad`, único por `(salon_id, numero)` (no puede haber dos "Mesa 1" en el mismo salón, sí en salones distintos). `DELETE` de Salón bloqueado (409) si tiene mesas. Sin estado de ocupación todavía (libre/ocupada) — eso se agregará cuando exista Pedidos (FASE 12) y tenga sentido asignar mesas a órdenes reales.
-- **Clientes (FASE 11, 2026-09-07)**: registro simple de clientes (`nombres`, `apellidos`, `numeroDocumento`, `telefono`, `email`, `direccion`, todos opcionales salvo `nombres`), sin la complejidad de tipo de documento SUNAT/empresa que sí tiene `Personal` (son personas externas, no staff). `numeroDocumento` y `email` únicos cuando se proporcionan. `.eliminar` = desactivar (como Personal/Usuarios, es una persona, se conserva el historial), no borrado real. Todavía no ligado a Pedidos/Ventas/Reservas (no existen aún).
+- **Clientes (FASE 11, 2026-09-07)**: registro de clientes (`nombres`, `apellidos`, `telefono`, `email`, `direccion`, todos opcionales salvo `nombres`). `email` único cuando se proporciona. `.eliminar` = desactivar (como Personal/Usuarios, es una persona, se conserva el historial), no borrado real. Todavía no ligado a Pedidos/Ventas/Reservas (no existen aún).
+- **Cliente acoplado a SUNAT (2026-09-07, corrección tras feedback del usuario "todo está acoplado de acuerdo a SUNAT")**: `Cliente` ahora tiene `tipoDocumentoIdentidad` (FK nullable al mismo Catálogo SUNAT 06 que usa `Personal`) en vez de un `numeroDocumento` de texto libre; ambos campos son opcionales pero van juntos (si se da uno, se exige el otro). Se agregó el mismo botón de búsqueda RENIEC/SUNAT que tiene Personal. Para no duplicar código, `consulta-documento.service.ts` y la validación de formato por tipo de documento se movieron de `modules/personal/` a `modules/catalogos/` (compartidos), y el componente de búsqueda del frontend se extrajo a `components/CampoBusquedaDocumento.tsx` (genérico sobre el formulario), usado ahora por Personal y Clientes.
+- **Fix de layout: sidebar más corto que la página (2026-09-07)**: `AdminLayout` usaba `min-h-screen` en el contenedor exterior pero el `<aside>` tenía `h-screen` (100vh fijo) — cuando el contenido de una página excedía la altura de pantalla, el sidebar se quedaba corto y se veía el fondo claro debajo. Se cambió el shell completo a `h-screen overflow-hidden`, de forma que solo el `<main>` hace scroll interno y el sidebar siempre cubre el 100% de la pantalla, sin importar cuánto contenido tenga la página.
 - **Sin implementar todavía:** reservas de mesa, pedidos, comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (login/pago).
 
 ## Próximos pasos (en orden)
