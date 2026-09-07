@@ -16,6 +16,7 @@ import { Producto } from '../modules/productos/producto.entity';
 import { Salon } from '../modules/salones/salon.entity';
 import { Mesa } from '../modules/mesas/mesa.entity';
 import { Cliente } from '../modules/clientes/cliente.entity';
+import { Reserva } from '../modules/reservas/reserva.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -42,6 +43,7 @@ export const AppDataSource = new DataSource({
     Salon,
     Mesa,
     Cliente,
+    Reserva,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
 });

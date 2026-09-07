@@ -117,6 +117,19 @@ export interface DatosDocumento {
   apellidoMaterno: string | null;
 }
 
+export type EstadoReserva = 'pendiente' | 'confirmada' | 'cancelada' | 'completada';
+
+export interface Reserva {
+  id: string;
+  cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos' | 'telefono'>;
+  mesa: Mesa;
+  fechaHora: string;
+  duracionMinutos: number;
+  cantidadPersonas: number;
+  estado: EstadoReserva;
+  notas: string | null;
+}
+
 export interface Usuario {
   id: string;
   email: string;

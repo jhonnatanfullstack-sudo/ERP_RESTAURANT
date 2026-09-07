@@ -64,7 +64,10 @@ const menu: ItemMenu[] = [
     tipo: 'grupo',
     etiqueta: 'Clientes',
     icono: Contact,
-    hijos: [{ etiqueta: 'Clientes', ruta: '/clientes', permiso: 'clientes.ver' }],
+    hijos: [
+      { etiqueta: 'Clientes', ruta: '/clientes', permiso: 'clientes.ver' },
+      { etiqueta: 'Reservas', ruta: '/reservas', permiso: 'reservas.ver' },
+    ],
   },
   {
     tipo: 'grupo',

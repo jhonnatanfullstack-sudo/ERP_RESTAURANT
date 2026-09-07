@@ -13,3 +13,19 @@ const formateadorSoles = new Intl.NumberFormat('es-PE', {
 export function formatearPrecio(precio: number): string {
   return formateadorSoles.format(precio);
 }
+
+const formateadorFechaHora = new Intl.DateTimeFormat('es-PE', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
+
+export function formatearFechaHora(iso: string): string {
+  return formateadorFechaHora.format(new Date(iso));
+}
+
+/** Convierte un ISO (UTC) a la forma "YYYY-MM-DDTHH:mm" que espera <input type="datetime-local"> en hora local. */
+export function aInputDatetimeLocal(iso: string): string {
+  const fecha = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}T${pad(fecha.getHours())}:${pad(fecha.getMinutes())}`;
+}

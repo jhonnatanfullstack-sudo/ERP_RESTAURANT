@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Award,
   Building2,
+  CalendarCheck,
   Contact,
   DoorOpen,
   ShieldCheck,
@@ -21,6 +22,7 @@ import * as productosService from '../services/productos.service';
 import * as salonesService from '../services/salones.service';
 import * as mesasService from '../services/mesas.service';
 import * as clientesService from '../services/clientes.service';
+import * as reservasService from '../services/reservas.service';
 import { useAuth } from '../context/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
 
@@ -55,6 +57,10 @@ export function Dashboard() {
     queryKey: ['clientes'],
     queryFn: clientesService.listarClientes,
   });
+  const reservasQuery = useQuery({
+    queryKey: ['reservas'],
+    queryFn: reservasService.listarReservas,
+  });
 
   const secciones = [
     {
@@ -84,7 +90,10 @@ export function Dashboard() {
     },
     {
       titulo: 'Clientes',
-      tarjetas: [{ etiqueta: 'Clientes', ruta: '/clientes', icono: Contact, query: clientesQuery }],
+      tarjetas: [
+        { etiqueta: 'Clientes', ruta: '/clientes', icono: Contact, query: clientesQuery },
+        { etiqueta: 'Reservas', ruta: '/reservas', icono: CalendarCheck, query: reservasQuery },
+      ],
     },
     {
       titulo: 'Administración',
