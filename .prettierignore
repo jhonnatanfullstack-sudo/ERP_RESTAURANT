@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+coverage
+pnpm-lock.yaml
+
+# Documento de reglas gestionado por el usuario, no reformatear
+CLAUDE.md

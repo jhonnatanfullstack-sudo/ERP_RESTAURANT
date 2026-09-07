@@ -1,0 +1,33 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+build/
+
+# Entorno
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Configuración local de Claude Code (no compartir)
+.claude/settings.local.json
+
+# Tests / cobertura
+coverage/
+
+# PostgreSQL (datos locales de Docker)
+apps/backend/postgres-data/
