@@ -13,6 +13,8 @@ import { UnidadMedida } from '../modules/catalogos/unidad-medida.entity';
 import { Categoria } from '../modules/categorias/categoria.entity';
 import { Marca } from '../modules/marcas/marca.entity';
 import { Producto } from '../modules/productos/producto.entity';
+import { Salon } from '../modules/salones/salon.entity';
+import { Mesa } from '../modules/mesas/mesa.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -36,6 +38,8 @@ export const AppDataSource = new DataSource({
     Categoria,
     Marca,
     Producto,
+    Salon,
+    Mesa,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
 });

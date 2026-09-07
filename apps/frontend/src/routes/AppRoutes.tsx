@@ -9,6 +9,8 @@ import { Roles } from '../pages/Roles';
 import { Categorias } from '../pages/Categorias';
 import { Marcas } from '../pages/Marcas';
 import { Productos } from '../pages/Productos';
+import { Salones } from '../pages/Salones';
+import { Mesas } from '../pages/Mesas';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
@@ -32,6 +34,8 @@ export function AppRoutes() {
           <Route path="/categorias" element={<Categorias />} />
           <Route path="/marcas" element={<Marcas />} />
           <Route path="/productos" element={<Productos />} />
+          <Route path="/salones" element={<Salones />} />
+          <Route path="/mesas" element={<Mesas />} />
           <Route path="/empresa" element={<Empresa />} />
           <Route path="/cambiar-password" element={<CambiarPassword />} />
         </Route>

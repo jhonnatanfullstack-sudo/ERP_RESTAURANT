@@ -83,6 +83,21 @@ export interface Producto {
   activo: boolean;
 }
 
+export interface Salon {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  activo: boolean;
+}
+
+export interface Mesa {
+  id: string;
+  salon: Pick<Salon, 'id' | 'nombre'>;
+  numero: string;
+  capacidad: number;
+  activo: boolean;
+}
+
 export interface Usuario {
   id: string;
   email: string;

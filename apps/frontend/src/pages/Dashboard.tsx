@@ -2,10 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Award,
   Building2,
+  DoorOpen,
   ShieldCheck,
   Tags,
   UserCircle2,
   Users,
+  Utensils,
   UtensilsCrossed,
 } from 'lucide-react';
 import * as usuariosService from '../services/usuarios.service';
@@ -15,6 +17,8 @@ import * as empresaService from '../services/empresa.service';
 import * as categoriasService from '../services/categorias.service';
 import * as marcasService from '../services/marcas.service';
 import * as productosService from '../services/productos.service';
+import * as salonesService from '../services/salones.service';
+import * as mesasService from '../services/mesas.service';
 import { useAuth } from '../context/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
 
@@ -43,6 +47,8 @@ export function Dashboard() {
     queryKey: ['productos'],
     queryFn: productosService.listarProductos,
   });
+  const salonesQuery = useQuery({ queryKey: ['salones'], queryFn: salonesService.listarSalones });
+  const mesasQuery = useQuery({ queryKey: ['mesas'], queryFn: mesasService.listarMesas });
 
   return (
     <div>
@@ -51,7 +57,7 @@ export function Dashboard() {
         Resumen general del sistema. Los módulos operativos se irán habilitando por fase.
       </p>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatCard
           etiqueta="Usuarios"
           valor={usuariosQuery.data?.length ?? 0}
@@ -93,6 +99,18 @@ export function Dashboard() {
           valor={productosQuery.data?.length ?? 0}
           cargando={productosQuery.isLoading}
           icono={UtensilsCrossed}
+        />
+        <StatCard
+          etiqueta="Salones"
+          valor={salonesQuery.data?.length ?? 0}
+          cargando={salonesQuery.isLoading}
+          icono={DoorOpen}
+        />
+        <StatCard
+          etiqueta="Mesas"
+          valor={mesasQuery.data?.length ?? 0}
+          cargando={mesasQuery.isLoading}
+          icono={Utensils}
         />
       </div>
     </div>

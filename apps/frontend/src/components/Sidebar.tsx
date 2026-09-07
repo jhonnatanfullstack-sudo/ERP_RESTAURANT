@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
+  DoorOpen,
   LayoutDashboard,
   ShieldCheck,
   UtensilsCrossed,
@@ -47,6 +48,15 @@ const menu: ItemMenu[] = [
       { etiqueta: 'Categorías', ruta: '/categorias', permiso: 'categorias.ver' },
       { etiqueta: 'Marcas', ruta: '/marcas', permiso: 'marcas.ver' },
       { etiqueta: 'Productos', ruta: '/productos', permiso: 'productos.ver' },
+    ],
+  },
+  {
+    tipo: 'grupo',
+    etiqueta: 'Local',
+    icono: DoorOpen,
+    hijos: [
+      { etiqueta: 'Salones', ruta: '/salones', permiso: 'salones.ver' },
+      { etiqueta: 'Mesas', ruta: '/mesas', permiso: 'mesas.ver' },
     ],
   },
   {
