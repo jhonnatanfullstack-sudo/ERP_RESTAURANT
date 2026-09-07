@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { UserPlus } from 'lucide-react';
+import { useForm, useWatch, type Control } from 'react-hook-form';
+import { Pencil, Trash2, UserPlus } from 'lucide-react';
 import * as personalService from '../services/personal.service';
 import * as empresaService from '../services/empresa.service';
 import * as catalogosService from '../services/catalogos.service';
@@ -12,16 +12,56 @@ import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
-import type { CrearPersonalInput } from '../services/personal.service';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { FORMATOS_DOCUMENTO } from '../utils/documento';
+import type { ActualizarPersonalInput, CrearPersonalInput } from '../services/personal.service';
+import type { Personal as PersonalType, TipoDocumentoIdentidad } from '../types/api';
 
 const inputClass =
   'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
 const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
+function mensajeError(error: unknown, fallback: string): string {
+  return (
+    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
+  );
+}
+
+function CampoNumeroDocumento({
+  control,
+  tipos,
+  register,
+}: {
+  control: Control<CrearPersonalInput>;
+  tipos: TipoDocumentoIdentidad[] | undefined;
+  register: ReturnType<typeof useForm<CrearPersonalInput>>['register'];
+}) {
+  const tipoSeleccionadoId = useWatch({ control, name: 'tipoDocumentoIdentidadId' });
+  const codigo = tipos?.find((t) => t.id === tipoSeleccionadoId)?.codigo;
+  const formato = codigo ? FORMATOS_DOCUMENTO[codigo] : undefined;
+
+  return (
+    <div>
+      <label className={labelClass}>N° de documento</label>
+      <input
+        {...register('numeroDocumento', {
+          required: true,
+          pattern: formato ? { value: formato.patron, message: formato.ayuda } : undefined,
+        })}
+        maxLength={formato?.maxLength}
+        className={inputClass}
+      />
+      {formato && <p className="mt-1 text-xs text-zinc-500">{formato.ayuda}</p>}
+    </div>
+  );
+}
+
 export function Personal() {
   const { tienePermiso } = useAuth();
   const queryClient = useQueryClient();
   const [modalAbierto, setModalAbierto] = useState(false);
+  const [personalEditando, setPersonalEditando] = useState<PersonalType | null>(null);
+  const [personalEliminando, setPersonalEliminando] = useState<PersonalType | null>(null);
 
   const personalQuery = useQuery({
     queryKey: ['personal'],
@@ -36,14 +76,33 @@ export function Personal() {
     queryFn: catalogosService.listarTiposDocumentoIdentidad,
   });
 
-  const { register, handleSubmit, reset, formState } = useForm<CrearPersonalInput>();
+  const crearForm = useForm<CrearPersonalInput>();
+  const editarForm = useForm<ActualizarPersonalInput>();
 
   const crearMutation = useMutation({
     mutationFn: personalService.crearPersonal,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['personal'] });
       setModalAbierto(false);
-      reset();
+      crearForm.reset();
+    },
+  });
+
+  const editarMutation = useMutation({
+    mutationFn: (values: ActualizarPersonalInput) =>
+      personalService.actualizarPersonal(personalEditando!.id, values),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personal'] });
+      setPersonalEditando(null);
+    },
+  });
+
+  const eliminarMutation = useMutation({
+    mutationFn: () => personalService.eliminarPersonal(personalEliminando!.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['personal'] });
+      queryClient.invalidateQueries({ queryKey: ['usuarios'] });
+      setPersonalEliminando(null);
     },
   });
 
@@ -83,6 +142,44 @@ export function Personal() {
               </Badge>
             ),
           },
+          {
+            encabezado: '',
+            render: (p) => (
+              <div className="flex items-center gap-3">
+                {tienePermiso('personal.editar') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPersonalEditando(p);
+                      editarForm.reset({
+                        empresaId: p.empresa.id,
+                        tipoDocumentoIdentidadId: p.tipoDocumentoIdentidad.id,
+                        numeroDocumento: p.numeroDocumento,
+                        nombres: p.nombres,
+                        apellidoPaterno: p.apellidoPaterno ?? '',
+                        apellidoMaterno: p.apellidoMaterno ?? '',
+                        activo: p.activo,
+                      });
+                    }}
+                    className="flex items-center gap-1.5 text-sm font-medium text-orange-600 hover:text-orange-700"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Editar
+                  </button>
+                )}
+                {tienePermiso('personal.eliminar') && p.activo && (
+                  <button
+                    type="button"
+                    onClick={() => setPersonalEliminando(p)}
+                    className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Desactivar
+                  </button>
+                )}
+              </div>
+            ),
+          },
         ]}
         filas={personalQuery.data ?? []}
         claveFila={(p) => p.id}
@@ -91,22 +188,19 @@ export function Personal() {
 
       <Modal abierto={modalAbierto} titulo="Nuevo personal" onCerrar={() => setModalAbierto(false)}>
         <form
-          onSubmit={handleSubmit((values) => crearMutation.mutate(values))}
+          onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
           className="flex flex-col gap-4"
         >
           {crearMutation.isError && (
             <Alert
               tipo="error"
-              mensaje={
-                (crearMutation.error as { response?: { data?: { message?: string } } })?.response
-                  ?.data?.message ?? 'No se pudo crear el registro'
-              }
+              mensaje={mensajeError(crearMutation.error, 'No se pudo crear el registro')}
             />
           )}
 
           <div>
             <label className={labelClass}>Empresa</label>
-            <select {...register('empresaId', { required: true })} className={inputClass}>
+            <select {...crearForm.register('empresaId', { required: true })} className={inputClass}>
               <option value="">Seleccionar…</option>
               {empresasQuery.data?.map((e) => (
                 <option key={e.id} value={e.id}>
@@ -120,7 +214,7 @@ export function Personal() {
             <div>
               <label className={labelClass}>Tipo de documento</label>
               <select
-                {...register('tipoDocumentoIdentidadId', { required: true })}
+                {...crearForm.register('tipoDocumentoIdentidadId', { required: true })}
                 className={inputClass}
               >
                 <option value="">Seleccionar…</option>
@@ -131,37 +225,103 @@ export function Personal() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className={labelClass}>N° de documento</label>
-              <input {...register('numeroDocumento', { required: true })} className={inputClass} />
-            </div>
+            <CampoNumeroDocumento
+              control={crearForm.control}
+              tipos={tiposDocQuery.data}
+              register={crearForm.register}
+            />
           </div>
 
           <div>
             <label className={labelClass}>Nombres</label>
-            <input {...register('nombres', { required: true })} className={inputClass} />
+            <input {...crearForm.register('nombres', { required: true })} className={inputClass} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Apellido paterno</label>
-              <input {...register('apellidoPaterno')} className={inputClass} />
+              <input {...crearForm.register('apellidoPaterno')} className={inputClass} />
             </div>
             <div>
               <label className={labelClass}>Apellido materno</label>
-              <input {...register('apellidoMaterno')} className={inputClass} />
+              <input {...crearForm.register('apellidoMaterno')} className={inputClass} />
             </div>
           </div>
 
           <Button
             type="submit"
-            disabled={formState.isSubmitting || crearMutation.isPending}
+            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
             className="mt-2 w-full"
           >
             Crear personal
           </Button>
         </form>
       </Modal>
+
+      <Modal
+        abierto={personalEditando !== null}
+        titulo="Editar personal"
+        onCerrar={() => setPersonalEditando(null)}
+      >
+        {personalEditando && (
+          <form
+            onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
+            className="flex flex-col gap-4"
+          >
+            {editarMutation.isError && (
+              <Alert
+                tipo="error"
+                mensaje={mensajeError(editarMutation.error, 'No se pudo actualizar el registro')}
+              />
+            )}
+
+            <div>
+              <label className={labelClass}>Nombres</label>
+              <input
+                {...editarForm.register('nombres', { required: true })}
+                className={inputClass}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Apellido paterno</label>
+                <input {...editarForm.register('apellidoPaterno')} className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>Apellido materno</label>
+                <input {...editarForm.register('apellidoMaterno')} className={inputClass} />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2.5 text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                {...editarForm.register('activo')}
+                className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
+              />
+              Registro activo
+            </label>
+
+            <Button
+              type="submit"
+              disabled={editarForm.formState.isSubmitting || editarMutation.isPending}
+              className="mt-2 w-full"
+            >
+              Guardar cambios
+            </Button>
+          </form>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        abierto={personalEliminando !== null}
+        titulo="Desactivar personal"
+        mensaje={`¿Seguro que deseas desactivar a "${personalEliminando?.nombres}"? Si tiene una cuenta de usuario, también se desactivará.`}
+        confirmando={eliminarMutation.isPending}
+        onConfirmar={() => eliminarMutation.mutate()}
+        onCancelar={() => setPersonalEliminando(null)}
+      />
     </div>
   );
 }

@@ -6,33 +6,42 @@
 
 ## Catálogo de permisos actual
 
-El catálogo de permisos es controlado por el código (sembrado en la migración `SeedRbacInicial`), no editable vía API — solo se puede **consultar** (`GET /api/permisos`) y **asignar a un rol** (`PUT /api/roles/:id/permisos`). Esto evita que se creen códigos de permiso que ningún middleware verifica realmente.
+El catálogo de permisos es controlado por el código (sembrado en migraciones), no editable vía API — solo se puede **consultar** (`GET /api/permisos`) y **asignar a un rol** (`PUT /api/roles/:id/permisos`). Esto evita que se creen códigos de permiso que ningún middleware verifica realmente.
 
-| Código                                | Descripción                            |
-| ------------------------------------- | -------------------------------------- |
-| `usuarios.ver` / `.crear` / `.editar` | Gestión de cuentas de usuario          |
-| `personal.ver` / `.crear` / `.editar` | Gestión de personal (personas físicas) |
-| `roles.ver` / `.crear` / `.editar`    | Gestión de roles                       |
-| `permisos.ver`                        | Consulta del catálogo de permisos      |
-| `empresa.ver` / `.crear` / `.editar`  | Gestión de la empresa                  |
+| Código                                              | Descripción                                                                          |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `usuarios.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de cuentas de usuario (`.eliminar` = desactivar)                             |
+| `personal.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de personal (`.eliminar` = desactivar, cascada a su usuario)                 |
+| `roles.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de roles (`.eliminar` = borrado real, bloqueado si hay usuarios con ese rol) |
+| `permisos.ver`                                      | Consulta del catálogo de permisos                                                    |
+| `empresa.ver` / `.crear` / `.editar`                | Gestión de la empresa (sin `.eliminar`: una empresa no se borra)                     |
 
 Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `productos.*` en FASE 9, `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
 
+## Semántica de "eliminar" (2026-09-07)
+
+- **Usuarios y Personal** tienen columna `activo`: "eliminar" es un **borrado lógico** (`DELETE` en la API pone `activo = false`), no se pierde el registro ni se rompe integridad referencial. Al desactivar un `personal`, su `usuario` (si tiene uno) también se desactiva automáticamente. Un usuario no puede desactivarse a sí mismo (protección contra bloqueo accidental).
+- **Roles** no tiene columna `activo`: "eliminar" es un **borrado real** (`DELETE FROM roles`), bloqueado con 409 si algún usuario todavía tiene ese rol asignado.
+- **Empresa** no tiene endpoint de eliminar — una empresa no se borra desde la UI.
+
 ## Rol de arranque
 
-`Administrador` — tiene todos los permisos del catálogo actual. Creado por la misma migración semilla, junto con el usuario `admin@restaurant.local` (ver `autenticacion.md`).
+`Administrador` — tiene todos los permisos del catálogo actual. Creado por la migración semilla, junto con el usuario `admin@restaurant.local` (ver `autenticacion.md`).
 
 ## Endpoints
 
-| Método | Ruta                      | Permiso requerido |
-| ------ | ------------------------- | ----------------- |
-| GET    | `/api/roles`              | `roles.ver`       |
-| GET    | `/api/roles/:id`          | `roles.ver`       |
-| POST   | `/api/roles`              | `roles.crear`     |
-| PUT    | `/api/roles/:id`          | `roles.editar`    |
-| PUT    | `/api/roles/:id/permisos` | `roles.editar`    |
-| GET    | `/api/permisos`           | `permisos.ver`    |
+| Método | Ruta                      | Permiso requerido   |
+| ------ | ------------------------- | ------------------- |
+| GET    | `/api/roles`              | `roles.ver`         |
+| GET    | `/api/roles/:id`          | `roles.ver`         |
+| POST   | `/api/roles`              | `roles.crear`       |
+| PUT    | `/api/roles/:id`          | `roles.editar`      |
+| PUT    | `/api/roles/:id/permisos` | `roles.editar`      |
+| DELETE | `/api/roles/:id`          | `roles.eliminar`    |
+| GET    | `/api/permisos`           | `permisos.ver`      |
+| DELETE | `/api/usuarios/:id`       | `usuarios.eliminar` |
+| DELETE | `/api/personal/:id`       | `personal.eliminar` |
 
 ## Frontend
 
-Página `Roles` (`/roles`): lista de roles con conteo de permisos, y formulario de creación con selección de permisos vía checkboxes. La edición de permisos de un rol existente (`PUT /:id/permisos`) tiene endpoint listo en el backend; la UI para editar un rol ya creado se añadirá cuando se necesite en la práctica (evitar sobre-construir UI no solicitada, sección 11 regla 3 de `CLAUDE.md`).
+Páginas `Usuarios`, `Personal` y `Roles`: lista + crear + **editar** + **eliminar/desactivar**, cada acción condicionada al permiso correspondiente (`tienePermiso('xxx.editar')`, etc.). Las acciones destructivas usan `ConfirmDialog` (confirmación explícita antes de ejecutar). `Personal` valida en el formulario que el número de documento coincida con el formato del tipo elegido (8 dígitos para DNI, 11 para RUC) usando la misma regla que el backend (`utils/documento.ts`).

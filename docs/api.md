@@ -35,20 +35,20 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 
 ## Endpoints existentes
 
-| Método       | Ruta                                                             | Auth                       | Descripción                            |
-| ------------ | ---------------------------------------------------------------- | -------------------------- | -------------------------------------- |
-| GET          | `/health`                                                        | No                         | Estado del servidor                    |
-| POST         | `/api/auth/login`                                                | No                         | Iniciar sesión                         |
-| POST         | `/api/auth/refresh`                                              | No (cookie)                | Renovar access token                   |
-| POST         | `/api/auth/logout`                                               | No                         | Cerrar sesión                          |
-| GET          | `/api/auth/me`                                                   | Sí                         | Usuario autenticado actual             |
-| POST         | `/api/auth/cambiar-password`                                     | Sí                         | Cambiar contraseña propia              |
-| GET/POST/PUT | `/api/empresas`, `/api/empresas/:id`                             | Sí + `empresa.*`           | CRUD de empresa                        |
-| GET/POST/PUT | `/api/personal`, `/api/personal/:id`                             | Sí + `personal.*`          | CRUD de personal                       |
-| GET/POST/PUT | `/api/usuarios`, `/api/usuarios/:id`                             | Sí + `usuarios.*`          | CRUD de usuarios                       |
-| GET/POST/PUT | `/api/roles`, `/api/roles/:id`, `/api/roles/:id/permisos`        | Sí + `roles.*`             | CRUD de roles y asignación de permisos |
-| GET          | `/api/permisos`                                                  | Sí + `permisos.ver`        | Catálogo de permisos                   |
-| GET          | `/api/catalogos/tipos-documento-identidad`, `/tipos-comprobante` | Sí (cualquier autenticado) | Catálogos SUNAT                        |
+| Método              | Ruta                                                             | Auth                       | Descripción                                                    |
+| ------------------- | ---------------------------------------------------------------- | -------------------------- | -------------------------------------------------------------- |
+| GET                 | `/health`                                                        | No                         | Estado del servidor                                            |
+| POST                | `/api/auth/login`                                                | No                         | Iniciar sesión                                                 |
+| POST                | `/api/auth/refresh`                                              | No (cookie)                | Renovar access token                                           |
+| POST                | `/api/auth/logout`                                               | No                         | Cerrar sesión                                                  |
+| GET                 | `/api/auth/me`                                                   | Sí                         | Usuario autenticado actual                                     |
+| POST                | `/api/auth/cambiar-password`                                     | Sí                         | Cambiar contraseña propia                                      |
+| GET/POST/PUT        | `/api/empresas`, `/api/empresas/:id`                             | Sí + `empresa.*`           | CRUD de empresa                                                |
+| GET/POST/PUT/DELETE | `/api/personal`, `/api/personal/:id`                             | Sí + `personal.*`          | CRUD de personal (DELETE = desactivar)                         |
+| GET/POST/PUT/DELETE | `/api/usuarios`, `/api/usuarios/:id`                             | Sí + `usuarios.*`          | CRUD de usuarios (DELETE = desactivar)                         |
+| GET/POST/PUT/DELETE | `/api/roles`, `/api/roles/:id`, `/api/roles/:id/permisos`        | Sí + `roles.*`             | CRUD de roles y asignación de permisos (DELETE = borrado real) |
+| GET                 | `/api/permisos`                                                  | Sí + `permisos.ver`        | Catálogo de permisos                                           |
+| GET                 | `/api/catalogos/tipos-documento-identidad`, `/tipos-comprobante` | Sí (cualquier autenticado) | Catálogos SUNAT                                                |
 
 Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 8.
 
