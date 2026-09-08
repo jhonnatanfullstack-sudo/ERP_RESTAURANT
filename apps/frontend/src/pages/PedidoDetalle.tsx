@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, CheckCircle2, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Pencil, Plus, Send, Trash2, XCircle } from 'lucide-react';
 import * as pedidosService from '../services/pedidos.service';
 import * as productosService from '../services/productos.service';
+import * as comandasService from '../services/comandas.service';
 import { useAuth } from '../context/AuthContext';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
@@ -16,7 +17,7 @@ import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
 import { formatearFechaHora, formatearPrecio } from '../utils/formato';
 import type { AgregarDetalleInput } from '../services/pedidos.service';
-import type { DetallePedido, EstadoPedido } from '../types/api';
+import type { DetallePedido, EstadoComanda, EstadoPedido } from '../types/api';
 
 const inputClass =
   'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
@@ -31,6 +32,22 @@ const TONO_ESTADO: Record<EstadoPedido, 'exito' | 'neutral' | 'peligro'> = {
   abierto: 'exito',
   cerrado: 'neutral',
   cancelado: 'peligro',
+};
+
+const ETIQUETA_COMANDA: Record<EstadoComanda, string> = {
+  pendiente: 'En cola',
+  en_preparacion: 'Preparando',
+  listo: 'Listo',
+  entregado: 'Entregado',
+  cancelada: 'Cancelada',
+};
+
+const TONO_COMANDA: Record<EstadoComanda, 'exito' | 'neutral' | 'peligro'> = {
+  pendiente: 'neutral',
+  en_preparacion: 'neutral',
+  listo: 'exito',
+  entregado: 'neutral',
+  cancelada: 'peligro',
 };
 
 function mensajeError(error: unknown, fallback: string): string {
@@ -48,6 +65,7 @@ export function PedidoDetalle() {
   const [detalleEliminando, setDetalleEliminando] = useState<DetallePedido | null>(null);
   const [confirmandoCierre, setConfirmandoCierre] = useState(false);
   const [confirmandoCancelacion, setConfirmandoCancelacion] = useState(false);
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
 
   const pedidoQuery = useQuery({
     queryKey: ['pedidos', id],
@@ -102,6 +120,27 @@ export function PedidoDetalle() {
       setDetalleEliminando(null);
     },
   });
+
+  const enviarComandaMutation = useMutation({
+    mutationFn: () =>
+      comandasService.crearComanda({ pedidoId: id!, detalleIds: [...seleccionados] }),
+    onSuccess: () => {
+      invalidar();
+      setSeleccionados(new Set());
+    },
+  });
+
+  function alternarSeleccion(detalleId: string) {
+    setSeleccionados((previo) => {
+      const nuevo = new Set(previo);
+      if (nuevo.has(detalleId)) {
+        nuevo.delete(detalleId);
+      } else {
+        nuevo.add(detalleId);
+      }
+      return nuevo;
+    });
+  }
 
   const cerrarMutation = useMutation({
     mutationFn: () => pedidosService.actualizarPedido(id!, { estado: 'cerrado' }),
@@ -172,6 +211,31 @@ export function PedidoDetalle() {
         )}
       </div>
 
+      {enviarComandaMutation.isError && (
+        <div className="mb-4">
+          <Alert
+            tipo="error"
+            mensaje={mensajeError(enviarComandaMutation.error, 'No se pudo enviar a cocina')}
+          />
+        </div>
+      )}
+
+      {puedeEditar && seleccionados.size > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
+          <p className="text-sm font-medium text-orange-800">
+            {seleccionados.size} producto{seleccionados.size === 1 ? '' : 's'} seleccionado
+            {seleccionados.size === 1 ? '' : 's'}
+          </p>
+          <Button
+            icono={<Send className="h-4 w-4" />}
+            onClick={() => enviarComandaMutation.mutate()}
+            disabled={enviarComandaMutation.isPending}
+          >
+            Enviar a cocina
+          </Button>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
         {pedido.detalles.length === 0 ? (
           <EmptyState icono={XCircle} titulo="Aún no se agregaron productos" />
@@ -194,55 +258,82 @@ export function PedidoDetalle() {
                 <th className="px-5 py-3 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
                   Notas
                 </th>
+                <th className="px-5 py-3 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+                  Cocina
+                </th>
                 {puedeEditar && <th className="px-5 py-3" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
-              {pedido.detalles.map((detalle) => (
-                <tr key={detalle.id} className="hover:bg-zinc-50">
-                  <td className="px-5 py-3.5 font-medium text-zinc-900">
-                    {detalle.producto.nombre}
-                  </td>
-                  <td className="px-5 py-3.5 text-zinc-700">{detalle.cantidad}</td>
-                  <td className="px-5 py-3.5 text-zinc-700">
-                    {formatearPrecio(detalle.precioUnitario)}
-                  </td>
-                  <td className="px-5 py-3.5 font-medium text-zinc-900">
-                    {formatearPrecio(detalle.subtotal)}
-                  </td>
-                  <td className="px-5 py-3.5 text-zinc-500">{detalle.notas ?? '—'}</td>
-                  {puedeEditar && (
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDetalleEditando(detalle);
-                            editarForm.reset({
-                              cantidad: detalle.cantidad,
-                              notas: detalle.notas ?? '',
-                            });
-                          }}
-                          className="flex items-center gap-1 text-orange-600 hover:text-orange-700"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDetalleEliminando(detalle)}
-                          className="flex items-center gap-1 text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+              {pedido.detalles.map((detalle) => {
+                const puedeEditarLinea = puedeEditar && !detalle.comanda;
+                return (
+                  <tr key={detalle.id} className="hover:bg-zinc-50">
+                    <td className="px-5 py-3.5 font-medium text-zinc-900">
+                      {detalle.producto.nombre}
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="px-5 py-3.5 text-zinc-700">{detalle.cantidad}</td>
+                    <td className="px-5 py-3.5 text-zinc-700">
+                      {formatearPrecio(detalle.precioUnitario)}
+                    </td>
+                    <td className="px-5 py-3.5 font-medium text-zinc-900">
+                      {formatearPrecio(detalle.subtotal)}
+                    </td>
+                    <td className="px-5 py-3.5 text-zinc-500">{detalle.notas ?? '—'}</td>
+                    <td className="px-5 py-3.5">
+                      {detalle.comanda ? (
+                        <Badge tono={TONO_COMANDA[detalle.comanda.estado]}>
+                          {ETIQUETA_COMANDA[detalle.comanda.estado]}
+                        </Badge>
+                      ) : puedeEditar ? (
+                        <label className="flex items-center gap-2 text-xs text-zinc-500">
+                          <input
+                            type="checkbox"
+                            checked={seleccionados.has(detalle.id)}
+                            onChange={() => alternarSeleccion(detalle.id)}
+                            className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
+                          />
+                          Enviar
+                        </label>
+                      ) : (
+                        <span className="text-xs text-zinc-400">Sin enviar</span>
+                      )}
+                    </td>
+                    {puedeEditar && (
+                      <td className="px-5 py-3.5">
+                        {puedeEditarLinea && (
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDetalleEditando(detalle);
+                                editarForm.reset({
+                                  cantidad: detalle.cantidad,
+                                  notas: detalle.notas ?? '',
+                                });
+                              }}
+                              className="flex items-center gap-1 text-orange-600 hover:text-orange-700"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setDetalleEliminando(detalle)}
+                              className="flex items-center gap-1 text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot>
               <tr className="border-t border-zinc-200 bg-zinc-50">
-                <td colSpan={puedeEditar ? 5 : 4} className="px-5 py-3 text-right font-semibold">
+                <td colSpan={puedeEditar ? 6 : 5} className="px-5 py-3 text-right font-semibold">
                   Total
                 </td>
                 <td className="px-5 py-3 text-lg font-bold text-zinc-900">
@@ -362,6 +453,11 @@ export function PedidoDetalle() {
         titulo="Cerrar pedido"
         mensaje="El pedido dejará de aceptar cambios. ¿Deseas continuar?"
         confirmando={cerrarMutation.isPending}
+        error={
+          cerrarMutation.isError
+            ? mensajeError(cerrarMutation.error, 'No se pudo cerrar el pedido')
+            : undefined
+        }
         onConfirmar={() => cerrarMutation.mutate()}
         onCancelar={() => setConfirmandoCierre(false)}
       />
@@ -371,6 +467,11 @@ export function PedidoDetalle() {
         titulo="Cancelar pedido"
         mensaje="Se cancelará el pedido completo y la mesa quedará libre. ¿Deseas continuar?"
         confirmando={cancelarMutation.isPending}
+        error={
+          cancelarMutation.isError
+            ? mensajeError(cancelarMutation.error, 'No se pudo cancelar el pedido')
+            : undefined
+        }
         onConfirmar={() => cancelarMutation.mutate()}
         onCancelar={() => setConfirmandoCancelacion(false)}
       />

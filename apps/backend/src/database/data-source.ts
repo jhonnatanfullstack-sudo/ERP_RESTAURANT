@@ -19,6 +19,7 @@ import { Cliente } from '../modules/clientes/cliente.entity';
 import { Reserva } from '../modules/reservas/reserva.entity';
 import { Pedido } from '../modules/pedidos/pedido.entity';
 import { DetallePedido } from '../modules/pedidos/detalle-pedido.entity';
+import { Comanda } from '../modules/cocina/comanda.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -48,6 +49,7 @@ export const AppDataSource = new DataSource({
     Reserva,
     Pedido,
     DetallePedido,
+    Comanda,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
 });

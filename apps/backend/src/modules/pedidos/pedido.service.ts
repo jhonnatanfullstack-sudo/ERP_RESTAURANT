@@ -1,6 +1,7 @@
 import { HttpError } from '../../utils/http-error';
 import { mesaRepository } from '../mesas/mesa.repository';
 import { productoRepository } from '../productos/producto.repository';
+import { existeComandaActivaParaPedido } from '../cocina/comanda.service';
 import { detallePedidoRepository, pedidoRepository } from './pedido.repository';
 import { EstadoPedido, Pedido } from './pedido.entity';
 import { DetallePedido } from './detalle-pedido.entity';
@@ -13,7 +14,10 @@ import type {
 import type { Mesa } from '../mesas/mesa.entity';
 import type { Producto } from '../productos/producto.entity';
 
-const RELACIONES = { mesa: { salon: true }, detalles: { producto: true } } as const;
+const RELACIONES = {
+  mesa: { salon: true },
+  detalles: { producto: true, comanda: true },
+} as const;
 
 export async function listarPedidos(estado?: EstadoPedido): Promise<Pedido[]> {
   return pedidoRepository.find({
@@ -103,6 +107,9 @@ export async function actualizarPedido(id: string, dto: ActualizarPedidoDto): Pr
     if (cantidadDetalles === 0) {
       throw new HttpError(400, 'No se puede cerrar un pedido sin productos');
     }
+    if (await existeComandaActivaParaPedido(id)) {
+      throw new HttpError(400, 'No se puede cerrar un pedido con comandas aún no entregadas');
+    }
     pedido.estado = EstadoPedido.CERRADO;
     pedido.fechaCierre = new Date();
   }
@@ -113,6 +120,9 @@ export async function actualizarPedido(id: string, dto: ActualizarPedidoDto): Pr
 
 export async function cancelarPedido(id: string): Promise<void> {
   const pedido = await obtenerPedidoActivo(id);
+  if (await existeComandaActivaParaPedido(id)) {
+    throw new HttpError(400, 'No se puede cancelar un pedido con comandas aún no entregadas');
+  }
   pedido.estado = EstadoPedido.CANCELADO;
   pedido.fechaCierre = new Date();
   await pedidoRepository.save(pedido);
@@ -144,11 +154,18 @@ async function obtenerDetalleDelPedido(
 ): Promise<DetallePedido> {
   const detalle = await detallePedidoRepository.findOne({
     where: { id: detalleId, pedido: { id: pedidoId } },
+    relations: { comanda: true },
   });
   if (!detalle) {
     throw new HttpError(404, 'El producto indicado no pertenece a este pedido');
   }
   return detalle;
+}
+
+function validarNoEnviadoACocina(detalle: DetallePedido): void {
+  if (detalle.comanda) {
+    throw new HttpError(400, 'No se puede modificar un producto ya enviado a cocina');
+  }
 }
 
 export async function actualizarDetalle(
@@ -158,6 +175,7 @@ export async function actualizarDetalle(
 ): Promise<DetallePedido> {
   await obtenerPedidoActivo(pedidoId);
   const detalle = await obtenerDetalleDelPedido(pedidoId, detalleId);
+  validarNoEnviadoACocina(detalle);
 
   if (dto.cantidad !== undefined) {
     detalle.cantidad = dto.cantidad;
@@ -175,6 +193,7 @@ export async function actualizarDetalle(
 export async function eliminarDetalle(pedidoId: string, detalleId: string): Promise<void> {
   await obtenerPedidoActivo(pedidoId);
   const detalle = await obtenerDetalleDelPedido(pedidoId, detalleId);
+  validarNoEnviadoACocina(detalle);
   await detallePedidoRepository.remove(detalle);
   await recalcularTotal(pedidoId);
 }

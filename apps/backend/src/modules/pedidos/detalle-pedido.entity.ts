@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Pedido } from './pedido.entity';
 import { Producto } from '../productos/producto.entity';
+import { Comanda } from '../cocina/comanda.entity';
 import { numericTransformer } from '../../utils/numeric-transformer';
 
 @Entity('detalle_pedidos')
@@ -41,6 +42,10 @@ export class DetallePedido {
 
   @Column({ type: 'varchar', length: 255, nullable: true })
   notas!: string | null;
+
+  @ManyToOne(() => Comanda, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'comanda_id' })
+  comanda!: Comanda | null;
 
   @CreateDateColumn({ name: 'creado_en', type: 'timestamptz' })
   creadoEn!: Date;

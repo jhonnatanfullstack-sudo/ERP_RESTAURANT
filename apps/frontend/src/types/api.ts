@@ -131,6 +131,7 @@ export interface Reserva {
 }
 
 export type EstadoPedido = 'abierto' | 'cerrado' | 'cancelado';
+export type EstadoComanda = 'pendiente' | 'en_preparacion' | 'listo' | 'entregado' | 'cancelada';
 
 export interface DetallePedido {
   id: string;
@@ -139,6 +140,7 @@ export interface DetallePedido {
   precioUnitario: number;
   subtotal: number;
   notas: string | null;
+  comanda: Pick<Comanda, 'id' | 'estado'> | null;
 }
 
 export interface Pedido {
@@ -148,6 +150,15 @@ export interface Pedido {
   total: number;
   notas: string | null;
   fechaCierre: string | null;
+  detalles: DetallePedido[];
+  creadoEn: string;
+}
+
+export interface Comanda {
+  id: string;
+  pedido: Pick<Pedido, 'id' | 'mesa' | 'estado'>;
+  estado: EstadoComanda;
+  notas: string | null;
   detalles: DetallePedido[];
   creadoEn: string;
 }

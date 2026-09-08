@@ -7,6 +7,7 @@ import {
   ClipboardList,
   Contact,
   DoorOpen,
+  Flame,
   ShieldCheck,
   Tags,
   UserCircle2,
@@ -26,6 +27,7 @@ import * as mesasService from '../services/mesas.service';
 import * as clientesService from '../services/clientes.service';
 import * as reservasService from '../services/reservas.service';
 import * as pedidosService from '../services/pedidos.service';
+import * as comandasService from '../services/comandas.service';
 import { useAuth } from '../context/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
 import { formatearFechaLarga } from '../utils/formato';
@@ -69,9 +71,16 @@ export function Dashboard() {
     queryKey: ['pedidos'],
     queryFn: pedidosService.listarPedidos,
   });
+  const comandasQuery = useQuery({
+    queryKey: ['comandas'],
+    queryFn: comandasService.listarComandas,
+  });
 
   const hoy = new Date();
   const pedidosAbiertos = (pedidosQuery.data ?? []).filter((p) => p.estado === 'abierto');
+  const comandasActivas = (comandasQuery.data ?? []).filter(
+    (c) => c.estado !== 'entregado' && c.estado !== 'cancelada',
+  );
   const reservas = reservasQuery.data ?? [];
   const reservasHoy = reservas.filter((r) => {
     const fecha = new Date(r.fechaHora);
@@ -93,6 +102,14 @@ export function Dashboard() {
       tono: 'naranja' as const,
       cargando: pedidosQuery.isLoading,
       ruta: '/pedidos',
+    },
+    {
+      etiqueta: 'Comandas activas',
+      valor: comandasActivas.length,
+      icono: Flame,
+      tono: 'ambar' as const,
+      cargando: comandasQuery.isLoading,
+      ruta: '/cocina',
     },
     {
       etiqueta: 'Reservas de hoy',
@@ -188,7 +205,7 @@ export function Dashboard() {
       </div>
 
       <section className="mt-6">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
           {resumenHoy.map((tarjeta) => (
             <StatCard
               key={tarjeta.etiqueta}

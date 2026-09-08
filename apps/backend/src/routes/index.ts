@@ -14,6 +14,7 @@ import { mesaRouter } from '../modules/mesas/mesa.routes';
 import { clienteRouter } from '../modules/clientes/cliente.routes';
 import { reservaRouter } from '../modules/reservas/reserva.routes';
 import { pedidoRouter } from '../modules/pedidos/pedido.routes';
+import { comandaRouter } from '../modules/cocina/comanda.routes';
 
 export const apiRouter = Router();
 
@@ -32,3 +33,4 @@ apiRouter.use('/mesas', mesaRouter);
 apiRouter.use('/clientes', clienteRouter);
 apiRouter.use('/reservas', reservaRouter);
 apiRouter.use('/pedidos', pedidoRouter);
+apiRouter.use('/comandas', comandaRouter);

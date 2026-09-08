@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Contact,
   DoorOpen,
+  Flame,
   LayoutDashboard,
   ShieldCheck,
   UtensilsCrossed,
@@ -48,6 +49,13 @@ const menu: ItemMenu[] = [
     ruta: '/pedidos',
     icono: ClipboardList,
     permiso: 'pedidos.ver',
+  },
+  {
+    tipo: 'enlace',
+    etiqueta: 'Cocina',
+    ruta: '/cocina',
+    icono: Flame,
+    permiso: 'cocina.ver',
   },
   {
     tipo: 'grupo',
