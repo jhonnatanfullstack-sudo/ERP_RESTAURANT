@@ -1,6 +1,9 @@
 import { HttpError } from '../../utils/http-error';
 import { mesaRepository } from '../mesas/mesa.repository';
 import { productoRepository } from '../productos/producto.repository';
+import { clienteRepository } from '../clientes/cliente.repository';
+import { reservaRepository } from '../reservas/reserva.repository';
+import { EstadoReserva } from '../reservas/reserva.entity';
 import { existeComandaActivaParaPedido } from '../cocina/comanda.service';
 import { detallePedidoRepository, pedidoRepository } from './pedido.repository';
 import { EstadoPedido, Pedido } from './pedido.entity';
@@ -13,11 +16,22 @@ import type {
 } from './pedido.dto';
 import type { Mesa } from '../mesas/mesa.entity';
 import type { Producto } from '../productos/producto.entity';
+import type { Cliente } from '../clientes/cliente.entity';
+import type { Reserva } from '../reservas/reserva.entity';
 
 const RELACIONES = {
   mesa: { salon: true },
+  cliente: true,
   detalles: { producto: true, comanda: true },
 } as const;
+
+const ESTADOS_RESERVA_ACTIVOS = [EstadoReserva.PENDIENTE, EstadoReserva.CONFIRMADA];
+
+const formateadorHora = new Intl.DateTimeFormat('es-PE', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'America/Lima',
+});
 
 export async function listarPedidos(estado?: EstadoPedido): Promise<Pedido[]> {
   return pedidoRepository.find({
@@ -59,6 +73,33 @@ async function resolverMesa(mesaId: string): Promise<Mesa> {
   return mesa;
 }
 
+async function resolverCliente(clienteId: string): Promise<Cliente> {
+  const cliente = await clienteRepository.findOneBy({ id: clienteId });
+  if (!cliente) {
+    throw new HttpError(400, 'El cliente indicado no existe', ['clienteId inválido']);
+  }
+  if (!cliente.activo) {
+    throw new HttpError(400, 'El cliente indicado está inactivo');
+  }
+  return cliente;
+}
+
+/** Reserva pendiente/confirmada cuyo rango [fechaHora, fechaHora+duracionMinutos) cubre el
+ * momento actual — es decir, la mesa está "reservada" en este instante para ese cliente. */
+async function obtenerReservaActivaDeMesa(mesaId: string): Promise<Reserva | null> {
+  const ahora = new Date();
+  return reservaRepository
+    .createQueryBuilder('reserva')
+    .leftJoinAndSelect('reserva.cliente', 'cliente')
+    .where('reserva.mesa_id = :mesaId', { mesaId })
+    .andWhere('reserva.estado IN (:...estados)', { estados: ESTADOS_RESERVA_ACTIVOS })
+    .andWhere('reserva.fecha_hora <= :ahora', { ahora })
+    .andWhere("reserva.fecha_hora + (reserva.duracion_minutos || ' minutes')::interval > :ahora", {
+      ahora,
+    })
+    .getOne();
+}
+
 async function resolverProducto(productoId: string): Promise<Producto> {
   const producto = await productoRepository.findOneBy({ id: productoId });
   if (!producto) {
@@ -87,7 +128,23 @@ export async function crearPedido(dto: CrearPedidoDto): Promise<Pedido> {
     throw new HttpError(409, 'La mesa ya tiene un pedido abierto');
   }
 
-  const pedido = pedidoRepository.create({ mesa, notas: dto.notas ?? null });
+  let cliente: Cliente | null = null;
+  if (dto.clienteId) {
+    cliente = await resolverCliente(dto.clienteId);
+  }
+
+  const reservaActiva = await obtenerReservaActivaDeMesa(mesa.id);
+  if (reservaActiva && reservaActiva.cliente.id !== dto.clienteId) {
+    const hora = formateadorHora.format(reservaActiva.fechaHora);
+    throw new HttpError(
+      409,
+      `La mesa está reservada para ${reservaActiva.cliente.nombres} ${reservaActiva.cliente.apellidos ?? ''}`.trim() +
+        ` a las ${hora}`,
+      ['La mesa tiene una reserva activa de otro cliente'],
+    );
+  }
+
+  const pedido = pedidoRepository.create({ mesa, cliente, notas: dto.notas ?? null });
   const guardado = await pedidoRepository.save(pedido);
   return obtenerPedido(guardado.id);
 }

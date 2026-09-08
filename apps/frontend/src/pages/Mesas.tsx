@@ -4,6 +4,9 @@ import { useForm } from 'react-hook-form';
 import { Pencil, Trash2, Utensils } from 'lucide-react';
 import * as mesasService from '../services/mesas.service';
 import * as salonesService from '../services/salones.service';
+import * as reservasService from '../services/reservas.service';
+import * as pedidosService from '../services/pedidos.service';
+import { formatearHora } from '../utils/formato';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
@@ -35,6 +38,37 @@ export function Mesas() {
 
   const mesasQuery = useQuery({ queryKey: ['mesas'], queryFn: mesasService.listarMesas });
   const salonesQuery = useQuery({ queryKey: ['salones'], queryFn: salonesService.listarSalones });
+  const reservasQuery = useQuery({
+    queryKey: ['reservas'],
+    queryFn: reservasService.listarReservas,
+  });
+  const pedidosQuery = useQuery({
+    queryKey: ['pedidos'],
+    queryFn: pedidosService.listarPedidos,
+  });
+
+  function estadoOcupacion(mesaId: string): {
+    etiqueta: string;
+    tono: 'exito' | 'neutral' | 'peligro';
+  } {
+    const tienePedidoAbierto = (pedidosQuery.data ?? []).some(
+      (p) => p.mesa.id === mesaId && p.estado === 'abierto',
+    );
+    if (tienePedidoAbierto) return { etiqueta: 'Ocupada', tono: 'peligro' };
+
+    const ahora = new Date().getTime();
+    const reserva = (reservasQuery.data ?? []).find((r) => {
+      if (r.mesa.id !== mesaId) return false;
+      if (r.estado !== 'pendiente' && r.estado !== 'confirmada') return false;
+      const inicio = new Date(r.fechaHora).getTime();
+      const fin = inicio + r.duracionMinutos * 60_000;
+      return ahora >= inicio && ahora < fin;
+    });
+    if (reserva)
+      return { etiqueta: `Reservada ${formatearHora(reserva.fechaHora)}`, tono: 'neutral' };
+
+    return { etiqueta: 'Libre', tono: 'exito' };
+  }
 
   const crearForm = useForm<CrearMesaInput>();
   const editarForm = useForm<ActualizarMesaInput>();
@@ -120,6 +154,13 @@ export function Mesas() {
           { encabezado: 'Salón', render: (m) => m.salon.nombre },
           { encabezado: 'Número', render: (m) => m.numero },
           { encabezado: 'Capacidad', render: (m) => `${m.capacidad} personas` },
+          {
+            encabezado: 'Ocupación',
+            render: (m) => {
+              const { etiqueta, tono } = estadoOcupacion(m.id);
+              return <Badge tono={tono}>{etiqueta}</Badge>;
+            },
+          },
           {
             encabezado: 'Estado',
             render: (m) => (

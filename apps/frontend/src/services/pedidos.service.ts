@@ -3,6 +3,7 @@ import type { ApiSuccess, DetallePedido, EstadoPedido, Pedido } from '../types/a
 
 export interface CrearPedidoInput {
   mesaId: string;
+  clienteId?: string;
   notas?: string | null;
 }
 

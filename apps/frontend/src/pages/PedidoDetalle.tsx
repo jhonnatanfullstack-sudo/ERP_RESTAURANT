@@ -186,6 +186,11 @@ export function PedidoDetalle() {
             <Badge tono={TONO_ESTADO[pedido.estado]}>{ETIQUETA_ESTADO[pedido.estado]}</Badge>
           </div>
           <p className="mt-1 text-sm text-zinc-500">
+            {pedido.cliente && (
+              <>
+                Cliente: {pedido.cliente.nombres} {pedido.cliente.apellidos ?? ''} ·{' '}
+              </>
+            )}
             Abierto el {formatearFechaHora(pedido.creadoEn)}
             {pedido.fechaCierre && ` · Cerrado el ${formatearFechaHora(pedido.fechaCierre)}`}
           </p>

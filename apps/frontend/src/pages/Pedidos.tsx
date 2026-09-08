@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link } from 'react-router';
 import { ClipboardList, Eye, XCircle } from 'lucide-react';
 import * as pedidosService from '../services/pedidos.service';
 import * as mesasService from '../services/mesas.service';
+import * as reservasService from '../services/reservas.service';
+import * as clientesService from '../services/clientes.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
@@ -15,9 +17,9 @@ import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
-import { formatearFechaHora, formatearPrecio } from '../utils/formato';
+import { formatearFechaHora, formatearHora, formatearPrecio } from '../utils/formato';
 import type { CrearPedidoInput } from '../services/pedidos.service';
-import type { EstadoPedido, Pedido } from '../types/api';
+import type { EstadoPedido, Pedido, Reserva } from '../types/api';
 
 const inputClass =
   'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
@@ -50,16 +52,50 @@ export function Pedidos() {
 
   const pedidosQuery = useQuery({ queryKey: ['pedidos'], queryFn: pedidosService.listarPedidos });
   const mesasQuery = useQuery({ queryKey: ['mesas'], queryFn: mesasService.listarMesas });
+  const reservasQuery = useQuery({
+    queryKey: ['reservas'],
+    queryFn: reservasService.listarReservas,
+  });
+  const clientesQuery = useQuery({
+    queryKey: ['clientes'],
+    queryFn: clientesService.listarClientes,
+  });
+
+  function reservaActivaDeMesa(mesaId: string): Reserva | undefined {
+    const ahora = new Date().getTime();
+    return (reservasQuery.data ?? []).find((r) => {
+      if (r.mesa.id !== mesaId) return false;
+      if (r.estado !== 'pendiente' && r.estado !== 'confirmada') return false;
+      const inicio = new Date(r.fechaHora).getTime();
+      const fin = inicio + r.duracionMinutos * 60_000;
+      return ahora >= inicio && ahora < fin;
+    });
+  }
 
   const opcionesMesas: OpcionCombobox[] = (mesasQuery.data ?? [])
     .filter((m) => m.activo)
-    .map((m) => ({
-      valor: m.id,
-      etiqueta: `${m.salon.nombre} — Mesa ${m.numero}`,
-      descripcion: `${m.capacidad} personas`,
+    .map((m) => {
+      const reserva = reservaActivaDeMesa(m.id);
+      return {
+        valor: m.id,
+        etiqueta: `${m.salon.nombre} — Mesa ${m.numero}`,
+        descripcion: reserva
+          ? `Reservada — ${reserva.cliente.nombres} ${formatearHora(reserva.fechaHora)}`
+          : `${m.capacidad} personas`,
+      };
+    });
+
+  const opcionesClientes: OpcionCombobox[] = (clientesQuery.data ?? [])
+    .filter((c) => c.activo)
+    .map((c) => ({
+      valor: c.id,
+      etiqueta: `${c.nombres} ${c.apellidos ?? ''}`.trim(),
+      descripcion: c.telefono ?? undefined,
     }));
 
   const crearForm = useForm<CrearPedidoInput>();
+  const mesaSeleccionada = useWatch({ control: crearForm.control, name: 'mesaId' });
+  const reservaDeSeleccion = mesaSeleccionada ? reservaActivaDeMesa(mesaSeleccionada) : undefined;
 
   const crearMutation = useMutation({
     mutationFn: pedidosService.crearPedido,
@@ -183,6 +219,33 @@ export function Pedidos() {
                   onCambiar={field.onChange}
                   placeholder="Buscar mesa…"
                   vacio="No se encontraron mesas"
+                />
+              )}
+            />
+          </div>
+
+          {reservaDeSeleccion && (
+            <Alert
+              tipo="error"
+              mensaje={`Esta mesa está reservada para ${reservaDeSeleccion.cliente.nombres} ${reservaDeSeleccion.cliente.apellidos ?? ''} a las ${formatearHora(reservaDeSeleccion.fechaHora)}. Selecciona ese mismo cliente para continuar.`}
+            />
+          )}
+
+          <div>
+            <label className={labelClass}>
+              Cliente {reservaDeSeleccion && <span className="text-red-500">*</span>}
+            </label>
+            <Controller
+              control={crearForm.control}
+              name="clienteId"
+              rules={{ required: !!reservaDeSeleccion }}
+              render={({ field }) => (
+                <Combobox
+                  opciones={opcionesClientes}
+                  valor={field.value}
+                  onCambiar={field.onChange}
+                  placeholder="Buscar cliente… (opcional)"
+                  vacio="No se encontraron clientes"
                 />
               )}
             />

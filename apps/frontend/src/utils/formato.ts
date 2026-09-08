@@ -23,6 +23,12 @@ export function formatearFechaHora(iso: string): string {
   return formateadorFechaHora.format(new Date(iso));
 }
 
+const formateadorHora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', minute: '2-digit' });
+
+export function formatearHora(iso: string): string {
+  return formateadorHora.format(new Date(iso));
+}
+
 const formateadorFechaLarga = new Intl.DateTimeFormat('es-PE', {
   weekday: 'long',
   day: 'numeric',

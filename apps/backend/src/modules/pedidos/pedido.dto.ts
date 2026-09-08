@@ -3,6 +3,7 @@ import { EstadoPedido } from './pedido.entity';
 
 export const crearPedidoSchema = z.object({
   mesaId: z.string().uuid(),
+  clienteId: z.string().uuid().optional(),
   notas: z.string().trim().max(255).nullable().optional(),
 });
 

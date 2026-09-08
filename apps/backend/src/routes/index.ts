@@ -15,6 +15,7 @@ import { clienteRouter } from '../modules/clientes/cliente.routes';
 import { reservaRouter } from '../modules/reservas/reserva.routes';
 import { pedidoRouter } from '../modules/pedidos/pedido.routes';
 import { comandaRouter } from '../modules/cocina/comanda.routes';
+import { ventaRouter } from '../modules/ventas/venta.routes';
 
 export const apiRouter = Router();
 
@@ -34,3 +35,4 @@ apiRouter.use('/clientes', clienteRouter);
 apiRouter.use('/reservas', reservaRouter);
 apiRouter.use('/pedidos', pedidoRouter);
 apiRouter.use('/comandas', comandaRouter);
+apiRouter.use('/ventas', ventaRouter);

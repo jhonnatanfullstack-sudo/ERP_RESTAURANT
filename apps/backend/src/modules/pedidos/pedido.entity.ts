@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Mesa } from '../mesas/mesa.entity';
+import { Cliente } from '../clientes/cliente.entity';
 import { DetallePedido } from './detalle-pedido.entity';
 import { numericTransformer } from '../../utils/numeric-transformer';
 
@@ -26,6 +27,10 @@ export class Pedido {
   @ManyToOne(() => Mesa, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'mesa_id' })
   mesa!: Mesa;
+
+  @ManyToOne(() => Cliente, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'cliente_id' })
+  cliente!: Cliente | null;
 
   @Column({ type: 'enum', enum: EstadoPedido, default: EstadoPedido.ABIERTO })
   estado!: EstadoPedido;
