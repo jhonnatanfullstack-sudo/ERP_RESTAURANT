@@ -60,14 +60,31 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 | GET/POST/PUT/DELETE | `/api/clientes`, `/api/clientes/:id`                                                 | Sí + `clientes.*`          | CRUD de clientes (DELETE = desactivar; documento/email únicos si se dan)            |
 | GET                 | `/api/clientes/consulta-documento?tipo=dni\|ruc&numero=...`                          | Sí + `clientes.crear`      | Autocompleta nombres desde RENIEC/SUNAT para Clientes (mismo servicio que Personal) |
 | GET/POST/PUT/DELETE | `/api/reservas`, `/api/reservas/:id`                                                 | Sí + `reservas.*`          | CRUD de reservas de mesa (DELETE = cancelar, ver reglas de negocio abajo)           |
+| GET/POST/PUT/DELETE | `/api/pedidos`, `/api/pedidos/:id`                                                   | Sí + `pedidos.*`           | CRUD de pedidos de mesa (DELETE = cancelar, ver reglas de negocio abajo)            |
+| POST/PUT/DELETE     | `/api/pedidos/:id/detalles`, `/api/pedidos/:id/detalles/:detalleId`                  | Sí + `pedidos.editar`      | Agregar/editar/quitar líneas de producto de un pedido abierto                       |
 
-Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 12.
+Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 13.
 
 ### Reservas de mesa (FASE 11.5)
 
 - **Reglas de negocio** (`reserva.service.ts`): el cliente y la mesa deben existir y estar activos; `cantidadPersonas` no puede exceder `mesa.capacidad`; `fechaHora` debe ser futura; y no puede haber otra reserva **pendiente o confirmada** para la misma mesa cuyo rango `[fechaHora, fechaHora + duracionMinutos)` se solape con el nuevo — el solape se calcula con una condición SQL sobre `fecha_hora` y `duracion_minutos` (`reserva.fecha_hora + (duracion_minutos || ' minutes')::interval > :inicio`), no en memoria.
 - **Estados** (`estado`, enum de Postgres): `pendiente` (por defecto) → `confirmada` → `completada`, o `cancelada` desde pendiente/confirmada. `DELETE /api/reservas/:id` es azúcar sintáctica para "poner `estado = cancelada`" (mismo patrón de borrado lógico que Personal/Usuarios/Clientes, aplicado aquí al ciclo de vida de la reserva en vez de a un campo `activo`).
 - Body de `POST`/`PUT`: `clienteId`, `mesaId`, `fechaHora` (ISO 8601 **con offset/zulu**, ej. `2026-09-09T19:00:00.000Z` — ver nota de frontend abajo), `duracionMinutos` (opcional, default 90), `cantidadPersonas`, `notas` (opcional), y en `PUT` también `estado`.
+
+### Pedidos de mesa (FASE 12)
+
+- **Alcance de esta fase**: un `Pedido` es la orden de una mesa mientras se atiende (Pedidos + Detalle de pedidos, sección 1 de `CLAUDE.md`). Los estados de cocina/comanda (FASE 13) y el cobro/pago (FASE 14, Ventas) son fases futuras separadas y **no** se adelantan aquí — `estado` de Pedido solo modela "abierto → cerrado" o "abierto → cancelado", sin pasos intermedios de preparación.
+- **Estados** (`estado`, enum de Postgres): `abierto` (por defecto, al crear) → `cerrado` (ya no admite cambios; lo hará FASE 14 al facturar), o `cancelado` desde `abierto`. `DELETE /api/pedidos/:id` es azúcar sintáctica para "cancelar" (mismo patrón que Reservas).
+- **Reglas de negocio** (`pedido.service.ts`):
+  - La mesa debe existir y estar activa; no puede haber **dos pedidos `abierto` simultáneos para la misma mesa** (409 si ya hay uno).
+  - Un pedido solo admite agregar/editar/quitar líneas de detalle mientras está `abierto` (400 en cualquier otro estado).
+  - No se puede pasar a `cerrado` sin al menos 1 línea de detalle (400).
+  - Cada línea (`DetallePedido`) guarda un **snapshot del precio del producto** al momento de agregarla (`precioUnitario`) — si el precio del producto cambia después, no afecta pedidos ya creados. `subtotal = cantidad × precioUnitario`, recalculado en cada cambio de cantidad; `Pedido.total` se recalcula sumando todos los `subtotal` cada vez que una línea se agrega, edita o quita.
+  - El producto de una línea debe existir y estar activo al momento de agregarla.
+- Body de `POST /api/pedidos`: `mesaId`, `notas` (opcional). `PUT /api/pedidos/:id`: `notas` y/o `estado` (solo transición `abierto→cerrado` permitida por esta vía; `cancelado` va por `DELETE`).
+- Body de `POST /api/pedidos/:id/detalles`: `productoId`, `cantidad`, `notas` (opcional). `PUT .../detalles/:detalleId`: `cantidad` y/o `notas`.
+- Rutas anidadas: `validateUuidParam(nombre)` (nuevo en `validate.middleware.ts`) valida un parámetro de ruta distinto de `id` (ej. `detalleId`), complementando a `validateIdParam` que solo cubre `id`.
+- **Bug real encontrado y corregido (E2E, 2026-09-08):** `obtenerPedido` no ordenaba explícitamente `detalles` al consultarlos — Postgres no garantiza el orden de un `SELECT` sin `ORDER BY`, y tras un `UPDATE` una fila editada puede devolverse en una posición distinta a la de inserción aunque su `creado_en` no cambie. Esto hacía que las líneas del pedido "saltaran" de lugar en la tabla del frontend al editar una cantidad. Fix: `pedido.service.ts` ordena `pedido.detalles` por `creadoEn` ascendente en memoria antes de devolver el pedido.
 
 ### Archivos subidos (imágenes de producto)
 

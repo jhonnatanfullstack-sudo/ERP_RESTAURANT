@@ -27,6 +27,8 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 | `mesas`                     | Mesas físicas, pertenecen a un salón (FASE 10)                                                   | `id` uuid                |
 | `clientes`                  | Clientes del restaurante, sin relación a `personal`/`empresas` (FASE 11)                         | `id` uuid                |
 | `reservas`                  | Reservas de mesa por cliente, con estado y control de solapamiento (FASE 11.5)                   | `id` uuid                |
+| `pedidos`                   | Pedido de una mesa (cabecera), con estado y total denormalizado (FASE 12)                        | `id` uuid                |
+| `detalle_pedidos`           | Líneas de producto de un pedido, con snapshot de precio (FASE 12)                                | `id` uuid                |
 
 **Relaciones:**
 
@@ -43,6 +45,9 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `clientes.tipo_documento_identidad_id` → `tipos_documento_identidad.id`, **nullable** (`ON DELETE RESTRICT`); índice único compuesto `(tipo_documento_identidad_id, numero_documento)` — mismo patrón que `personal`, pero ambas columnas son nullable: un cliente puede no tener documento registrado, y si lo tiene, debe venir el tipo y el número juntos (validado en `cliente.service.ts`, no solo por la constraint de BD)
 - `reservas.cliente_id` → `clientes.id`, obligatoria (`ON DELETE RESTRICT`)
 - `reservas.mesa_id` → `mesas.id`, obligatoria (`ON DELETE RESTRICT`)
+- `pedidos.mesa_id` → `mesas.id`, obligatoria (`ON DELETE RESTRICT`)
+- `detalle_pedidos.pedido_id` → `pedidos.id`, obligatoria (`ON DELETE CASCADE`: una línea no tiene sentido sin su pedido; primer uso de CASCADE en este esquema fuera de `refresh_tokens`, ya que es una relación padre-hijo real, no un catálogo compartido)
+- `detalle_pedidos.producto_id` → `productos.id`, obligatoria (`ON DELETE RESTRICT`: protege el historial de pedidos aunque el producto deje de existir)
 
 **Por qué este orden (Empresa → Personal → Usuario):** decisión explícita del usuario (2026-09-07). Un `usuario` (cuenta de acceso) siempre parte de un registro de `personal` ya existente (persona real, identificada por documento), y todo `personal` pertenece a una `empresa`. Esto evita datos de personas duplicados entre módulos futuros (ej. nombre/apellido no se repiten en `usuarios`) y prepara el sistema para "Múltiples sucursales" (expansión futura de `CLAUDE.md` sección 1): varias sucursales podrán colgar de una misma `empresa` sin rediseñar el núcleo de identidad.
 
@@ -97,5 +102,7 @@ Migraciones aplicadas (en orden):
 13. `ClienteTipoDocumento` — acopla `clientes` a SUNAT (decisión del usuario, 2026-09-07): agrega `clientes.tipo_documento_identidad_id` (FK nullable a `tipos_documento_identidad`), reemplaza el índice único simple de `numero_documento` por uno compuesto `(tipo_documento_identidad_id, numero_documento)`, igual que `personal`.
 14. `ReservaTabla` — crea `reservas`, con `estado` como **enum nativo de Postgres** (`reservas_estado_enum`: `pendiente`/`confirmada`/`cancelada`/`completada`, no un `varchar` libre) y FKs a `clientes`/`mesas`.
 15. `SeedPermisosReservas` — permisos del módulo (FASE 11.5).
+16. `PedidosTabla` — crea `pedidos` (con `estado` como enum nativo `pedidos_estado_enum`: `abierto`/`cerrado`/`cancelado`, y `total numeric(10,2)` denormalizado) y `detalle_pedidos` (con `precio_unitario`/`subtotal numeric(10,2)`), con FKs a `mesas`/`productos` (FASE 12).
+17. `SeedPermisosPedidos` — permisos del módulo (FASE 12).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.
