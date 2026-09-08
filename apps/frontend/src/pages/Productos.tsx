@@ -133,6 +133,10 @@ export function Productos() {
     queryKey: ['unidades-medida'],
     queryFn: catalogosService.listarUnidadesMedida,
   });
+  const tiposAfectacionIgvQuery = useQuery({
+    queryKey: ['tipos-afectacion-igv'],
+    queryFn: catalogosService.listarTiposAfectacionIgv,
+  });
 
   const crearForm = useForm<CrearProductoInput>();
   const editarForm = useForm<ActualizarProductoInput>();
@@ -244,6 +248,7 @@ export function Productos() {
                   categoriaId: producto.categoria.id,
                   marcaId: producto.marca?.id ?? '',
                   unidadMedidaId: producto.unidadMedida.id,
+                  tipoAfectacionIgvId: producto.tipoAfectacionIgv.id,
                   nombre: producto.nombre,
                   descripcion: producto.descripcion ?? '',
                   precio: producto.precio,
@@ -311,6 +316,21 @@ export function Productos() {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Afectación del IGV</label>
+            <select
+              {...crearForm.register('tipoAfectacionIgvId', { required: true })}
+              className={inputClass}
+            >
+              <option value="">Seleccionar…</option>
+              {tiposAfectacionIgvQuery.data?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -447,6 +467,20 @@ export function Productos() {
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className={labelClass}>Afectación del IGV</label>
+                <select
+                  {...editarForm.register('tipoAfectacionIgvId', { required: true })}
+                  className={inputClass}
+                >
+                  {tiposAfectacionIgvQuery.data?.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.nombre}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

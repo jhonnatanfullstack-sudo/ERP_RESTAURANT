@@ -8,6 +8,7 @@ import {
   Contact,
   DoorOpen,
   Flame,
+  Receipt,
   ShieldCheck,
   Tags,
   UserCircle2,
@@ -28,9 +29,10 @@ import * as clientesService from '../services/clientes.service';
 import * as reservasService from '../services/reservas.service';
 import * as pedidosService from '../services/pedidos.service';
 import * as comandasService from '../services/comandas.service';
+import * as ventasService from '../services/ventas.service';
 import { useAuth } from '../context/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
-import { formatearFechaLarga } from '../utils/formato';
+import { formatearFechaLarga, formatearPrecio } from '../utils/formato';
 
 export function Dashboard() {
   const { usuario } = useAuth();
@@ -75,6 +77,10 @@ export function Dashboard() {
     queryKey: ['comandas'],
     queryFn: comandasService.listarComandas,
   });
+  const ventasQuery = useQuery({
+    queryKey: ['ventas'],
+    queryFn: () => ventasService.listarVentas(),
+  });
 
   const hoy = new Date();
   const pedidosAbiertos = (pedidosQuery.data ?? []).filter((p) => p.estado === 'abierto');
@@ -93,6 +99,16 @@ export function Dashboard() {
   const reservasPendientes = reservas.filter((r) => r.estado === 'pendiente');
   const mesasActivas = (mesasQuery.data ?? []).filter((m) => m.activo);
   const clientesActivos = (clientesQuery.data ?? []).filter((c) => c.activo);
+  const ventasHoy = (ventasQuery.data ?? []).filter((v) => {
+    if (v.estado !== 'emitida') return false;
+    const fecha = new Date(v.creadoEn);
+    return (
+      fecha.getFullYear() === hoy.getFullYear() &&
+      fecha.getMonth() === hoy.getMonth() &&
+      fecha.getDate() === hoy.getDate()
+    );
+  });
+  const totalVentasHoy = ventasHoy.reduce((suma, v) => suma + v.total, 0);
 
   const resumenHoy = [
     {
@@ -142,6 +158,14 @@ export function Dashboard() {
       tono: 'violeta' as const,
       cargando: clientesQuery.isLoading,
       ruta: '/clientes',
+    },
+    {
+      etiqueta: 'Ventas de hoy',
+      valor: formatearPrecio(totalVentasHoy),
+      icono: Receipt,
+      tono: 'esmeralda' as const,
+      cargando: ventasQuery.isLoading,
+      ruta: '/ventas',
     },
   ];
 
@@ -205,7 +229,7 @@ export function Dashboard() {
       </div>
 
       <section className="mt-6">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
           {resumenHoy.map((tarjeta) => (
             <StatCard
               key={tarjeta.etiqueta}

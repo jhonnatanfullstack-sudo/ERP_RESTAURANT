@@ -1,5 +1,13 @@
 import { api } from './api';
-import type { ApiSuccess, TipoDocumentoIdentidad, UnidadMedida } from '../types/api';
+import type {
+  ApiSuccess,
+  MedioPago,
+  TipoAfectacionIgv,
+  TipoComprobante,
+  TipoDocumentoIdentidad,
+  TipoOperacion,
+  UnidadMedida,
+} from '../types/api';
 
 export async function listarTiposDocumentoIdentidad() {
   const res = await api.get<ApiSuccess<TipoDocumentoIdentidad[]>>(
@@ -10,5 +18,25 @@ export async function listarTiposDocumentoIdentidad() {
 
 export async function listarUnidadesMedida() {
   const res = await api.get<ApiSuccess<UnidadMedida[]>>('/api/catalogos/unidades-medida');
+  return res.data.data;
+}
+
+export async function listarTiposComprobante() {
+  const res = await api.get<ApiSuccess<TipoComprobante[]>>('/api/catalogos/tipos-comprobante');
+  return res.data.data;
+}
+
+export async function listarTiposAfectacionIgv() {
+  const res = await api.get<ApiSuccess<TipoAfectacionIgv[]>>('/api/catalogos/tipos-afectacion-igv');
+  return res.data.data;
+}
+
+export async function listarTiposOperacion() {
+  const res = await api.get<ApiSuccess<TipoOperacion[]>>('/api/catalogos/tipos-operacion');
+  return res.data.data;
+}
+
+export async function listarMediosPago() {
+  const res = await api.get<ApiSuccess<MedioPago[]>>('/api/catalogos/medios-pago');
   return res.data.data;
 }

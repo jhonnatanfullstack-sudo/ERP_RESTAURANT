@@ -37,3 +37,35 @@ export async function unidadesMedida(
     next(error);
   }
 }
+
+export async function tiposAfectacionIgv(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, await catalogosService.listarTiposAfectacionIgv());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function tiposOperacion(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, await catalogosService.listarTiposOperacion());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function mediosPago(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(res, await catalogosService.listarMediosPago());
+  } catch (error) {
+    next(error);
+  }
+}

@@ -71,11 +71,36 @@ export interface UnidadMedida {
   nombre: string;
 }
 
+export interface TipoComprobante {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
+export interface TipoAfectacionIgv {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
+export interface TipoOperacion {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
+export interface MedioPago {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
 export interface Producto {
   id: string;
   categoria: Pick<Categoria, 'id' | 'nombre'>;
   marca: Pick<Marca, 'id' | 'nombre'> | null;
   unidadMedida: UnidadMedida;
+  tipoAfectacionIgv: TipoAfectacionIgv;
   nombre: string;
   descripcion: string | null;
   precio: number;
@@ -146,6 +171,7 @@ export interface DetallePedido {
 export interface Pedido {
   id: string;
   mesa: Mesa;
+  cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos'> | null;
   estado: EstadoPedido;
   total: number;
   notas: string | null;
@@ -160,6 +186,39 @@ export interface Comanda {
   estado: EstadoComanda;
   notas: string | null;
   detalles: DetallePedido[];
+  creadoEn: string;
+}
+
+export type FormaPago = 'contado' | 'credito';
+export type EstadoVenta = 'emitida' | 'anulada';
+
+export interface DetalleVenta {
+  id: string;
+  producto: Pick<Producto, 'id' | 'nombre'>;
+  descripcionProducto: string;
+  cantidad: number;
+  precioUnitario: number;
+  tipoAfectacionIgv: TipoAfectacionIgv;
+  valorVenta: number;
+  igv: number;
+  subtotal: number;
+}
+
+export interface Venta {
+  id: string;
+  pedido: Pick<Pedido, 'id' | 'mesa' | 'estado' | 'total' | 'creadoEn'>;
+  cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos' | 'numeroDocumento'> | null;
+  tipoComprobante: TipoComprobante;
+  serie: string;
+  numero: number;
+  tipoOperacion: TipoOperacion;
+  formaPago: FormaPago;
+  medioPago: MedioPago | null;
+  subtotal: number;
+  igv: number;
+  total: number;
+  estado: EstadoVenta;
+  detalles: DetalleVenta[];
   creadoEn: string;
 }
 

@@ -3,13 +3,21 @@ import { join } from 'node:path';
 import { HttpError } from '../../utils/http-error';
 import { categoriaRepository } from '../categorias/categoria.repository';
 import { marcaRepository } from '../marcas/marca.repository';
-import { unidadMedidaRepository } from '../catalogos/catalogos.repository';
+import {
+  tipoAfectacionIgvRepository,
+  unidadMedidaRepository,
+} from '../catalogos/catalogos.repository';
 import { productoRepository } from './producto.repository';
 import { UPLOADS_DIR } from '../../config/uploads';
 import type { ActualizarProductoDto, CrearProductoDto } from './producto.dto';
 import type { Producto } from './producto.entity';
 
-const RELACIONES = { categoria: true, marca: true, unidadMedida: true } as const;
+const RELACIONES = {
+  categoria: true,
+  marca: true,
+  unidadMedida: true,
+  tipoAfectacionIgv: true,
+} as const;
 
 export async function listarProductos(): Promise<Producto[]> {
   return productoRepository.find({ relations: RELACIONES, order: { nombre: 'ASC' } });
@@ -56,14 +64,28 @@ async function resolverUnidadMedida(unidadMedidaId: string) {
   return unidadMedida;
 }
 
+async function resolverTipoAfectacionIgv(tipoAfectacionIgvId: string) {
+  const tipoAfectacionIgv = await tipoAfectacionIgvRepository.findOneBy({
+    id: tipoAfectacionIgvId,
+  });
+  if (!tipoAfectacionIgv) {
+    throw new HttpError(400, 'El tipo de afectación del IGV indicado no existe', [
+      'tipoAfectacionIgvId inválido',
+    ]);
+  }
+  return tipoAfectacionIgv;
+}
+
 export async function crearProducto(dto: CrearProductoDto): Promise<Producto> {
   const categoria = await resolverCategoria(dto.categoriaId);
   const marca = await resolverMarca(dto.marcaId);
   const unidadMedida = await resolverUnidadMedida(dto.unidadMedidaId);
+  const tipoAfectacionIgv = await resolverTipoAfectacionIgv(dto.tipoAfectacionIgvId);
   const producto = productoRepository.create({
     categoria,
     marca,
     unidadMedida,
+    tipoAfectacionIgv,
     nombre: dto.nombre,
     descripcion: dto.descripcion ?? null,
     precio: dto.precio,
@@ -86,6 +108,9 @@ export async function actualizarProducto(
   }
   if (dto.unidadMedidaId) {
     producto.unidadMedida = await resolverUnidadMedida(dto.unidadMedidaId);
+  }
+  if (dto.tipoAfectacionIgvId) {
+    producto.tipoAfectacionIgv = await resolverTipoAfectacionIgv(dto.tipoAfectacionIgvId);
   }
   if (dto.nombre !== undefined) producto.nombre = dto.nombre;
   if (dto.descripcion !== undefined) producto.descripcion = dto.descripcion;

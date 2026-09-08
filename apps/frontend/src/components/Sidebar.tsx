@@ -11,6 +11,7 @@ import {
   DoorOpen,
   Flame,
   LayoutDashboard,
+  Receipt,
   ShieldCheck,
   UtensilsCrossed,
   X,
@@ -56,6 +57,13 @@ const menu: ItemMenu[] = [
     ruta: '/cocina',
     icono: Flame,
     permiso: 'cocina.ver',
+  },
+  {
+    tipo: 'enlace',
+    etiqueta: 'Ventas',
+    ruta: '/ventas',
+    icono: Receipt,
+    permiso: 'ventas.ver',
   },
   {
     tipo: 'grupo',

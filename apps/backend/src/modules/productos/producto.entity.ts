@@ -10,6 +10,7 @@ import {
 import { Categoria } from '../categorias/categoria.entity';
 import { Marca } from '../marcas/marca.entity';
 import { UnidadMedida } from '../catalogos/unidad-medida.entity';
+import { TipoAfectacionIgv } from '../catalogos/tipo-afectacion-igv.entity';
 
 @Entity('productos')
 export class Producto {
@@ -27,6 +28,10 @@ export class Producto {
   @ManyToOne(() => UnidadMedida, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'unidad_medida_id' })
   unidadMedida!: UnidadMedida;
+
+  @ManyToOne(() => TipoAfectacionIgv, { nullable: false, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'tipo_afectacion_igv_id' })
+  tipoAfectacionIgv!: TipoAfectacionIgv;
 
   @Column({ type: 'varchar', length: 150 })
   nombre!: string;

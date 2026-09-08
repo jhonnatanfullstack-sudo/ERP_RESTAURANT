@@ -5,6 +5,7 @@ export interface CrearProductoInput {
   categoriaId: string;
   marcaId?: string | null;
   unidadMedidaId: string;
+  tipoAfectacionIgvId: string;
   nombre: string;
   descripcion?: string | null;
   precio: number;
@@ -14,6 +15,7 @@ export interface ActualizarProductoInput {
   categoriaId?: string;
   marcaId?: string | null;
   unidadMedidaId?: string;
+  tipoAfectacionIgvId?: string;
   nombre?: string;
   descripcion?: string | null;
   precio?: number;
