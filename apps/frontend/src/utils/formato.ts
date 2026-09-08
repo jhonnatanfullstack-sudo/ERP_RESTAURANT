@@ -23,6 +23,18 @@ export function formatearFechaHora(iso: string): string {
   return formateadorFechaHora.format(new Date(iso));
 }
 
+const formateadorFechaLarga = new Intl.DateTimeFormat('es-PE', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+});
+
+export function formatearFechaLarga(fecha: Date): string {
+  const texto = formateadorFechaLarga.format(fecha);
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
 /** Convierte un ISO (UTC) a la forma "YYYY-MM-DDTHH:mm" que espera <input type="datetime-local"> en hora local. */
 export function aInputDatetimeLocal(iso: string): string {
   const fecha = new Date(iso);

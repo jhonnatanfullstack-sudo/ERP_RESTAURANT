@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { Pencil, Trash2, UserPlus } from 'lucide-react';
 import * as usuariosService from '../services/usuarios.service';
 import * as personalService from '../services/personal.service';
@@ -13,6 +13,8 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Combobox } from '../components/ui/Combobox';
+import type { OpcionCombobox } from '../components/ui/Combobox';
 import type { CrearUsuarioInput, ActualizarUsuarioInput } from '../services/usuarios.service';
 import type { Usuario } from '../types/api';
 
@@ -75,6 +77,12 @@ export function Usuarios() {
   const personalSinUsuario =
     personalQuery.data?.filter((p) => !usuariosQuery.data?.some((u) => u.personal.id === p.id)) ??
     [];
+
+  const opcionesPersonal: OpcionCombobox[] = personalSinUsuario.map((p) => ({
+    valor: p.id,
+    etiqueta: `${p.nombres} ${p.apellidoPaterno ?? ''}`.trim(),
+    descripcion: p.numeroDocumento ?? undefined,
+  }));
 
   if (usuariosQuery.isLoading) return <Spinner />;
 
@@ -158,17 +166,20 @@ export function Usuarios() {
 
           <div>
             <label className={labelClass}>Personal</label>
-            <select
-              {...crearForm.register('personalId', { required: true })}
-              className={inputClass}
-            >
-              <option value="">Seleccionar…</option>
-              {personalSinUsuario.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nombres} {p.apellidoPaterno} — {p.numeroDocumento}
-                </option>
-              ))}
-            </select>
+            <Controller
+              control={crearForm.control}
+              name="personalId"
+              rules={{ required: true }}
+              render={({ field }) => (
+                <Combobox
+                  opciones={opcionesPersonal}
+                  valor={field.value}
+                  onCambiar={field.onChange}
+                  placeholder="Buscar personal…"
+                  vacio="No hay personal disponible"
+                />
+              )}
+            />
           </div>
 
           <div>

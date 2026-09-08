@@ -1,21 +1,43 @@
 import type { LucideIcon } from 'lucide-react';
 import { Link } from 'react-router';
 
+type TonoStatCard = 'naranja' | 'azul' | 'esmeralda' | 'ambar' | 'violeta';
+
 interface StatCardProps {
   etiqueta: string;
   valor: number | string;
   icono: LucideIcon;
   cargando?: boolean;
   ruta?: string;
+  descripcion?: string;
+  tono?: TonoStatCard;
 }
 
-export function StatCard({ etiqueta, valor, icono: Icono, cargando, ruta }: StatCardProps) {
+const estilosIcono: Record<TonoStatCard, string> = {
+  naranja: 'bg-orange-50 text-orange-600',
+  azul: 'bg-blue-50 text-blue-600',
+  esmeralda: 'bg-emerald-50 text-emerald-600',
+  ambar: 'bg-amber-50 text-amber-600',
+  violeta: 'bg-violet-50 text-violet-600',
+};
+
+export function StatCard({
+  etiqueta,
+  valor,
+  icono: Icono,
+  cargando,
+  ruta,
+  descripcion,
+  tono = 'naranja',
+}: StatCardProps) {
   const contenido = (
     <>
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600">
+      <div
+        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${estilosIcono[tono]}`}
+      >
         <Icono className="h-5 w-5" strokeWidth={2} />
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="text-sm text-zinc-500">{etiqueta}</p>
         <p className="text-2xl font-bold text-zinc-900">
           {cargando ? (
@@ -24,6 +46,7 @@ export function StatCard({ etiqueta, valor, icono: Icono, cargando, ruta }: Stat
             valor
           )}
         </p>
+        {descripcion && <p className="truncate text-xs text-zinc-400">{descripcion}</p>}
       </div>
     </>
   );

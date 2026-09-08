@@ -3,6 +3,8 @@ import {
   Award,
   Building2,
   CalendarCheck,
+  CalendarClock,
+  ClipboardList,
   Contact,
   DoorOpen,
   ShieldCheck,
@@ -23,8 +25,10 @@ import * as salonesService from '../services/salones.service';
 import * as mesasService from '../services/mesas.service';
 import * as clientesService from '../services/clientes.service';
 import * as reservasService from '../services/reservas.service';
+import * as pedidosService from '../services/pedidos.service';
 import { useAuth } from '../context/AuthContext';
 import { StatCard } from '../components/ui/StatCard';
+import { formatearFechaLarga } from '../utils/formato';
 
 export function Dashboard() {
   const { usuario } = useAuth();
@@ -61,6 +65,68 @@ export function Dashboard() {
     queryKey: ['reservas'],
     queryFn: reservasService.listarReservas,
   });
+  const pedidosQuery = useQuery({
+    queryKey: ['pedidos'],
+    queryFn: pedidosService.listarPedidos,
+  });
+
+  const hoy = new Date();
+  const pedidosAbiertos = (pedidosQuery.data ?? []).filter((p) => p.estado === 'abierto');
+  const reservas = reservasQuery.data ?? [];
+  const reservasHoy = reservas.filter((r) => {
+    const fecha = new Date(r.fechaHora);
+    return (
+      fecha.getFullYear() === hoy.getFullYear() &&
+      fecha.getMonth() === hoy.getMonth() &&
+      fecha.getDate() === hoy.getDate()
+    );
+  });
+  const reservasPendientes = reservas.filter((r) => r.estado === 'pendiente');
+  const mesasActivas = (mesasQuery.data ?? []).filter((m) => m.activo);
+  const clientesActivos = (clientesQuery.data ?? []).filter((c) => c.activo);
+
+  const resumenHoy = [
+    {
+      etiqueta: 'Pedidos abiertos',
+      valor: pedidosAbiertos.length,
+      icono: ClipboardList,
+      tono: 'naranja' as const,
+      cargando: pedidosQuery.isLoading,
+      ruta: '/pedidos',
+    },
+    {
+      etiqueta: 'Reservas de hoy',
+      valor: reservasHoy.length,
+      icono: CalendarClock,
+      tono: 'azul' as const,
+      cargando: reservasQuery.isLoading,
+      ruta: '/reservas',
+    },
+    {
+      etiqueta: 'Reservas pendientes',
+      valor: reservasPendientes.length,
+      icono: CalendarCheck,
+      tono: 'ambar' as const,
+      cargando: reservasQuery.isLoading,
+      ruta: '/reservas',
+    },
+    {
+      etiqueta: 'Mesas activas',
+      valor: mesasActivas.length,
+      icono: Utensils,
+      tono: 'esmeralda' as const,
+      cargando: mesasQuery.isLoading,
+      ruta: '/mesas',
+    },
+    {
+      etiqueta: 'Clientes activos',
+      valor: clientesActivos.length,
+      icono: Contact,
+      tono: 'violeta' as const,
+      cargando: clientesQuery.isLoading,
+      ruta: '/clientes',
+    },
+  ];
 
   const secciones = [
     {
@@ -113,17 +179,37 @@ export function Dashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-zinc-900">Hola, {usuario?.personal.nombres} 👋</h1>
-      <p className="mt-1 text-sm text-zinc-500">
-        Resumen general del sistema. Los módulos operativos se irán habilitando por fase.
-      </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900">Hola, {usuario?.personal.nombres} 👋</h1>
+          <p className="mt-1 text-sm text-zinc-500">Esto es lo que está pasando hoy.</p>
+        </div>
+        <p className="text-sm font-medium text-zinc-500">{formatearFechaLarga(hoy)}</p>
+      </div>
 
-      <div className="mt-8 flex flex-col gap-8">
+      <section className="mt-6">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {resumenHoy.map((tarjeta) => (
+            <StatCard
+              key={tarjeta.etiqueta}
+              etiqueta={tarjeta.etiqueta}
+              ruta={tarjeta.ruta}
+              valor={tarjeta.valor}
+              cargando={tarjeta.cargando}
+              icono={tarjeta.icono}
+              tono={tarjeta.tono}
+            />
+          ))}
+        </div>
+      </section>
+
+      <div className="mt-10 flex flex-col gap-8">
+        <h2 className="-mb-4 text-sm font-semibold text-zinc-700">Accesos rápidos</h2>
         {secciones.map((seccion) => (
           <section key={seccion.titulo}>
-            <h2 className="mb-3 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            <h3 className="mb-3 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
               {seccion.titulo}
-            </h2>
+            </h3>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {seccion.tarjetas.map((tarjeta) => (
                 <StatCard

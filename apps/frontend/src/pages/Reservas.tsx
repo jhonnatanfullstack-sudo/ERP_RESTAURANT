@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { CalendarCheck, CalendarX2, Check, Pencil } from 'lucide-react';
 import * as reservasService from '../services/reservas.service';
 import * as clientesService from '../services/clientes.service';
@@ -13,6 +13,8 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Combobox } from '../components/ui/Combobox';
+import type { OpcionCombobox } from '../components/ui/Combobox';
 import { aInputDatetimeLocal, formatearFechaHora } from '../utils/formato';
 import type { ActualizarReservaInput, CrearReservaInput } from '../services/reservas.service';
 import type { EstadoReserva, Reserva } from '../types/api';
@@ -58,6 +60,34 @@ export function Reservas() {
     queryFn: clientesService.listarClientes,
   });
   const mesasQuery = useQuery({ queryKey: ['mesas'], queryFn: mesasService.listarMesas });
+
+  const opcionesClientes: OpcionCombobox[] = (clientesQuery.data ?? [])
+    .filter((c) => c.activo)
+    .map((c) => ({
+      valor: c.id,
+      etiqueta: `${c.nombres} ${c.apellidos ?? ''}`.trim(),
+      descripcion: c.telefono ?? undefined,
+    }));
+
+  const opcionesMesas: OpcionCombobox[] = (mesasQuery.data ?? [])
+    .filter((m) => m.activo)
+    .map((m) => ({
+      valor: m.id,
+      etiqueta: `${m.salon.nombre} — Mesa ${m.numero}`,
+      descripcion: `${m.capacidad} personas`,
+    }));
+
+  const opcionesClientesEdicion: OpcionCombobox[] = (clientesQuery.data ?? []).map((c) => ({
+    valor: c.id,
+    etiqueta: `${c.nombres} ${c.apellidos ?? ''}`.trim(),
+    descripcion: c.telefono ?? undefined,
+  }));
+
+  const opcionesMesasEdicion: OpcionCombobox[] = (mesasQuery.data ?? []).map((m) => ({
+    valor: m.id,
+    etiqueta: `${m.salon.nombre} — Mesa ${m.numero}`,
+    descripcion: `${m.capacidad} personas`,
+  }));
 
   const crearForm = useForm<CrearReservaInput>();
   const editarForm = useForm<ActualizarReservaInput>();
@@ -239,30 +269,38 @@ export function Reservas() {
 
           <div>
             <label className={labelClass}>Cliente</label>
-            <select {...crearForm.register('clienteId', { required: true })} className={inputClass}>
-              <option value="">Seleccionar…</option>
-              {clientesQuery.data
-                ?.filter((c) => c.activo)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombres} {c.apellidos ?? ''}
-                  </option>
-                ))}
-            </select>
+            <Controller
+              control={crearForm.control}
+              name="clienteId"
+              rules={{ required: true }}
+              render={({ field }) => (
+                <Combobox
+                  opciones={opcionesClientes}
+                  valor={field.value}
+                  onCambiar={field.onChange}
+                  placeholder="Buscar cliente…"
+                  vacio="No se encontraron clientes"
+                />
+              )}
+            />
           </div>
 
           <div>
             <label className={labelClass}>Mesa</label>
-            <select {...crearForm.register('mesaId', { required: true })} className={inputClass}>
-              <option value="">Seleccionar…</option>
-              {mesasQuery.data
-                ?.filter((m) => m.activo)
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.salon.nombre} — Mesa {m.numero} ({m.capacidad} personas)
-                  </option>
-                ))}
-            </select>
+            <Controller
+              control={crearForm.control}
+              name="mesaId"
+              rules={{ required: true }}
+              render={({ field }) => (
+                <Combobox
+                  opciones={opcionesMesas}
+                  valor={field.value}
+                  onCambiar={field.onChange}
+                  placeholder="Buscar mesa…"
+                  vacio="No se encontraron mesas"
+                />
+              )}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -331,27 +369,38 @@ export function Reservas() {
 
             <div>
               <label className={labelClass}>Cliente</label>
-              <select
-                {...editarForm.register('clienteId', { required: true })}
-                className={inputClass}
-              >
-                {clientesQuery.data?.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.nombres} {c.apellidos ?? ''}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={editarForm.control}
+                name="clienteId"
+                rules={{ required: true }}
+                render={({ field }) => (
+                  <Combobox
+                    opciones={opcionesClientesEdicion}
+                    valor={field.value}
+                    onCambiar={field.onChange}
+                    placeholder="Buscar cliente…"
+                    vacio="No se encontraron clientes"
+                  />
+                )}
+              />
             </div>
 
             <div>
               <label className={labelClass}>Mesa</label>
-              <select {...editarForm.register('mesaId', { required: true })} className={inputClass}>
-                {mesasQuery.data?.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.salon.nombre} — Mesa {m.numero} ({m.capacidad} personas)
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={editarForm.control}
+                name="mesaId"
+                rules={{ required: true }}
+                render={({ field }) => (
+                  <Combobox
+                    opciones={opcionesMesasEdicion}
+                    valor={field.value}
+                    onCambiar={field.onChange}
+                    placeholder="Buscar mesa…"
+                    vacio="No se encontraron mesas"
+                  />
+                )}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
