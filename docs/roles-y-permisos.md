@@ -8,23 +8,26 @@
 
 El catálogo de permisos es controlado por el código (sembrado en migraciones), no editable vía API — solo se puede **consultar** (`GET /api/permisos`) y **asignar a un rol** (`PUT /api/roles/:id/permisos`). Esto evita que se creen códigos de permiso que ningún middleware verifica realmente.
 
-| Código                                                | Descripción                                                                                                          |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `usuarios.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de cuentas de usuario (`.eliminar` = desactivar)                                                             |
-| `personal.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de personal (`.eliminar` = desactivar, cascada a su usuario)                                                 |
-| `roles.ver` / `.crear` / `.editar` / `.eliminar`      | Gestión de roles (`.eliminar` = borrado real, bloqueado si hay usuarios con ese rol)                                 |
-| `permisos.ver`                                        | Consulta del catálogo de permisos                                                                                    |
-| `empresa.ver` / `.crear` / `.editar`                  | Gestión de la empresa (sin `.eliminar`: una empresa no se borra)                                                     |
-| `categorias.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de categorías de la carta (`.eliminar` bloqueado si tiene productos)                                         |
-| `marcas.ver` / `.crear` / `.editar` / `.eliminar`     | Gestión de marcas de producto (`.eliminar` bloqueado si tiene productos)                                             |
-| `productos.ver` / `.crear` / `.editar` / `.eliminar`  | Gestión de productos (`.eliminar` = borrado real, también borra la foto)                                             |
-| `salones.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de salones (`.eliminar` bloqueado si tiene mesas)                                                            |
-| `mesas.ver` / `.crear` / `.editar` / `.eliminar`      | Gestión de mesas (`.eliminar` = borrado real)                                                                        |
-| `clientes.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de clientes (`.eliminar` = desactivar)                                                                       |
-| `reservas.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de reservas de mesa (`.eliminar` = cancelar)                                                                 |
-| `pedidos.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de pedidos de mesa (`.editar` también cubre agregar/editar/quitar líneas de detalle; `.eliminar` = cancelar) |
+| Código                                                | Descripción                                                                                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `usuarios.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de cuentas de usuario (`.eliminar` = desactivar)                                                                                          |
+| `personal.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de personal (`.eliminar` = desactivar, cascada a su usuario)                                                                              |
+| `roles.ver` / `.crear` / `.editar` / `.eliminar`      | Gestión de roles (`.eliminar` = borrado real, bloqueado si hay usuarios con ese rol)                                                              |
+| `permisos.ver`                                        | Consulta del catálogo de permisos                                                                                                                 |
+| `empresa.ver` / `.crear` / `.editar`                  | Gestión de la empresa (sin `.eliminar`: una empresa no se borra)                                                                                  |
+| `categorias.ver` / `.crear` / `.editar` / `.eliminar` | Gestión de categorías de la carta (`.eliminar` bloqueado si tiene productos)                                                                      |
+| `marcas.ver` / `.crear` / `.editar` / `.eliminar`     | Gestión de marcas de producto (`.eliminar` bloqueado si tiene productos)                                                                          |
+| `productos.ver` / `.crear` / `.editar` / `.eliminar`  | Gestión de productos (`.eliminar` = borrado real, también borra la foto)                                                                          |
+| `salones.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de salones (`.eliminar` bloqueado si tiene mesas)                                                                                         |
+| `mesas.ver` / `.crear` / `.editar` / `.eliminar`      | Gestión de mesas (`.eliminar` = borrado real)                                                                                                     |
+| `clientes.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de clientes (`.eliminar` = desactivar)                                                                                                    |
+| `reservas.ver` / `.crear` / `.editar` / `.eliminar`   | Gestión de reservas de mesa (`.eliminar` = cancelar)                                                                                              |
+| `pedidos.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de pedidos de mesa (`.editar` también cubre agregar/editar/quitar líneas de detalle **y enviar líneas a cocina**; `.eliminar` = cancelar) |
+| `cocina.ver` / `.editar` / `.eliminar`                | Cola de comandas de cocina (`.editar` = avanzar estado; `.eliminar` = cancelar una comanda pendiente; no hay `.crear`, ver nota abajo)            |
 
 Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
+
+**Nota sobre `cocina` (FASE 13):** "enviar una línea a cocina" (`POST /api/comandas`) no usa un permiso `cocina.crear` — reutiliza `pedidos.editar`, porque conceptualmente es una acción sobre el pedido (el mesero decide qué se manda a preparar), no una acción de cocina. `cocina.*` gobierna la cola de cocina en sí: verla y avanzar/cancelar comandas.
 
 ## Semántica de "eliminar" (2026-09-07)
 
@@ -33,7 +36,8 @@ Se amplía este catálogo (con una nueva migración) a medida que se implementen
 - **Categorías, Marcas y Salones**: mismo patrón que Roles — borrado real, bloqueado con 409 si algún producto/mesa todavía las referencia (FK `ON DELETE RESTRICT`; el pre-check en el service evita que la violación de FK llegue como un 500 sin explicación).
 - **Mesas**: borrado real sin restricción (nada las referencia todavía); único `(salon_id, numero)` — crear/editar con un número repetido en el mismo salón responde 409, no una violación de índice sin explicación.
 - **Reservas**: no tiene columna `activo` — su ciclo de vida vive en `estado` (`pendiente`/`confirmada`/`cancelada`/`completada`). `DELETE /api/reservas/:id` no borra la fila, pone `estado = 'cancelada'` (mismo espíritu de "no perder el historial" que Usuarios/Personal/Clientes, aplicado a un enum en vez de a un booleano).
-- **Pedidos**: mismo patrón que Reservas — ciclo de vida en `estado` (`abierto`/`cerrado`/`cancelado`), `DELETE /api/pedidos/:id` pone `estado = 'cancelado'`. Las líneas de detalle (`detalle_pedidos`) sí son de borrado real (`DELETE .../detalles/:detalleId`), porque son un renglón editable del pedido en curso, no un evento a preservar por sí solo — su historia queda igualmente preservada en el `total` ya recalculado y en cualquier reporte futuro basado en `pedidos` cerrados.
+- **Pedidos**: mismo patrón que Reservas — ciclo de vida en `estado` (`abierto`/`cerrado`/`cancelado`), `DELETE /api/pedidos/:id` pone `estado = 'cancelado'`. Las líneas de detalle (`detalle_pedidos`) sí son de borrado real (`DELETE .../detalles/:detalleId`), porque son un renglón editable del pedido en curso, no un evento a preservar por sí solo — su historia queda igualmente preservada en el `total` ya recalculado y en cualquier reporte futuro basado en `pedidos` cerrados. **Excepción (FASE 13):** una línea ya asignada a una comanda no admite `PUT`/`DELETE` en absoluto (ni editar ni el borrado real) hasta que esa comanda se cancele.
+- **Comandas**: igual patrón — ciclo de vida en `estado`, `DELETE /api/comandas/:id` pone `estado = 'cancelada'` (nunca borrado real), y solo mientras está `pendiente` (una vez que la cocina empieza a prepararla, ya no se cancela).
 - **Empresa** no tiene endpoint de eliminar — una empresa no se borra desde la UI.
 
 ## Rol de arranque

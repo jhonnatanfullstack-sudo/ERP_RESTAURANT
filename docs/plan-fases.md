@@ -18,7 +18,7 @@ Orden base definido en la sección 15 de `CLAUDE.md` (no se modifica ese documen
 | 11       | Clientes                                                                      | `CLAUDE.md`                       | Completada |
 | **11.5** | **Reservas de mesa**                                                          | **Decisión 2026-09-07**           | Completada |
 | 12       | Pedidos                                                                       | `CLAUDE.md`                       | Completada |
-| 13       | Comandas y cocina                                                             | `CLAUDE.md`                       | Pendiente  |
+| 13       | Comandas y cocina                                                             | `CLAUDE.md`                       | Completada |
 | 14       | Ventas y pagos                                                                | `CLAUDE.md`                       | Pendiente  |
 | ...      | (resto sin cambios)                                                           | `CLAUDE.md`                       | Pendiente  |
 

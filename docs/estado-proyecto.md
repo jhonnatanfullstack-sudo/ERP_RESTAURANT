@@ -4,7 +4,7 @@
 
 ## Resumen ejecutivo
 
-- **Fases completadas:** 0 a 12 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real, Salones/Mesas, Clientes acoplado a SUNAT, Reservas de mesa, y Pedidos de mesa). Todo probado de punta a punta en navegador real (Playwright).
+- **Fases completadas:** 0 a 13 (monorepo, base de datos con núcleo Empresa→Personal→Usuario y catálogos SUNAT, backend Express, frontend React, Usuarios/Roles-Permisos/Autenticación JWT, Categorías, Productos con fotos + Marcas + Unidad de Medida SUNAT + carta pública real, Salones/Mesas, Clientes acoplado a SUNAT, Reservas de mesa, Pedidos de mesa, y Comandas/Cocina). Todo probado de punta a punta en navegador real (Playwright).
 - **Modo de avance:** el usuario autorizó avanzar de fase en fase sin pedir confirmación ("CONTINUAR") en cada una, siempre validando que no haya errores. Ver `plan-fases.md` → sección "Modo de avance".
 - **El sistema ya es usable de extremo a extremo**: se puede iniciar sesión, crear personal/usuarios/roles, crear categorías/marcas y productos con foto y unidad de medida, y la carta pública (`/carta`, sin login) ya muestra productos reales agrupados por categoría.
 - **Decisión de alcance (2026-09-07):** el usuario pidió que "el sistema sea completo" e insinuó adelantar Insumos/Recetas (mezcla de ingredientes con cantidades por platillo) ahora mismo. Se le explicó que eso vive en FASE 16 (Inventario) + FASE 18 (Recetas), con manejo de stock/compras/kardex, y **eligió seguir el orden original del plan** — no construir Insumos/Recetas todavía. En su lugar se ampliaron Categorías/Productos con lo que sí correspondía ahora: Marcas y Unidad de Medida SUNAT, más un sidebar con submenús preparado para los grupos que faltan (Ventas, Pedidos, Inventario, etc.). Ver `decisiones-tecnicas.md`.
@@ -20,7 +20,7 @@ pnpm install
 docker compose up -d
 docker inspect restaurant_erp_postgres --format '{{.State.Health.Status}}'  # debe decir "healthy"
 
-# 3. Verificar migraciones aplicadas (deben ser 22)
+# 3. Verificar migraciones aplicadas (deben ser 24)
 pnpm --filter @restaurant-erp/backend migration:show
 
 # 4. Validar que todo compila/lint limpio antes de seguir
@@ -41,7 +41,7 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 ## Qué existe hasta ahora
 
 - **Monorepo pnpm** (`apps/backend`, `apps/frontend`, `packages/*`) — FASE 1.
-- **Base de datos** (FASE 2 en adelante): 22 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
+- **Base de datos** (FASE 2 en adelante): 24 migraciones aplicadas. Ver `base-de-datos.md` para el detalle y el listado completo.
 - **Backend base** (FASE 3): Express, Helmet, CORS, rate limiting, manejo de errores, formato de respuesta consistente. Ver `api.md`.
 - **Frontend base** (FASE 4): Vite + React 19 + Tailwind 4 + React Router 8 + TanStack Query. Ver `frontend.md`.
 - **Usuarios/Personal/Empresa/Roles/Permisos (FASE 5-6)**: CRUD completo backend (controller/service/repository/dto con zod) para los 5 módulos, con reglas de negocio reales (unicidad de RUC/documento/email, 1 usuario por personal, etc.). Frontend: páginas `Usuarios`, `Personal`, `Roles`, `Empresa` con tabla + formulario de creación (modal), usando TanStack Query.
@@ -60,11 +60,12 @@ pnpm --filter @restaurant-erp/frontend dev   # http://localhost:5173
 - **Reservas de mesa (FASE 11.5, 2026-09-07)**: CRUD backend + frontend (`/reservas`). Reglas de negocio reales: cliente y mesa deben existir y estar activos, `cantidadPersonas` no puede exceder la capacidad de la mesa, la fecha debe ser futura, y no se permite solapamiento de horario para la misma mesa (calculado en SQL sobre `fecha_hora` + `duracion_minutos`, no en memoria). Ciclo de vida vía `estado` (enum de Postgres: `pendiente`→`confirmada`→`completada`, o `cancelada`); `DELETE` = poner `estado = cancelada`, no borra la fila. Frontend con filtro por estado y acciones rápidas (Confirmar/Completar/Cancelar) según el estado actual. **Bug real encontrado y corregido durante las pruebas**: un campo numérico opcional vacío con `valueAsNumber` de react-hook-form viajaba como `null` (via `NaN`) y el backend lo rechazaba con 400 — ver `frontend.md`.
 - **Combobox de búsqueda + Dashboard profesional (2026-09-08)**: a pedido del usuario ("los combos de búsqueda como el cliente en la reserva que sea autocompletado, un dashboard profesional"), se creó `components/ui/Combobox.tsx` (select con autocompletado) y se aplicó donde la lista de opciones puede crecer (cliente/mesa en Reservas, personal en Usuarios, mesa/producto en Pedidos) — se dejaron como `<select>` nativo los catálogos pequeños (categoría/marca/unidad de medida, salón, rol). El Dashboard ganó una fila de métricas reales "de hoy" (pedidos abiertos, reservas de hoy/pendientes, mesas activas, clientes activos) con iconos de colores variados, antes del índice agrupado existente. **Nota de alcance:** el pedido de "rediseñar todo" se interpretó como seguir elevando el estándar visual de forma incremental (igual que la decisión ya tomada el 2026-09-07, ver `decisiones-tecnicas.md`), no un rediseño transversal de una sola vez — la deuda de diseño en Usuarios/Personal/Roles/Empresa sigue pendiente y explícita, no se tocó en este cambio.
 - **Pedidos de mesa (FASE 12, 2026-09-08)**: CRUD backend + frontend. Un pedido (`pedidos` + líneas en `detalle_pedidos`) representa la orden de una mesa: se crea eligiendo una mesa activa (no puede haber dos pedidos `abierto` simultáneos en la misma mesa), se le agregan/editan/quitan líneas de producto mientras está `abierto` (cada línea guarda un snapshot del precio del producto al agregarla, y el `total` del pedido se recalcula en cada cambio), no se puede cerrar sin al menos 1 línea, y `cerrado`/`cancelado` son estados finales sin más cambios. Frontend: lista `/pedidos` (filtro por estado, crear, cancelar) + página de detalle dedicada `/pedidos/:id` (`PedidoDetalle.tsx`, no un modal, por ser una gestión de líneas más compleja que un formulario simple). **Deliberadamente fuera de alcance de esta fase** (se harán en las suyas): estados de preparación/cocina (FASE 13, Comandas), cobro/pago y comprobante (FASE 14, Ventas) — ver `api.md`.
-- **Sin implementar todavía:** comandas/cocina, ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (login/pago).
+- **Comandas y cocina (FASE 13, 2026-09-08)**: CRUD backend + frontend. Una `Comanda` agrupa una o más líneas de un pedido (`detalle_pedidos.comanda_id`, nullable) enviadas a preparar juntas — el mesero puede enviar el pedido en oleadas parciales, no todo de una vez. Ciclo de vida vía `estado` (enum: `pendiente`→`en_preparacion`→`listo`→`entregado`, o `cancelada` solo desde `pendiente`, transición de un paso a la vez). Una línea ya asignada a una comanda queda bloqueada para editar/quitar desde el pedido hasta que esa comanda se cancele (libera la línea); un pedido no se puede cerrar ni cancelar mientras tenga alguna comanda no `entregada`/`cancelada`. Frontend: `PedidoDetalle.tsx` gana checkboxes + botón "Enviar a cocina" por línea no enviada, y una página nueva `/cocina` (tarjetas por comanda, con `refetchInterval` para auto-refrescar la cola) para que la cocina avance/cancele comandas. Módulo backend en `modules/cocina/` (nombre de carpeta según sección 4 de `CLAUDE.md`), recurso HTTP `/api/comandas`.
+- **Sin implementar todavía:** ventas, caja, insumos/inventario/kardex, proveedores/compras, recetas (mezcla de insumos por platillo), reportes, auditoría, configuración, y el portal de clientes (login/pago).
 
 ## Próximos pasos (en orden)
 
-1. **FASE 13 — Comandas y cocina** (ver `plan-fases.md`).
+1. **FASE 14 — Ventas y pagos** (ver `plan-fases.md`).
 2. A partir de ahí, seguir el orden de `plan-fases.md`.
 3. **Deuda de diseño pendiente** (no bloqueante): aplicar el mismo estándar visual de Productos/Carta (tarjetas, fotos, efectos) a Usuarios/Personal/Roles/Empresa cuando se retomen esos módulos — ver `decisiones-tecnicas.md`.
 

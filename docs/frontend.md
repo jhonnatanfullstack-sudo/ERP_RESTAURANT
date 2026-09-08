@@ -21,6 +21,8 @@ React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, conf
 - **Combobox de búsqueda (2026-09-08):** `components/ui/Combobox.tsx` — select con autocompletado (botón que abre un dropdown con un input de texto + lista filtrable), pensado para reemplazar un `<select>` nativo cuando la lista de opciones puede crecer y buscar por nombre es más rápido que desplazarse. Se integra con react-hook-form vía `Controller` (no vía `register`, porque no es un `<input>` nativo). Aplicado en: Reservas (cliente, mesa), Usuarios (personal), Pedidos (mesa, producto) — se dejaron como `<select>` nativo los combos de catálogos pequeños y acotados (categoría/marca/unidad de medida en Productos, salón en Mesas, rol en Usuarios), que no se benefician de la búsqueda.
 - **Dashboard con resumen del día (2026-09-08):** `Dashboard.tsx` ahora tiene, antes del índice agrupado de accesos rápidos, una fila de tarjetas de "resumen de hoy" (pedidos abiertos, reservas de hoy, reservas pendientes, mesas activas, clientes activos) con datos reales vía TanStack Query, encabezado con la fecha larga en español (`utils/formato.ts: formatearFechaLarga`), y `StatCard` ahora acepta un `tono` (`naranja`/`azul`/`esmeralda`/`ambar`/`violeta`) para variar el color del icono entre tarjetas en vez de usar naranja en todas.
 - **Pedidos (FASE 12, 2026-09-08):** a diferencia del resto de módulos (formulario en `Modal`), Pedidos usa una página de detalle dedicada (`/pedidos/:id`, `PedidoDetalle.tsx`) porque gestionar líneas de producto (agregar/editar cantidad/quitar, una a la vez, con recálculo de total) no encaja bien en un formulario de una sola sección dentro de un modal pequeño. `Pedidos.tsx` (lista) solo abre un `Modal` simple para elegir la mesa inicial; el resto de la gestión ocurre en la página de detalle. Precedente a seguir si un futuro módulo (ej. Compras con líneas de insumos) tiene la misma forma "cabecera + líneas editables".
+- **`ConfirmDialog` con error inline (FASE 13, 2026-09-08):** `components/ui/ConfirmDialog.tsx` gana una prop opcional `error?: string | null` que renderiza un `Alert` de error dentro del propio diálogo. **Bug real encontrado y corregido (E2E):** en `PedidoDetalle.tsx`, "Cerrar pedido" y "Cancelar pedido" mostraban su error (ej. "No se puede cerrar un pedido con comandas aún no entregadas") en un `Alert` de página normal — pero el `ConfirmDialog` sigue abierto tras un error (nadie llama a `onCancelar`/`onConfirmar` en el `onError` de la mutación), y su overlay (`fixed inset-0 z-50`) tapaba ese `Alert` por completo; el usuario tenía que cerrar el diálogo a mano para poder leer el error. Fix: pasar el mensaje de error directamente al `ConfirmDialog` en vez de a un `Alert` de página separado. Usar esta prop en cualquier `ConfirmDialog` cuya mutación pueda fallar con un mensaje que el usuario deba ver sin tener que cerrar el diálogo primero.
+- **Comandas y Cocina (FASE 13, 2026-09-08):** `PedidoDetalle.tsx` agrega una columna "Cocina" a la tabla de líneas: si la línea no fue enviada (`detalle.comanda === null`) muestra un checkbox de selección; si ya fue enviada, muestra un `Badge` con el estado de su comanda (`En cola`/`Preparando`/`Listo`/`Entregado`/`Cancelada`) y oculta los botones de editar/quitar de esa fila específica (aunque el pedido siga abierto). Al marcar checkboxes aparece una barra de acción con el botón "Enviar a cocina" (`POST /api/comandas`). Nueva página `Cocina.tsx` (`/cocina`): grilla de tarjetas por comanda (no tabla, por ser más parecido a un tablero de cocina real), con `refetchInterval: 8000` en el `useQuery` para que la cola se actualice sola sin que el cocinero tenga que recargar — es el primer uso de polling automático en el proyecto; usarlo también en futuras pantallas tipo "cola en vivo" (ej. un futuro tablero de caja) en vez de depender solo de la invalidación manual de queries.
 
 ## Estructura
 
@@ -29,7 +31,7 @@ src/
   components/     Sidebar, Navbar (shell del layout admin)
   components/ui/  Table, Modal, Alert, Spinner — primitivas reutilizables por todas las páginas
   layouts/         AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header simple+Outlet)
-  pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa, Categorias, Marcas, Productos, Salones, Mesas, Clientes, Reservas, Pedidos, PedidoDetalle
+  pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa, Categorias, Marcas, Productos, Salones, Mesas, Clientes, Reservas, Pedidos, PedidoDetalle, Cocina
   pages/public/    Carta (datos reales desde FASE 9: GET /api/productos/publico)
   routes/          AppRoutes.tsx (árbol de rutas), ProtectedRoute.tsx (guard de auth)
   context/         AuthContext.tsx — sesión, login/logout, tienePermiso(codigo)
@@ -40,25 +42,26 @@ src/
 
 ## Rutas actuales
 
-| Ruta                | Layout  | Página                                                             | Protegida             |
-| ------------------- | ------- | ------------------------------------------------------------------ | --------------------- |
-| `/`                 | Admin   | Dashboard                                                          | Sí (`ProtectedRoute`) |
-| `/usuarios`         | Admin   | Usuarios (lista + crear)                                           | Sí                    |
-| `/personal`         | Admin   | Personal (lista + crear)                                           | Sí                    |
-| `/roles`            | Admin   | Roles (lista + crear, con selección de permisos)                   | Sí                    |
-| `/empresa`          | Admin   | Empresa (lista + editar)                                           | Sí                    |
-| `/categorias`       | Admin   | Categorías (lista + crear + editar + eliminar)                     | Sí                    |
-| `/marcas`           | Admin   | Marcas (lista + crear + editar + eliminar)                         | Sí                    |
-| `/productos`        | Admin   | Productos (tarjetas con foto, marca, unidad de medida)             | Sí                    |
-| `/salones`          | Admin   | Salones (lista + crear + editar + eliminar)                        | Sí                    |
-| `/mesas`            | Admin   | Mesas (tabla + filtro por salón)                                   | Sí                    |
-| `/clientes`         | Admin   | Clientes (lista + crear + editar + desactivar)                     | Sí                    |
-| `/reservas`         | Admin   | Reservas (tabla + filtro por estado, confirmar/completar/cancelar) | Sí                    |
-| `/pedidos`          | Admin   | Pedidos (tabla + filtro por estado, crear, cancelar)               | Sí                    |
-| `/pedidos/:id`      | Admin   | Detalle de pedido (agregar/editar/quitar líneas, cerrar/cancelar)  | Sí                    |
-| `/cambiar-password` | Admin   | Cambiar contraseña propia                                          | Sí                    |
-| `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`)             | No                    |
-| `/carta`            | Público | Carta (datos reales: productos activos por categoría)              | No                    |
+| Ruta                | Layout  | Página                                                                             | Protegida             |
+| ------------------- | ------- | ---------------------------------------------------------------------------------- | --------------------- |
+| `/`                 | Admin   | Dashboard                                                                          | Sí (`ProtectedRoute`) |
+| `/usuarios`         | Admin   | Usuarios (lista + crear)                                                           | Sí                    |
+| `/personal`         | Admin   | Personal (lista + crear)                                                           | Sí                    |
+| `/roles`            | Admin   | Roles (lista + crear, con selección de permisos)                                   | Sí                    |
+| `/empresa`          | Admin   | Empresa (lista + editar)                                                           | Sí                    |
+| `/categorias`       | Admin   | Categorías (lista + crear + editar + eliminar)                                     | Sí                    |
+| `/marcas`           | Admin   | Marcas (lista + crear + editar + eliminar)                                         | Sí                    |
+| `/productos`        | Admin   | Productos (tarjetas con foto, marca, unidad de medida)                             | Sí                    |
+| `/salones`          | Admin   | Salones (lista + crear + editar + eliminar)                                        | Sí                    |
+| `/mesas`            | Admin   | Mesas (tabla + filtro por salón)                                                   | Sí                    |
+| `/clientes`         | Admin   | Clientes (lista + crear + editar + desactivar)                                     | Sí                    |
+| `/reservas`         | Admin   | Reservas (tabla + filtro por estado, confirmar/completar/cancelar)                 | Sí                    |
+| `/pedidos`          | Admin   | Pedidos (tabla + filtro por estado, crear, cancelar)                               | Sí                    |
+| `/pedidos/:id`      | Admin   | Detalle de pedido (agregar/editar/quitar líneas, enviar a cocina, cerrar/cancelar) | Sí                    |
+| `/cocina`           | Admin   | Cola de cocina (avanzar/cancelar comandas)                                         | Sí                    |
+| `/cambiar-password` | Admin   | Cambiar contraseña propia                                                          | Sí                    |
+| `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`)                             | No                    |
+| `/carta`            | Público | Carta (datos reales: productos activos por categoría)                              | No                    |
 
 `ProtectedRoute` redirige a `/login` si no hay sesión (tras intentar un refresh silencioso vía cookie httpOnly). Cada página oculta sus acciones de creación/edición si el usuario no tiene el permiso correspondiente (`tienePermiso('xxx.crear')`), aunque la protección real está en el backend.
 

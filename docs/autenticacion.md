@@ -28,6 +28,10 @@
 - `src/routes/ProtectedRoute.tsx`: redirige a `/login` si no hay sesión.
 - El `accessToken` se mantiene solo en memoria (no en `localStorage`), reduciendo superficie de robo por XSS; sobrevive a recargas gracias al refresh silencioso vía cookie httpOnly.
 
+## Problema conocido, sin corregir (encontrado en E2E de FASE 13, 2026-09-08)
+
+El `useEffect` de `AuthContext` que llama a `authService.refrescar()` al montar la app no cancela ni ignora una respuesta obsoleta si el efecto se dispara más de una vez. En desarrollo, React StrictMode monta cada efecto dos veces adrede, así que al cargar la app se disparan **dos** `POST /api/auth/refresh` casi simultáneos usando la misma cookie de refresh token; como la rotación es de un solo uso (ver arriba), una de las dos peticiones puede fallar con 401 porque la otra ya rotó el token primero — y según el orden en que resuelvan las promesas, el usuario puede terminar deslogueado pese a tener una sesión válida. Se reprodujo de forma consistente recargando la página completa (`F5`) durante pruebas E2E; navegar dentro de la SPA (sin recargar) no lo dispara. No se corrigió en esta sesión por ser una fase distinta (FASE 7 ya cerrada) y tocar el flujo de sesión — pendiente de que el usuario decida si se agenda como fix independiente. Fix probable: usar una bandera/`AbortController` en el efecto para ignorar el resultado de una llamada si el componente ya se desmontó/remontó, patrón estándar para efectos de datos en React con StrictMode.
+
 ## Usuario administrador de arranque
 
 Sembrado por la migración `SeedRbacInicial` (ver `base-de-datos.md`):

@@ -29,6 +29,7 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 | `reservas`                  | Reservas de mesa por cliente, con estado y control de solapamiento (FASE 11.5)                   | `id` uuid                |
 | `pedidos`                   | Pedido de una mesa (cabecera), con estado y total denormalizado (FASE 12)                        | `id` uuid                |
 | `detalle_pedidos`           | Líneas de producto de un pedido, con snapshot de precio (FASE 12)                                | `id` uuid                |
+| `comandas`                  | Ticket de cocina: grupo de líneas de un pedido enviadas a preparar juntas (FASE 13)              | `id` uuid                |
 
 **Relaciones:**
 
@@ -48,6 +49,8 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `pedidos.mesa_id` → `mesas.id`, obligatoria (`ON DELETE RESTRICT`)
 - `detalle_pedidos.pedido_id` → `pedidos.id`, obligatoria (`ON DELETE CASCADE`: una línea no tiene sentido sin su pedido; primer uso de CASCADE en este esquema fuera de `refresh_tokens`, ya que es una relación padre-hijo real, no un catálogo compartido)
 - `detalle_pedidos.producto_id` → `productos.id`, obligatoria (`ON DELETE RESTRICT`: protege el historial de pedidos aunque el producto deje de existir)
+- `comandas.pedido_id` → `pedidos.id`, obligatoria (`ON DELETE CASCADE`: una comanda no tiene sentido sin su pedido, mismo criterio que `detalle_pedidos.pedido_id`)
+- `detalle_pedidos.comanda_id` → `comandas.id`, **nullable** (`ON DELETE RESTRICT`): `null` = línea todavía no enviada a cocina; una vez asignada a una comanda, la línea queda bloqueada para edición/borrado desde Pedidos hasta que la comanda se cancele (lo que libera la línea, poniendo `comanda_id` de vuelta a `null`)
 
 **Por qué este orden (Empresa → Personal → Usuario):** decisión explícita del usuario (2026-09-07). Un `usuario` (cuenta de acceso) siempre parte de un registro de `personal` ya existente (persona real, identificada por documento), y todo `personal` pertenece a una `empresa`. Esto evita datos de personas duplicados entre módulos futuros (ej. nombre/apellido no se repiten en `usuarios`) y prepara el sistema para "Múltiples sucursales" (expansión futura de `CLAUDE.md` sección 1): varias sucursales podrán colgar de una misma `empresa` sin rediseñar el núcleo de identidad.
 
@@ -104,5 +107,7 @@ Migraciones aplicadas (en orden):
 15. `SeedPermisosReservas` — permisos del módulo (FASE 11.5).
 16. `PedidosTabla` — crea `pedidos` (con `estado` como enum nativo `pedidos_estado_enum`: `abierto`/`cerrado`/`cancelado`, y `total numeric(10,2)` denormalizado) y `detalle_pedidos` (con `precio_unitario`/`subtotal numeric(10,2)`), con FKs a `mesas`/`productos` (FASE 12).
 17. `SeedPermisosPedidos` — permisos del módulo (FASE 12).
+18. `ComandasTabla` — crea `comandas` (con `estado` como enum nativo `comandas_estado_enum`: `pendiente`/`en_preparacion`/`listo`/`entregado`/`cancelada`) con FK a `pedidos`, y agrega `detalle_pedidos.comanda_id` (FK nullable a `comandas`) (FASE 13).
+19. `SeedPermisosCocina` — permisos del módulo (FASE 13).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.
