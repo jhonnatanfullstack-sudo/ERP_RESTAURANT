@@ -130,6 +130,28 @@ export interface Reserva {
   notas: string | null;
 }
 
+export type EstadoPedido = 'abierto' | 'cerrado' | 'cancelado';
+
+export interface DetallePedido {
+  id: string;
+  producto: Pick<Producto, 'id' | 'nombre' | 'imagenUrl'>;
+  cantidad: number;
+  precioUnitario: number;
+  subtotal: number;
+  notas: string | null;
+}
+
+export interface Pedido {
+  id: string;
+  mesa: Mesa;
+  estado: EstadoPedido;
+  total: number;
+  notas: string | null;
+  fechaCierre: string | null;
+  detalles: DetallePedido[];
+  creadoEn: string;
+}
+
 export interface Usuario {
   id: string;
   email: string;

@@ -13,6 +13,8 @@ import { Salones } from '../pages/Salones';
 import { Mesas } from '../pages/Mesas';
 import { Clientes } from '../pages/Clientes';
 import { Reservas } from '../pages/Reservas';
+import { Pedidos } from '../pages/Pedidos';
+import { PedidoDetalle } from '../pages/PedidoDetalle';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
@@ -40,6 +42,8 @@ export function AppRoutes() {
           <Route path="/mesas" element={<Mesas />} />
           <Route path="/clientes" element={<Clientes />} />
           <Route path="/reservas" element={<Reservas />} />
+          <Route path="/pedidos" element={<Pedidos />} />
+          <Route path="/pedidos/:id" element={<PedidoDetalle />} />
           <Route path="/empresa" element={<Empresa />} />
           <Route path="/cambiar-password" element={<CambiarPassword />} />
         </Route>

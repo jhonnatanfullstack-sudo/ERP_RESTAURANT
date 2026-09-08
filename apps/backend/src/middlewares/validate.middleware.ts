@@ -27,3 +27,19 @@ export function validateIdParam(req: Request, _res: Response, next: NextFunction
   }
   next();
 }
+
+/** Igual que `validateIdParam` pero para un parámetro con otro nombre, en rutas anidadas
+ * (ej. `/pedidos/:id/detalles/:detalleId`, donde `id` ya se valida con `validateIdParam`). */
+export function validateUuidParam(nombre: string) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const resultado = z
+      .string()
+      .uuid(`${nombre} debe ser un UUID válido`)
+      .safeParse(req.params[nombre]);
+    if (!resultado.success) {
+      next(new HttpError(400, 'Parámetro inválido', [`${nombre} debe ser un UUID válido`]));
+      return;
+    }
+    next();
+  };
+}

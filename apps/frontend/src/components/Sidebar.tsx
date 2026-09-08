@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
+  ClipboardList,
   Contact,
   DoorOpen,
   LayoutDashboard,
@@ -41,6 +42,13 @@ type ItemMenu = ItemEnlace | ItemGrupo;
 
 const menu: ItemMenu[] = [
   { tipo: 'enlace', etiqueta: 'Dashboard', ruta: '/', icono: LayoutDashboard },
+  {
+    tipo: 'enlace',
+    etiqueta: 'Pedidos',
+    ruta: '/pedidos',
+    icono: ClipboardList,
+    permiso: 'pedidos.ver',
+  },
   {
     tipo: 'grupo',
     etiqueta: 'Carta',
@@ -192,7 +200,7 @@ export function Sidebar({
                 <NavLink
                   key={item.ruta}
                   to={item.ruta}
-                  end
+                  end={item.ruta === '/'}
                   title={colapsado ? item.etiqueta : undefined}
                   onClick={onCerrarMovil}
                   className={({ isActive }) =>
