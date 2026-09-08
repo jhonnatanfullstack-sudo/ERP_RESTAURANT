@@ -30,6 +30,11 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 | `pedidos`                   | Pedido de una mesa (cabecera), con estado y total denormalizado (FASE 12)                        | `id` uuid                |
 | `detalle_pedidos`           | Líneas de producto de un pedido, con snapshot de precio (FASE 12)                                | `id` uuid                |
 | `comandas`                  | Ticket de cocina: grupo de líneas de un pedido enviadas a preparar juntas (FASE 13)              | `id` uuid                |
+| `tipos_afectacion_igv`      | Catálogo SUNAT N° 07 (Gravado/Exonerado/Inafecto) (FASE 14)                                      | `id` uuid                |
+| `tipos_operacion`           | Catálogo SUNAT N° 17 (Venta interna, exportación...) (FASE 14)                                   | `id` uuid                |
+| `medios_pago`               | Catálogo propio (Efectivo, Tarjeta, Yape, Plin...) (FASE 14)                                     | `id` uuid                |
+| `ventas`                    | Comprobante (Boleta/Factura) emitido a partir de un pedido cerrado (FASE 14)                     | `id` uuid                |
+| `detalle_ventas`            | Líneas de una venta, snapshot de precio/afectación IGV del detalle de pedido de origen (FASE 14) | `id` uuid                |
 
 **Relaciones:**
 
@@ -47,10 +52,20 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `reservas.cliente_id` → `clientes.id`, obligatoria (`ON DELETE RESTRICT`)
 - `reservas.mesa_id` → `mesas.id`, obligatoria (`ON DELETE RESTRICT`)
 - `pedidos.mesa_id` → `mesas.id`, obligatoria (`ON DELETE RESTRICT`)
+- `pedidos.cliente_id` → `clientes.id`, **nullable** (`ON DELETE RESTRICT`): identifica a qué cliente se le abrió el pedido; obligatorio solo cuando la mesa tiene una reserva activa de otro cliente en ese momento (ver `api.md`)
 - `detalle_pedidos.pedido_id` → `pedidos.id`, obligatoria (`ON DELETE CASCADE`: una línea no tiene sentido sin su pedido; primer uso de CASCADE en este esquema fuera de `refresh_tokens`, ya que es una relación padre-hijo real, no un catálogo compartido)
 - `detalle_pedidos.producto_id` → `productos.id`, obligatoria (`ON DELETE RESTRICT`: protege el historial de pedidos aunque el producto deje de existir)
 - `comandas.pedido_id` → `pedidos.id`, obligatoria (`ON DELETE CASCADE`: una comanda no tiene sentido sin su pedido, mismo criterio que `detalle_pedidos.pedido_id`)
 - `detalle_pedidos.comanda_id` → `comandas.id`, **nullable** (`ON DELETE RESTRICT`): `null` = línea todavía no enviada a cocina; una vez asignada a una comanda, la línea queda bloqueada para edición/borrado desde Pedidos hasta que la comanda se cancele (lo que libera la línea, poniendo `comanda_id` de vuelta a `null`)
+- `productos.tipo_afectacion_igv_id` → `tipos_afectacion_igv.id`, obligatoria (`ON DELETE RESTRICT`)
+- `ventas.pedido_id` → `pedidos.id`, obligatoria y **única** (`ON DELETE RESTRICT`): 1 pedido → a lo más 1 venta
+- `ventas.cliente_id` → `clientes.id`, **nullable** (`ON DELETE RESTRICT`): obligatorio en la práctica solo para Factura (validado en el service, no por la BD)
+- `ventas.tipo_comprobante_id` → `tipos_comprobante.id`, obligatoria (`ON DELETE RESTRICT`); índice único compuesto `(tipo_comprobante_id, serie, numero)` — el correlativo nunca se repite dentro de una misma serie/comprobante
+- `ventas.tipo_operacion_id` → `tipos_operacion.id`, obligatoria (`ON DELETE RESTRICT`)
+- `ventas.medio_pago_id` → `medios_pago.id`, **nullable** (`ON DELETE RESTRICT`): `null` cuando `forma_pago = credito` (se paga después, no hay instrumento todavía)
+- `detalle_ventas.venta_id` → `ventas.id`, obligatoria (`ON DELETE CASCADE`: mismo criterio que `detalle_pedidos.pedido_id`)
+- `detalle_ventas.producto_id` → `productos.id`, obligatoria (`ON DELETE RESTRICT`)
+- `detalle_ventas.tipo_afectacion_igv_id` → `tipos_afectacion_igv.id`, obligatoria (`ON DELETE RESTRICT`) — snapshot del tipo de afectación del producto al momento de facturar
 
 **Por qué este orden (Empresa → Personal → Usuario):** decisión explícita del usuario (2026-09-07). Un `usuario` (cuenta de acceso) siempre parte de un registro de `personal` ya existente (persona real, identificada por documento), y todo `personal` pertenece a una `empresa`. Esto evita datos de personas duplicados entre módulos futuros (ej. nombre/apellido no se repiten en `usuarios`) y prepara el sistema para "Múltiples sucursales" (expansión futura de `CLAUDE.md` sección 1): varias sucursales podrán colgar de una misma `empresa` sin rediseñar el núcleo de identidad.
 
@@ -73,9 +88,15 @@ Los catálogos se poblaron con los códigos oficiales más usados (subconjunto e
 
 **`tipos_comprobante`** (Catálogo 01): `01` Factura, `03` Boleta de Venta, `07` Nota de Crédito, `08` Nota de Débito, `09` Guía de Remisión - Remitente.
 
-`tipos_comprobante` no tiene todavía ninguna tabla que lo referencie (se usará en FASE 14 Ventas / futura facturación electrónica SUNAT); se sembró ahora porque el usuario pidió que el diseño de base de datos siga los catálogos SUNAT desde el inicio.
+`tipos_comprobante` fue referenciado por primera vez en FASE 14 (`ventas.tipo_comprobante_id`) — se había sembrado desde FASE 2 porque el usuario pidió que el diseño de base de datos siga los catálogos SUNAT desde el inicio.
 
 **`unidades_medida`** (Catálogo 03, subconjunto de uso común): `NIU` Unidad, `KGM` Kilogramo, `GRM` Gramo, `LTR` Litro, `MLT` Mililitro, `PK` Paquete, `BX` Caja, `ZZ` Servicio. Usado hoy por `productos.unidad_medida_id`; se reutilizará para las cantidades de insumos cuando se implemente Recetas (FASE 18).
+
+**`tipos_afectacion_igv`** (Catálogo 07, FASE 14): `10` Gravado - Operación Onerosa, `20` Exonerado - Operación Onerosa, `30` Inafecto - Operación Onerosa. Usado por `productos.tipo_afectacion_igv_id` (default `10` para productos ya existentes) y snapshoteado en cada `detalle_ventas`.
+
+**`tipos_operacion`** (Catálogo 17, FASE 14): `0101` Venta interna, `0200` Exportación de Bienes, `0201` Exportación de Servicios. En la práctica, un restaurante de un solo local con ventas presenciales siempre usará `0101` — se sembró el subconjunto igual que los demás catálogos, extensible sin tocar código si el negocio cambia (ej. exportación de servicios de catering).
+
+**`medios_pago`** (catálogo propio, no numerado por SUNAT, FASE 14): `efectivo` Efectivo, `tarjeta_credito` Tarjeta de crédito, `tarjeta_debito` Tarjeta de débito, `transferencia` Transferencia bancaria, `yape` Yape, `plin` Plin.
 
 ## Migraciones
 
@@ -109,5 +130,11 @@ Migraciones aplicadas (en orden):
 17. `SeedPermisosPedidos` — permisos del módulo (FASE 12).
 18. `ComandasTabla` — crea `comandas` (con `estado` como enum nativo `comandas_estado_enum`: `pendiente`/`en_preparacion`/`listo`/`entregado`/`cancelada`) con FK a `pedidos`, y agrega `detalle_pedidos.comanda_id` (FK nullable a `comandas`) (FASE 13).
 19. `SeedPermisosCocina` — permisos del módulo (FASE 13).
+20. `PedidoCliente` — agrega `pedidos.cliente_id` (FK nullable a `clientes`), para poder validar que el cliente que abre un pedido en una mesa reservada sea el mismo que hizo la reserva (2026-09-08).
+21. `CatalogosVentas` — crea `tipos_afectacion_igv`, `tipos_operacion`, `medios_pago` (FASE 14).
+22. `SeedCatalogosVentas` — datos semilla de esos 3 catálogos.
+23. `ProductoTipoAfectacionIgv` — agrega `productos.tipo_afectacion_igv_id`: mismo patrón nullable→backfill (`10` Gravado)→`NOT NULL`+FK que `ProductoUnidadMedida`.
+24. `VentasTabla` — crea `ventas` (enum `ventas_forma_pago_enum`: `contado`/`credito`; enum `ventas_estado_enum`: `emitida`/`anulada`; índices únicos `(pedido_id)` y `(tipo_comprobante_id, serie, numero)`) y `detalle_ventas`, con FKs a `pedidos`/`clientes`/`tipos_comprobante`/`tipos_operacion`/`medios_pago`/`productos`/`tipos_afectacion_igv` (FASE 14).
+25. `SeedPermisosVentas` — permisos del módulo (FASE 14).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.
