@@ -72,6 +72,19 @@ export class Venta {
   @Column({ type: 'numeric', precision: 10, scale: 2, transformer: numericTransformer })
   total!: number;
 
+  /** Tipo de cambio USD/PEN (venta) publicado por SUNAT en la fecha de emisión, solo de
+   * referencia contable — esta venta siempre se cobra en soles. Nullable: si la consulta al
+   * proveedor externo falla, la venta igual se registra (ver tipo-cambio.service.ts). */
+  @Column({
+    name: 'tipo_cambio',
+    type: 'numeric',
+    precision: 10,
+    scale: 3,
+    nullable: true,
+    transformer: numericTransformer,
+  })
+  tipoCambio!: number | null;
+
   @Column({ type: 'enum', enum: EstadoVenta, default: EstadoVenta.EMITIDA })
   estado!: EstadoVenta;
 

@@ -15,7 +15,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
-import { formatearFechaHora, formatearPrecio } from '../utils/formato';
+import { formatearFechaHora, formatearPrecio, nombreCliente } from '../utils/formato';
 import type { AgregarDetalleInput } from '../services/pedidos.service';
 import type { DetallePedido, EstadoComanda, EstadoPedido } from '../types/api';
 
@@ -186,11 +186,7 @@ export function PedidoDetalle() {
             <Badge tono={TONO_ESTADO[pedido.estado]}>{ETIQUETA_ESTADO[pedido.estado]}</Badge>
           </div>
           <p className="mt-1 text-sm text-zinc-500">
-            {pedido.cliente && (
-              <>
-                Cliente: {pedido.cliente.nombres} {pedido.cliente.apellidos ?? ''} ·{' '}
-              </>
-            )}
+            {pedido.cliente && <>Cliente: {nombreCliente(pedido.cliente)} · </>}
             Abierto el {formatearFechaHora(pedido.creadoEn)}
             {pedido.fechaCierre && ` · Cerrado el ${formatearFechaHora(pedido.fechaCierre)}`}
           </p>

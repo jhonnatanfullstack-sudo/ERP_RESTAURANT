@@ -1,8 +1,9 @@
 import { z } from 'zod';
 
 export const crearClienteSchema = z.object({
-  nombres: z.string().trim().min(1).max(150),
+  nombres: z.string().trim().min(1).max(150).nullable().optional(),
   apellidos: z.string().trim().max(150).nullable().optional(),
+  razonSocial: z.string().trim().min(1).max(255).nullable().optional(),
   tipoDocumentoIdentidadId: z.string().uuid().nullable().optional(),
   numeroDocumento: z.string().trim().max(20).nullable().optional(),
   telefono: z.string().trim().max(20).nullable().optional(),
@@ -11,8 +12,9 @@ export const crearClienteSchema = z.object({
 });
 
 export const actualizarClienteSchema = z.object({
-  nombres: z.string().trim().min(1).max(150).optional(),
+  nombres: z.string().trim().min(1).max(150).nullable().optional(),
   apellidos: z.string().trim().max(150).nullable().optional(),
+  razonSocial: z.string().trim().min(1).max(255).nullable().optional(),
   tipoDocumentoIdentidadId: z.string().uuid().nullable().optional(),
   numeroDocumento: z.string().trim().max(20).nullable().optional(),
   telefono: z.string().trim().max(20).nullable().optional(),

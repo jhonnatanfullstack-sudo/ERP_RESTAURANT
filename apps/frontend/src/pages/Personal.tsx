@@ -206,7 +206,7 @@ export function Personal() {
               requerido
               consultar={personalService.consultarDocumento}
               onEncontrado={(datos) => {
-                crearForm.setValue('nombres', datos.nombres, { shouldValidate: true });
+                crearForm.setValue('nombres', datos.nombres ?? '', { shouldValidate: true });
                 if (datos.apellidoPaterno) {
                   crearForm.setValue('apellidoPaterno', datos.apellidoPaterno);
                 }

@@ -16,11 +16,17 @@ export class Cliente {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'varchar', length: 150 })
-  nombres!: string;
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  nombres!: string | null;
 
   @Column({ type: 'varchar', length: 150, nullable: true })
   apellidos!: string | null;
+
+  /** Solo para clientes con RUC de persona jurídica (empieza en "20"): la SUNAT no
+   * les asocia nombres/apellidos, sino una razón social. Mutuamente excluyente con
+   * nombres/apellidos — ver validarNombreCliente en cliente.service.ts. */
+  @Column({ name: 'razon_social', type: 'varchar', length: 255, nullable: true })
+  razonSocial!: string | null;
 
   @ManyToOne(() => TipoDocumentoIdentidad, { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'tipo_documento_identidad_id' })

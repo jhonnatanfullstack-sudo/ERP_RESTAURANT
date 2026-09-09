@@ -7,6 +7,7 @@ import {
   tipoOperacionRepository,
   medioPagoRepository,
 } from '../catalogos/catalogos.repository';
+import { consultarTipoCambio } from '../catalogos/tipo-cambio.service';
 import { ventaRepository, detalleVentaRepository } from './venta.repository';
 import { EstadoVenta, FormaPago, Venta } from './venta.entity';
 import { DetalleVenta } from './detalle-venta.entity';
@@ -18,7 +19,7 @@ import type { MedioPago } from '../catalogos/medio-pago.entity';
 
 const RELACIONES = {
   pedido: { mesa: { salon: true } },
-  cliente: true,
+  cliente: { tipoDocumentoIdentidad: true },
   tipoComprobante: true,
   tipoOperacion: true,
   medioPago: true,
@@ -173,6 +174,8 @@ export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
 
   const serie = SERIE_POR_COMPROBANTE[tipoComprobante.codigo];
   const numero = await generarNumeroCorrelativo(tipoComprobante.id, serie);
+  const fechaEmision = new Date();
+  const tipoCambio = await consultarTipoCambio(fechaEmision);
 
   let subtotal = 0;
   let igv = 0;
@@ -212,6 +215,7 @@ export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
     subtotal: Math.round(subtotal * 100) / 100,
     igv: Math.round(igv * 100) / 100,
     total: pedido.total,
+    tipoCambio: tipoCambio?.venta ?? null,
   });
   const guardada = await ventaRepository.save(venta);
 

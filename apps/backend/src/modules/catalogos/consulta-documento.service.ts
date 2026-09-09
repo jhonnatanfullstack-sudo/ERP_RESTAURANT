@@ -3,10 +3,16 @@ import { HttpError } from '../../utils/http-error';
 
 export interface DatosDocumento {
   numeroDocumento: string;
-  nombres: string;
+  /** null cuando es un RUC de persona jurídica (empieza en "20") — en ese caso el
+   * nombre viene en razonSocial. */
+  nombres: string | null;
   apellidoPaterno: string | null;
   apellidoMaterno: string | null;
+  /** Solo para RUC de persona jurídica (empieza en "20"); null en cualquier otro caso. */
+  razonSocial: string | null;
 }
+
+const PREFIJO_RUC_PERSONA_JURIDICA = '20';
 
 /**
  * Consulta datos de un DNI (RENIEC) o RUC (SUNAT) vía la API de apis.net.pe,
@@ -72,13 +78,23 @@ export async function consultarDocumento(
       nombres: String(datos.first_name ?? ''),
       apellidoPaterno: (datos.first_last_name as string | undefined) ?? null,
       apellidoMaterno: (datos.second_last_name as string | undefined) ?? null,
+      razonSocial: null,
     };
   }
 
+  const numeroDocumento = String(datos.numero_documento ?? numero);
+  const razonSocial = String(datos.razon_social ?? '');
+  // RUC que empieza en "20" = persona jurídica (empresa): SUNAT no le asocia
+  // nombres/apellidos, solo razón social. RUC "10"/"15"/"17" = persona natural,
+  // y SUNAT devuelve su nombre completo como una sola cadena en razón social
+  // (no separada en nombres/apellidos como sí hace RENIEC para el DNI).
+  const esPersonaJuridica = numeroDocumento.startsWith(PREFIJO_RUC_PERSONA_JURIDICA);
+
   return {
-    numeroDocumento: String(datos.numero_documento ?? numero),
-    nombres: String(datos.razon_social ?? ''),
+    numeroDocumento,
+    nombres: esPersonaJuridica ? null : razonSocial,
     apellidoPaterno: null,
     apellidoMaterno: null,
+    razonSocial: esPersonaJuridica ? razonSocial : null,
   };
 }

@@ -13,7 +13,10 @@ import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CampoBusquedaDocumento } from '../components/CampoBusquedaDocumento';
-import type { ActualizarClienteInput, CrearClienteInput } from '../services/clientes.service';
+import { CamposIdentidadCliente } from '../components/CamposIdentidadCliente';
+import { ClienteCrearModal } from '../components/ClienteCrearModal';
+import { nombreCliente } from '../utils/formato';
+import type { ActualizarClienteInput } from '../services/clientes.service';
 import type { Cliente } from '../types/api';
 
 const inputClass =
@@ -46,32 +49,15 @@ export function Clientes() {
     queryFn: catalogosService.listarTiposDocumentoIdentidad,
   });
 
-  const crearForm = useForm<CrearClienteInput>();
   const editarForm = useForm<ActualizarClienteInput>();
-
-  const crearMutation = useMutation({
-    mutationFn: (values: CrearClienteInput) =>
-      clientesService.crearCliente({
-        ...values,
-        apellidos: vacioANull(values.apellidos),
-        tipoDocumentoIdentidadId: vacioANull(values.tipoDocumentoIdentidadId),
-        numeroDocumento: vacioANull(values.numeroDocumento),
-        telefono: vacioANull(values.telefono),
-        email: vacioANull(values.email),
-        direccion: vacioANull(values.direccion),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clientes'] });
-      setModalAbierto(false);
-      crearForm.reset();
-    },
-  });
 
   const editarMutation = useMutation({
     mutationFn: (values: ActualizarClienteInput) =>
       clientesService.actualizarCliente(clienteEditando!.id, {
         ...values,
+        nombres: vacioANull(values.nombres),
         apellidos: vacioANull(values.apellidos),
+        razonSocial: vacioANull(values.razonSocial),
         tipoDocumentoIdentidadId: vacioANull(values.tipoDocumentoIdentidadId),
         numeroDocumento: vacioANull(values.numeroDocumento),
         telefono: vacioANull(values.telefono),
@@ -110,10 +96,7 @@ export function Clientes() {
 
       <Table
         columnas={[
-          {
-            encabezado: 'Nombre completo',
-            render: (c) => `${c.nombres} ${c.apellidos ?? ''}`.trim(),
-          },
+          { encabezado: 'Nombre / razón social', render: (c) => nombreCliente(c) },
           {
             encabezado: 'Documento',
             render: (c) =>
@@ -141,8 +124,9 @@ export function Clientes() {
                     onClick={() => {
                       setClienteEditando(c);
                       editarForm.reset({
-                        nombres: c.nombres,
+                        nombres: c.nombres ?? '',
                         apellidos: c.apellidos ?? '',
+                        razonSocial: c.razonSocial ?? '',
                         tipoDocumentoIdentidadId: c.tipoDocumentoIdentidad?.id ?? '',
                         numeroDocumento: c.numeroDocumento ?? '',
                         telefono: c.telefono ?? '',
@@ -176,87 +160,11 @@ export function Clientes() {
         vacio="No hay clientes registrados"
       />
 
-      <Modal abierto={modalAbierto} titulo="Nuevo cliente" onCerrar={() => setModalAbierto(false)}>
-        <form
-          onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
-          className="flex flex-col gap-4"
-        >
-          {crearMutation.isError && (
-            <Alert
-              tipo="error"
-              mensaje={mensajeError(crearMutation.error, 'No se pudo crear el cliente')}
-            />
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Nombres</label>
-              <input
-                {...crearForm.register('nombres', { required: true })}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Apellidos</label>
-              <input {...crearForm.register('apellidos')} className={inputClass} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Tipo de documento</label>
-              <select {...crearForm.register('tipoDocumentoIdentidadId')} className={inputClass}>
-                <option value="">Sin documento</option>
-                {tiposDocQuery.data?.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <CampoBusquedaDocumento
-              control={crearForm.control}
-              tipos={tiposDocQuery.data}
-              register={crearForm.register}
-              getValues={crearForm.getValues}
-              campoTipo="tipoDocumentoIdentidadId"
-              campoNumero="numeroDocumento"
-              consultar={clientesService.consultarDocumento}
-              onEncontrado={(datos) => {
-                crearForm.setValue('nombres', datos.nombres, { shouldValidate: true });
-                const apellidos = [datos.apellidoPaterno, datos.apellidoMaterno]
-                  .filter(Boolean)
-                  .join(' ');
-                if (apellidos) crearForm.setValue('apellidos', apellidos);
-              }}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Teléfono</label>
-              <input {...crearForm.register('telefono')} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>Correo electrónico</label>
-              <input type="email" {...crearForm.register('email')} className={inputClass} />
-            </div>
-          </div>
-
-          <div>
-            <label className={labelClass}>Dirección</label>
-            <input {...crearForm.register('direccion')} className={inputClass} />
-          </div>
-
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
-          >
-            Crear cliente
-          </Button>
-        </form>
-      </Modal>
+      <ClienteCrearModal
+        abierto={modalAbierto}
+        onCerrar={() => setModalAbierto(false)}
+        onCreado={() => setModalAbierto(false)}
+      />
 
       <Modal
         abierto={clienteEditando !== null}
@@ -274,20 +182,6 @@ export function Clientes() {
                 mensaje={mensajeError(editarMutation.error, 'No se pudo actualizar el cliente')}
               />
             )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Nombres</label>
-                <input
-                  {...editarForm.register('nombres', { required: true })}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Apellidos</label>
-                <input {...editarForm.register('apellidos')} className={inputClass} />
-              </div>
-            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -310,14 +204,31 @@ export function Clientes() {
                 campoNumero="numeroDocumento"
                 consultar={clientesService.consultarDocumento}
                 onEncontrado={(datos) => {
-                  editarForm.setValue('nombres', datos.nombres, { shouldValidate: true });
-                  const apellidos = [datos.apellidoPaterno, datos.apellidoMaterno]
-                    .filter(Boolean)
-                    .join(' ');
-                  if (apellidos) editarForm.setValue('apellidos', apellidos);
+                  if (datos.razonSocial) {
+                    editarForm.setValue('razonSocial', datos.razonSocial, {
+                      shouldValidate: true,
+                    });
+                  } else {
+                    editarForm.setValue('nombres', datos.nombres ?? '', { shouldValidate: true });
+                    const apellidos = [datos.apellidoPaterno, datos.apellidoMaterno]
+                      .filter(Boolean)
+                      .join(' ');
+                    if (apellidos) editarForm.setValue('apellidos', apellidos);
+                  }
                 }}
               />
             </div>
+
+            <CamposIdentidadCliente
+              control={editarForm.control}
+              register={editarForm.register}
+              tipos={tiposDocQuery.data}
+              campoTipo="tipoDocumentoIdentidadId"
+              campoNumero="numeroDocumento"
+              campoNombres="nombres"
+              campoApellidos="apellidos"
+              campoRazonSocial="razonSocial"
+            />
 
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -358,7 +269,7 @@ export function Clientes() {
       <ConfirmDialog
         abierto={clienteEliminando !== null}
         titulo="Desactivar cliente"
-        mensaje={`¿Seguro que deseas desactivar a "${clienteEliminando?.nombres}"? Su historial se conserva, pero quedará marcado como inactivo.`}
+        mensaje={`¿Seguro que deseas desactivar a "${nombreCliente(clienteEliminando)}"? Su historial se conserva, pero quedará marcado como inactivo.`}
         confirmando={eliminarMutation.isPending}
         onConfirmar={() => eliminarMutation.mutate()}
         onCancelar={() => setClienteEliminando(null)}

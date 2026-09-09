@@ -6,7 +6,6 @@ import { ClipboardList, Eye, XCircle } from 'lucide-react';
 import * as pedidosService from '../services/pedidos.service';
 import * as mesasService from '../services/mesas.service';
 import * as reservasService from '../services/reservas.service';
-import * as clientesService from '../services/clientes.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
@@ -17,7 +16,13 @@ import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
-import { formatearFechaHora, formatearHora, formatearPrecio } from '../utils/formato';
+import { BuscadorCliente } from '../components/BuscadorCliente';
+import {
+  formatearFechaHora,
+  formatearHora,
+  formatearPrecio,
+  nombreCliente,
+} from '../utils/formato';
 import type { CrearPedidoInput } from '../services/pedidos.service';
 import type { EstadoPedido, Pedido, Reserva } from '../types/api';
 
@@ -56,11 +61,6 @@ export function Pedidos() {
     queryKey: ['reservas'],
     queryFn: reservasService.listarReservas,
   });
-  const clientesQuery = useQuery({
-    queryKey: ['clientes'],
-    queryFn: clientesService.listarClientes,
-  });
-
   function reservaActivaDeMesa(mesaId: string): Reserva | undefined {
     const ahora = new Date().getTime();
     return (reservasQuery.data ?? []).find((r) => {
@@ -80,18 +80,10 @@ export function Pedidos() {
         valor: m.id,
         etiqueta: `${m.salon.nombre} — Mesa ${m.numero}`,
         descripcion: reserva
-          ? `Reservada — ${reserva.cliente.nombres} ${formatearHora(reserva.fechaHora)}`
+          ? `Reservada — ${nombreCliente(reserva.cliente)} ${formatearHora(reserva.fechaHora)}`
           : `${m.capacidad} personas`,
       };
     });
-
-  const opcionesClientes: OpcionCombobox[] = (clientesQuery.data ?? [])
-    .filter((c) => c.activo)
-    .map((c) => ({
-      valor: c.id,
-      etiqueta: `${c.nombres} ${c.apellidos ?? ''}`.trim(),
-      descripcion: c.telefono ?? undefined,
-    }));
 
   const crearForm = useForm<CrearPedidoInput>();
   const mesaSeleccionada = useWatch({ control: crearForm.control, name: 'mesaId' });
@@ -227,29 +219,22 @@ export function Pedidos() {
           {reservaDeSeleccion && (
             <Alert
               tipo="error"
-              mensaje={`Esta mesa está reservada para ${reservaDeSeleccion.cliente.nombres} ${reservaDeSeleccion.cliente.apellidos ?? ''} a las ${formatearHora(reservaDeSeleccion.fechaHora)}. Selecciona ese mismo cliente para continuar.`}
+              mensaje={`Esta mesa está reservada para ${nombreCliente(reservaDeSeleccion.cliente)} a las ${formatearHora(reservaDeSeleccion.fechaHora)}. Selecciona ese mismo cliente para continuar.`}
             />
           )}
 
-          <div>
-            <label className={labelClass}>
-              Cliente {reservaDeSeleccion && <span className="text-red-500">*</span>}
-            </label>
-            <Controller
-              control={crearForm.control}
-              name="clienteId"
-              rules={{ required: !!reservaDeSeleccion }}
-              render={({ field }) => (
-                <Combobox
-                  opciones={opcionesClientes}
-                  valor={field.value}
-                  onCambiar={field.onChange}
-                  placeholder="Buscar cliente… (opcional)"
-                  vacio="No se encontraron clientes"
-                />
-              )}
-            />
-          </div>
+          <Controller
+            control={crearForm.control}
+            name="clienteId"
+            rules={{ required: !!reservaDeSeleccion }}
+            render={({ field }) => (
+              <BuscadorCliente
+                clienteId={field.value}
+                onCambiar={field.onChange}
+                requerido={!!reservaDeSeleccion}
+              />
+            )}
+          />
 
           <div>
             <label className={labelClass}>Notas</label>

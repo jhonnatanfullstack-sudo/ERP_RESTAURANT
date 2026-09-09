@@ -15,7 +15,7 @@ import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
-import { aInputDatetimeLocal, formatearFechaHora } from '../utils/formato';
+import { aInputDatetimeLocal, formatearFechaHora, nombreCliente } from '../utils/formato';
 import type { ActualizarReservaInput, CrearReservaInput } from '../services/reservas.service';
 import type { EstadoReserva, Reserva } from '../types/api';
 
@@ -65,7 +65,7 @@ export function Reservas() {
     .filter((c) => c.activo)
     .map((c) => ({
       valor: c.id,
-      etiqueta: `${c.nombres} ${c.apellidos ?? ''}`.trim(),
+      etiqueta: nombreCliente(c),
       descripcion: c.telefono ?? undefined,
     }));
 
@@ -182,7 +182,7 @@ export function Reservas() {
           { encabezado: 'Fecha y hora', render: (r) => formatearFechaHora(r.fechaHora) },
           {
             encabezado: 'Cliente',
-            render: (r) => `${r.cliente.nombres} ${r.cliente.apellidos ?? ''}`.trim(),
+            render: (r) => nombreCliente(r.cliente),
           },
           { encabezado: 'Mesa', render: (r) => `${r.mesa.salon.nombre} — ${r.mesa.numero}` },
           { encabezado: 'Personas', render: (r) => r.cantidadPersonas },
@@ -456,7 +456,7 @@ export function Reservas() {
       <ConfirmDialog
         abierto={reservaCancelando !== null}
         titulo="Cancelar reserva"
-        mensaje={`¿Seguro que deseas cancelar la reserva de "${reservaCancelando?.cliente.nombres}"?`}
+        mensaje={`¿Seguro que deseas cancelar la reserva de "${nombreCliente(reservaCancelando?.cliente ?? null)}"?`}
         confirmando={cancelarMutation.isPending}
         onConfirmar={() => cancelarMutation.mutate()}
         onCancelar={() => setReservaCancelando(null)}

@@ -38,6 +38,8 @@ export interface Empresa {
   telefono: string | null;
   email: string | null;
   activo: boolean;
+  ubigeo: string | null;
+  logo: string | null;
 }
 
 export interface Personal {
@@ -125,8 +127,10 @@ export interface Mesa {
 
 export interface Cliente {
   id: string;
-  nombres: string;
+  nombres: string | null;
   apellidos: string | null;
+  /** Solo para RUC de persona jurídica (empieza en "20"); mutuamente excluyente con nombres/apellidos. */
+  razonSocial: string | null;
   tipoDocumentoIdentidad: TipoDocumentoIdentidad | null;
   numeroDocumento: string | null;
   telefono: string | null;
@@ -137,16 +141,17 @@ export interface Cliente {
 
 export interface DatosDocumento {
   numeroDocumento: string;
-  nombres: string;
+  nombres: string | null;
   apellidoPaterno: string | null;
   apellidoMaterno: string | null;
+  razonSocial: string | null;
 }
 
 export type EstadoReserva = 'pendiente' | 'confirmada' | 'cancelada' | 'completada';
 
 export interface Reserva {
   id: string;
-  cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos' | 'telefono'>;
+  cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos' | 'razonSocial' | 'telefono'>;
   mesa: Mesa;
   fechaHora: string;
   duracionMinutos: number;
@@ -171,7 +176,7 @@ export interface DetallePedido {
 export interface Pedido {
   id: string;
   mesa: Mesa;
-  cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos'> | null;
+  cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos' | 'razonSocial'> | null;
   estado: EstadoPedido;
   total: number;
   notas: string | null;
@@ -207,7 +212,10 @@ export interface DetalleVenta {
 export interface Venta {
   id: string;
   pedido: Pick<Pedido, 'id' | 'mesa' | 'estado' | 'total' | 'creadoEn'>;
-  cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos' | 'numeroDocumento'> | null;
+  cliente: Pick<
+    Cliente,
+    'id' | 'nombres' | 'apellidos' | 'razonSocial' | 'numeroDocumento' | 'tipoDocumentoIdentidad'
+  > | null;
   tipoComprobante: TipoComprobante;
   serie: string;
   numero: number;
@@ -217,6 +225,7 @@ export interface Venta {
   subtotal: number;
   igv: number;
   total: number;
+  tipoCambio: number | null;
   estado: EstadoVenta;
   detalles: DetalleVenta[];
   creadoEn: string;

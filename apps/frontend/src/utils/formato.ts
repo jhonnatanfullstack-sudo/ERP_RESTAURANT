@@ -41,6 +41,17 @@ export function formatearFechaLarga(fecha: Date): string {
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
+/** Nombre a mostrar de un cliente: razón social si es persona jurídica (RUC 20...), o
+ * "nombres apellidos" en cualquier otro caso. Usar siempre esto en vez de leer
+ * `cliente.nombres` directamente — un cliente persona jurídica no tiene nombres. */
+export function nombreCliente(
+  cliente: { nombres: string | null; apellidos: string | null; razonSocial: string | null } | null,
+): string {
+  if (!cliente) return '—';
+  if (cliente.razonSocial) return cliente.razonSocial;
+  return `${cliente.nombres ?? ''} ${cliente.apellidos ?? ''}`.trim() || '—';
+}
+
 /** Convierte un ISO (UTC) a la forma "YYYY-MM-DDTHH:mm" que espera <input type="datetime-local"> en hora local. */
 export function aInputDatetimeLocal(iso: string): string {
   const fecha = new Date(iso);

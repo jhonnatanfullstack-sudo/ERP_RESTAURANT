@@ -20,3 +20,19 @@ export const FORMATOS_DOCUMENTO: Record<
 
 /** Códigos del catálogo SUNAT 06 que apis.net.pe puede consultar (DNI/RUC). */
 export const CODIGOS_CONSULTABLES: Record<string, 'dni' | 'ruc'> = { '1': 'dni', '6': 'ruc' };
+
+const CODIGO_RUC = '6';
+const PREFIJO_RUC_PERSONA_JURIDICA = '20';
+
+/** Un RUC que empieza en "20" es de persona jurídica (empresa): se identifica por razón
+ * social, no por nombres/apellidos. Debe reflejar la misma regla que el backend
+ * (cliente.service.ts: esPersonaJuridica). */
+export function esRucPersonaJuridica(
+  codigoTipoDocumento: string | undefined,
+  numeroDocumento: string | undefined,
+): boolean {
+  return (
+    codigoTipoDocumento === CODIGO_RUC &&
+    !!numeroDocumento?.startsWith(PREFIJO_RUC_PERSONA_JURIDICA)
+  );
+}

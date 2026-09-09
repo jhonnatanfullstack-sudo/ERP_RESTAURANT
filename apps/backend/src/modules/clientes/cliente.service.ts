@@ -57,6 +57,42 @@ async function resolverDocumento(
   return { tipoDocumentoIdentidad, numeroDocumento };
 }
 
+const CODIGO_RUC = '6';
+const PREFIJO_RUC_PERSONA_JURIDICA = '20';
+
+function esPersonaJuridica(
+  tipoDocumentoIdentidad: { codigo: string } | null,
+  numeroDocumento: string | null,
+): boolean {
+  return (
+    tipoDocumentoIdentidad?.codigo === CODIGO_RUC &&
+    !!numeroDocumento?.startsWith(PREFIJO_RUC_PERSONA_JURIDICA)
+  );
+}
+
+/** Una persona jurídica (RUC que empieza en "20") se identifica por razón social,
+ * nunca por nombres/apellidos; toda otra persona (natural, con o sin documento) es
+ * al revés. Son mutuamente excluyentes — se limpia el que no corresponda. */
+function validarNombreORazonSocial(
+  dto: { nombres?: string | null; apellidos?: string | null; razonSocial?: string | null },
+  tipoDocumentoIdentidad: { codigo: string } | null,
+  numeroDocumento: string | null,
+): { nombres: string | null; apellidos: string | null; razonSocial: string | null } {
+  if (esPersonaJuridica(tipoDocumentoIdentidad, numeroDocumento)) {
+    if (!dto.razonSocial) {
+      throw new HttpError(400, 'Un cliente con RUC de empresa (20...) requiere razón social', [
+        'razonSocial es requerido',
+      ]);
+    }
+    return { nombres: null, apellidos: null, razonSocial: dto.razonSocial };
+  }
+
+  if (!dto.nombres) {
+    throw new HttpError(400, 'El cliente requiere nombres', ['nombres es requerido']);
+  }
+  return { nombres: dto.nombres, apellidos: dto.apellidos ?? null, razonSocial: null };
+}
+
 async function verificarEmailDuplicado(
   email: string | null | undefined,
   idExcluido?: string,
@@ -73,11 +109,17 @@ export async function crearCliente(dto: CrearClienteDto): Promise<Cliente> {
     dto.tipoDocumentoIdentidadId,
     dto.numeroDocumento,
   );
+  const { nombres, apellidos, razonSocial } = validarNombreORazonSocial(
+    dto,
+    tipoDocumentoIdentidad,
+    numeroDocumento,
+  );
   await verificarEmailDuplicado(dto.email);
 
   const cliente = clienteRepository.create({
-    nombres: dto.nombres,
-    apellidos: dto.apellidos ?? null,
+    nombres,
+    apellidos,
+    razonSocial,
     tipoDocumentoIdentidad,
     numeroDocumento,
     telefono: dto.telefono ?? null,
@@ -108,8 +150,20 @@ export async function actualizarCliente(id: string, dto: ActualizarClienteDto): 
     cliente.email = dto.email;
   }
 
-  if (dto.nombres !== undefined) cliente.nombres = dto.nombres;
-  if (dto.apellidos !== undefined) cliente.apellidos = dto.apellidos;
+  if (dto.nombres !== undefined || dto.apellidos !== undefined || dto.razonSocial !== undefined) {
+    const { nombres, apellidos, razonSocial } = validarNombreORazonSocial(
+      {
+        nombres: dto.nombres !== undefined ? dto.nombres : cliente.nombres,
+        apellidos: dto.apellidos !== undefined ? dto.apellidos : cliente.apellidos,
+        razonSocial: dto.razonSocial !== undefined ? dto.razonSocial : cliente.razonSocial,
+      },
+      cliente.tipoDocumentoIdentidad,
+      cliente.numeroDocumento,
+    );
+    cliente.nombres = nombres;
+    cliente.apellidos = apellidos;
+    cliente.razonSocial = razonSocial;
+  }
   if (dto.telefono !== undefined) cliente.telefono = dto.telefono;
   if (dto.direccion !== undefined) cliente.direccion = dto.direccion;
   if (dto.activo !== undefined) cliente.activo = dto.activo;

@@ -2,8 +2,9 @@ import { api } from './api';
 import type { ApiSuccess, Cliente, DatosDocumento } from '../types/api';
 
 export interface CrearClienteInput {
-  nombres: string;
+  nombres?: string | null;
   apellidos?: string | null;
+  razonSocial?: string | null;
   tipoDocumentoIdentidadId?: string | null;
   numeroDocumento?: string | null;
   telefono?: string | null;
@@ -12,8 +13,9 @@ export interface CrearClienteInput {
 }
 
 export interface ActualizarClienteInput {
-  nombres?: string;
+  nombres?: string | null;
   apellidos?: string | null;
+  razonSocial?: string | null;
   tipoDocumentoIdentidadId?: string | null;
   numeroDocumento?: string | null;
   telefono?: string | null;
