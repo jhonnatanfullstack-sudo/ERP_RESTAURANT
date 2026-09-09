@@ -14,6 +14,7 @@ import {
   Receipt,
   ShieldCheck,
   UtensilsCrossed,
+  Wallet,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -68,6 +69,7 @@ const menu: SeccionMenu[] = [
         icono: Receipt,
         permiso: 'ventas.ver',
       },
+      { tipo: 'enlace', etiqueta: 'Caja', ruta: '/caja', icono: Wallet, permiso: 'caja.ver' },
     ],
   },
   {

@@ -145,5 +145,7 @@ Migraciones aplicadas (en orden):
 28. `VentaTipoCambio` — agrega `ventas.tipo_cambio` (nullable), tipo de cambio USD/PEN de SUNAT en la fecha de emisión (ver `api.md`).
 29. `PersonalRazonSocial` — mismo patrón que `ClienteRazonSocial`: `personal.nombres` pasa a nullable y se agrega `personal.razon_social`, para que un registro de personal con RUC de persona jurídica se identifique por razón social (2026-09-09).
 30. `PedidoMesaVentaPedidoOpcionales` — `pedidos.mesa_id` y `ventas.pedido_id` pasan a nullable (pedidos "para llevar" y ventas directas, ver `api.md`); el `down()` falla si quedan filas con `NULL` en vez de corromperlas, obligando a resolver esos datos antes de revertir (2026-09-09).
+31. `CajaTabla` — crea `movimientos_caja` (enum `movimientos_caja_tipo_enum`: `ingreso`/`egreso`) y `cajas` (enum `cajas_estado_enum`: `abierta`/`cerrada`), con un **índice único parcial** `IDX_una_caja_abierta` sobre `cajas.estado` (`WHERE estado = 'abierta'`) — solo puede existir una fila `abierta` a la vez, garantizado por Postgres, no solo por el service (FASE 15).
+32. `SeedPermisosCaja` — permisos del módulo: `caja.ver`, `caja.abrir`, `caja.cerrar` (FASE 15).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.

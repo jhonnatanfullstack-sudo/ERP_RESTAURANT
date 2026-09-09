@@ -25,8 +25,9 @@ El catálogo de permisos es controlado por el código (sembrado en migraciones),
 | `pedidos.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de pedidos de mesa (`.editar` también cubre agregar/editar/quitar líneas de detalle **y enviar líneas a cocina**; `.eliminar` = cancelar)                          |
 | `cocina.ver` / `.editar` / `.eliminar`                | Cola de comandas de cocina (`.editar` = avanzar estado; `.eliminar` = cancelar una comanda pendiente; no hay `.crear`, ver nota abajo)                                     |
 | `ventas.ver` / `.crear` / `.anular`                   | Comprobantes de venta (`.crear` = registrar una venta desde un pedido cerrado; `.anular` en vez de `.eliminar` — así lo nombra el ejemplo de la sección 10 de `CLAUDE.md`) |
+| `caja.ver` / `.abrir` / `.cerrar`                     | Sesiones de caja (así los nombra el ejemplo de la sección 10 de `CLAUDE.md`; no hay `.crear`/`.editar`/`.eliminar`). Registrar un movimiento manual (ingreso/egreso) dentro de una caja abierta reutiliza `.abrir` — no se inventó un cuarto código no predefinido, ver `decisiones-tecnicas.md` |
 
-Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes — ej. `caja.*` en FASE 15, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
+Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
 
 **Nota sobre `cocina` (FASE 13):** "enviar una línea a cocina" (`POST /api/comandas`) no usa un permiso `cocina.crear` — reutiliza `pedidos.editar`, porque conceptualmente es una acción sobre el pedido (el mesero decide qué se manda a preparar), no una acción de cocina. `cocina.*` gobierna la cola de cocina en sí: verla y avanzar/cancelar comandas.
 
@@ -41,6 +42,7 @@ Se amplía este catálogo (con una nueva migración) a medida que se implementen
 - **Comandas**: igual patrón — ciclo de vida en `estado`, `DELETE /api/comandas/:id` pone `estado = 'cancelada'` (nunca borrado real), y solo mientras está `pendiente` (una vez que la cocina empieza a prepararla, ya no se cancela).
 - **Ventas**: igual patrón — ciclo de vida en `estado`, `DELETE /api/ventas/:id` pone `estado = 'anulada'` (nunca borrado real: un comprobante emitido preserva su número correlativo por normativa, no se borra ni se reutiliza su número). Una venta `anulada` no se puede volver a anular.
 - **Empresa** no tiene endpoint de eliminar — una empresa no se borra desde la UI.
+- **Caja** no tiene endpoint de eliminar — el ciclo de vida vive en `estado` (`abierta`/`cerrada`), y una sesión cerrada nunca se reabre ni se borra (es el registro del arqueo del turno).
 
 ## Rol de arranque
 

@@ -25,6 +25,8 @@ import { DetallePedido } from '../modules/pedidos/detalle-pedido.entity';
 import { Comanda } from '../modules/cocina/comanda.entity';
 import { Venta } from '../modules/ventas/venta.entity';
 import { DetalleVenta } from '../modules/ventas/detalle-venta.entity';
+import { Caja } from '../modules/caja/caja.entity';
+import { MovimientoCaja } from '../modules/caja/movimiento-caja.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -60,6 +62,8 @@ export const AppDataSource = new DataSource({
     Comanda,
     Venta,
     DetalleVenta,
+    Caja,
+    MovimientoCaja,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
 });

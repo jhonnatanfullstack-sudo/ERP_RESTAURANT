@@ -112,6 +112,7 @@ src/
 | `/pedidos/:id`      | Admin   | Detalle de pedido (agregar/editar/quitar líneas, enviar a cocina, cerrar/cancelar) | Sí                    |
 | `/cocina`           | Admin   | Cola de cocina (avanzar/cancelar comandas)                                         | Sí                    |
 | `/ventas`           | Admin   | Ventas (filtro por estado, registrar venta desde un pedido cerrado, anular)        | Sí                    |
+| `/caja`             | Admin   | Caja (abrir/cerrar sesión, movimientos manuales, historial de arqueos)            | Sí                    |
 | `/cambiar-password` | Admin   | Cambiar contraseña propia                                                          | Sí                    |
 | `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`)                             | No                    |
 | `/carta`            | Público | Carta (hero + buscador + categorías, "Mi pedido" con envío por WhatsApp)           | No                    |
@@ -130,6 +131,15 @@ La separación pública/admin en una sola app sigue la decisión documentada en 
 ## Ventas: comprobante, totales y tipo de cambio visibles (FASE 14, 2026-09-08)
 
 La tabla de `/ventas` expone columnas separadas de Comprobante (serie-correlativo clicable, ej. `B001-000001`), Fecha de emisión, Mesa, Cliente, Subtotal, IGV, Total y Estado. Al hacer clic en el comprobante (o en "Ver") se abre `VentaDetalleModal` (componente local de `Ventas.tsx`): un recibo con cabecera (comprobante, fecha, cliente, mesa), el detalle por línea, y el bloque de totales (Subtotal / IGV / Total) más el tipo de cambio de la fecha de emisión cuando la consulta a SUNAT lo pudo obtener (ver `decisiones-tecnicas.md`).
+
+## Caja: sesión en vivo, KPIs y arqueo con vista previa (FASE 15, 2026-09-09)
+
+- **`pages/Caja.tsx`**: cuando no hay sesión abierta, muestra un `EmptyState` con el botón "Abrir caja" (si `tienePermiso('caja.abrir')`). Con sesión abierta, una tarjeta destacada (degradado esmeralda, indicador "en vivo" con `animate-ping`) muestra quién la abrió, cuándo, y el **efectivo esperado ahora** — recalculado en el cliente con el mismo criterio que usa el backend al cerrar (apertura + ventas en efectivo del turno + ingresos − egresos manuales), leyendo la caché ya cargada de `['ventas']` (mismo `queryKey` que `Ventas.tsx`, no se duplica la llamada). El número que realmente queda guardado lo calcula y congela el backend recién en el momento del cierre — este es solo un estimado en vivo para que el cajero no tenga que esperar a cerrar para saber cómo va el turno.
+- **KPIs reutilizados de Dashboard**: `KpiCard` (con `useContadorAnimado`) para Monto de apertura / Ventas en efectivo / Ingresos manuales / Egresos manuales — mismo componente que ya usa el Dashboard, no se creó uno nuevo (Regla 8 de `CLAUDE.md`).
+- **Modal de cierre con vista previa reactiva**: mientras el cajero escribe el monto contado físicamente, un bloque bajo el campo muestra en vivo "Sobrante de S/ X" / "Faltante de S/ X" / "Caja cuadrada" (`useWatch` de react-hook-form sobre el campo, sin esperar al submit) — así se detecta un arqueo descuadrado antes de confirmar, no después.
+- **Registrar movimiento**: modal con `TarjetaOpcion` para elegir Ingreso/Egreso (mismo componente "radio-card" que Pedidos/Ventas usan para elegir su modo), monto y concepto.
+- **Historial de sesiones**: tabla con apertura/cierre/quién/montos/diferencia (badge verde "Cuadrada", azul si sobrante, rojo si faltante) y un botón "Ver" que abre el detalle completo de esa sesión (incluidos sus movimientos), igual patrón que `VentaDetalleModal` en Ventas.
+- **`nombrePersonal()` reutilizado**: `usuarioApertura`/`usuarioCierre`/movimientos exponen `{ id, personal }` (mismo shape que ya devuelve `usuario.mapper.ts: usuarioPublico`), así que el frontend muestra el nombre con el helper ya existente en `utils/formato.ts`, sin duplicar la lógica de "razón social si es persona jurídica, si no nombres y apellidos".
 
 ## Autenticación en el frontend
 
@@ -151,3 +161,4 @@ pnpm --filter @restaurant-erp/frontend preview  # sirve el build de producción
 
 - `tsc` (typecheck) y `vite build` (producción) sin errores.
 - **Verificado visualmente en navegador real** (Chromium vía Playwright, instalado temporalmente fuera del proyecto solo para pruebas): flujo completo probado — redirección a `/login` sin sesión, login con el usuario semilla, navegación a Usuarios/Personal/Roles/Empresa con datos reales de la base de datos, persistencia de sesión tras recargar la página, cambio de contraseña, y logout. Sin errores de consola (aparte de los 401 esperados de la verificación de sesión al cargar sin estar logueado).
+- **Caja (FASE 15), verificado en navegador real con datos de prueba temporales** (abrir → registrar ingreso y egreso → ver el efectivo esperado subir/bajar en vivo → cerrar con un monto declarado distinto al esperado → ver el badge "Faltante" en el historial y en el detalle), y contra la API directamente para las reglas de negocio (abrir una segunda caja mientras hay una abierta → 409; cerrar una caja ya cerrada → 400; registrar un movimiento en una caja cerrada → 400). Datos de prueba limpiados de la base al terminar.

@@ -271,3 +271,23 @@ El usuario pidió explícitamente: "recordar que las formas de pago se utilizan 
 3. **Elegida:** el pedido armado en la carta es un **borrador informal**, guardado solo en `localStorage` del navegador del visitante (nunca llega al backend), que se convierte en un mensaje de texto pre-armado hacia el WhatsApp del restaurante (`wa.me`). El restaurante lo recibe y lo confirma por ese mismo chat — es, en esencia, una versión más rápida de "escribir el pedido a mano por WhatsApp", que muchos restaurantes ya hacen hoy sin ningún sistema.
 
 **Impacto:** cero cambios de arquitectura, cero superficie nueva de abuso (nada llega al servidor salvo las lecturas públicas ya existentes de productos/empresa), y resuelve literalmente lo pedido ("un enlace a wsp y cosas así") sin adelantar el portal de clientes. Cuando ese portal se implemente, este flujo puede coexistir (WhatsApp para quien no quiere loguearse) o migrarse a pedidos reales — no hay nada que deshacer, `useBandejaPedido` es un hook autocontenido que no toca ningún otro módulo.
+
+## Caja: efectivo por rango de fecha (no un `caja_id` en Ventas) y permiso reutilizado para movimientos (2026-09-09)
+
+**Problema 1 — cómo saber cuánto efectivo entró en una sesión de caja.** Al cerrar una caja hace falta sumar las ventas en efectivo del turno. La forma más directa sería agregar `ventas.caja_id` (FK nullable, seteada al emitir una venta con la caja abierta en ese momento).
+
+**Opciones evaluadas:**
+
+1. Agregar `ventas.caja_id`. Descartada: viola la Regla 3 de `CLAUDE.md` ("no modificar módulos existentes innecesariamente") sin necesidad real — obliga a tocar `venta.service.ts` (resolver la caja abierta en cada venta, decidir qué pasa si no hay ninguna abierta) para un dato que se puede reconstruir sin persistir nada nuevo en Ventas.
+2. **Elegida:** `caja.service.ts` calcula el efectivo del turno consultando `Venta` por rango de fecha (`creadoEn` entre la apertura y el cierre de la sesión) y medio de pago = "Efectivo" (`medioPago.codigo === 'efectivo'`), en el momento de cerrar. Cero cambios en Ventas; el mismo criterio se replica en el frontend (`Caja.tsx`) solo para la vista previa en vivo, leyendo la caché ya cargada de `['ventas']`.
+
+**Impacto:** si en el futuro se necesita saber "en qué caja se cobró esta venta concreta" (ej. para un reporte de FASE 19), sí haría falta el `caja_id` — hoy no hay ese requisito, así que no se adelantó.
+
+**Problema 2 — qué permiso exige registrar un ingreso/egreso manual.** La sección 10 de `CLAUDE.md` predefine exactamente `caja.ver`, `caja.abrir`, `caja.cerrar` para este módulo (a diferencia de otros módulos, donde predefine el patrón genérico `.ver`/`.crear`/`.editar`/`.eliminar`) — no hay un cuarto código para "registrar movimiento".
+
+**Opciones evaluadas:**
+
+1. Inventar `caja.registrar_movimiento` (o similar). Descartada: la sección 17 de `CLAUDE.md` pide no introducir decisiones de este tipo sin evaluarlas explícitamente, y la sección 10 ya fija una lista cerrada para este módulo — sumar un cuarto código no pedido rompe esa lista sin una razón de negocio real (nadie pidió un rol que pueda registrar movimientos pero no abrir/cerrar caja).
+2. **Elegida:** registrar un movimiento reutiliza el permiso `caja.abrir`, interpretado como "operar una caja ya abierta" (quien puede abrir una sesión es, por definición, quien la opera durante el turno). `caja.cerrar` queda reservado específicamente para el arqueo final, una acción de mayor responsabilidad que sí puede tener un titular distinto (ej. un supervisor cierra lo que abrió un cajero).
+
+**Impacto:** si más adelante se pide un rol que registre movimientos sin poder abrir/cerrar caja, se puede introducir el cuarto permiso entonces con una migración nueva (aditiva, no rompe nada existente) — hoy esa necesidad no está pedida.

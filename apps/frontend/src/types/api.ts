@@ -260,6 +260,34 @@ export interface Usuario {
   rol: Pick<Rol, 'id' | 'nombre'>;
 }
 
+export type EstadoCaja = 'abierta' | 'cerrada';
+export type TipoMovimientoCaja = 'ingreso' | 'egreso';
+
+export interface MovimientoCaja {
+  id: string;
+  usuario: Pick<Usuario, 'id' | 'personal'>;
+  tipo: TipoMovimientoCaja;
+  monto: number;
+  concepto: string;
+  creadoEn: string;
+}
+
+export interface Caja {
+  id: string;
+  usuarioApertura: Pick<Usuario, 'id' | 'personal'>;
+  usuarioCierre: Pick<Usuario, 'id' | 'personal'> | null;
+  montoApertura: number;
+  observacionApertura: string | null;
+  montoEsperado: number | null;
+  montoDeclarado: number | null;
+  diferencia: number | null;
+  observacionCierre: string | null;
+  estado: EstadoCaja;
+  movimientos: MovimientoCaja[];
+  creadoEn: string;
+  fechaCierre: string | null;
+}
+
 export interface UsuarioAutenticado {
   id: string;
   email: string;

@@ -16,6 +16,7 @@ import { reservaRouter } from '../modules/reservas/reserva.routes';
 import { pedidoRouter } from '../modules/pedidos/pedido.routes';
 import { comandaRouter } from '../modules/cocina/comanda.routes';
 import { ventaRouter } from '../modules/ventas/venta.routes';
+import { cajaRouter } from '../modules/caja/caja.routes';
 
 export const apiRouter = Router();
 
@@ -36,3 +37,4 @@ apiRouter.use('/reservas', reservaRouter);
 apiRouter.use('/pedidos', pedidoRouter);
 apiRouter.use('/comandas', comandaRouter);
 apiRouter.use('/ventas', ventaRouter);
+apiRouter.use('/cajas', cajaRouter);

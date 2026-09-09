@@ -20,6 +20,7 @@ Orden base definido en la sección 15 de `CLAUDE.md` (no se modifica ese documen
 | 12       | Pedidos                                                                       | `CLAUDE.md`                       | Completada |
 | 13       | Comandas y cocina                                                             | `CLAUDE.md`                       | Completada |
 | 14       | Ventas y pagos                                                                | `CLAUDE.md`                       | Completada |
+| 15       | Caja (apertura, cierre y movimientos)                                        | `CLAUDE.md`                       | Completada |
 | ...      | (resto sin cambios)                                                           | `CLAUDE.md`                       | Pendiente  |
 
 **Módulos agregados a la sección 4 de `CLAUDE.md`** (decisión 2026-09-07, ver `decisiones-tecnicas.md`): `empresa`, `personal`, `catalogos` (SUNAT). Ya implementados en FASE 2.

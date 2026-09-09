@@ -17,6 +17,7 @@ import { Pedidos } from '../pages/Pedidos';
 import { PedidoDetalle } from '../pages/PedidoDetalle';
 import { Cocina } from '../pages/Cocina';
 import { Ventas } from '../pages/Ventas';
+import { Caja } from '../pages/Caja';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
@@ -48,6 +49,7 @@ export function AppRoutes() {
           <Route path="/pedidos/:id" element={<PedidoDetalle />} />
           <Route path="/cocina" element={<Cocina />} />
           <Route path="/ventas" element={<Ventas />} />
+          <Route path="/caja" element={<Caja />} />
           <Route path="/empresa" element={<Empresa />} />
           <Route path="/cambiar-password" element={<CambiarPassword />} />
         </Route>
