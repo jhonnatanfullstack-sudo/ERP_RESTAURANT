@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
 import { formatearPrecio, urlImagen } from '../../utils/formato';
 import { enlaceWhatsApp, mensajePedido } from '../../utils/whatsapp';
@@ -43,6 +43,16 @@ export function BandejaPedidoFlotante({
   const totalItems = lineas.reduce((suma, linea) => suma + linea.cantidad, 0);
   const total = lineas.reduce((suma, linea) => suma + linea.subtotal, 0);
 
+  // Rebote del contador cada vez que sube: feedback inmediato de "se agregó" sin necesitar
+  // abrir el panel. `key` fuerza a React a reiniciar la animación en cada aumento (una clase
+  // reaplicada sobre el mismo nodo no reinicia un keyframe ya corrido).
+  const totalAnterior = useRef(totalItems);
+  const [rebotes, setRebotes] = useState(0);
+  useEffect(() => {
+    if (totalItems > totalAnterior.current) setRebotes((valor) => valor + 1);
+    totalAnterior.current = totalItems;
+  }, [totalItems]);
+
   const enlaceEnviar = telefonoWhatsApp
     ? enlaceWhatsApp(
         telefonoWhatsApp,
@@ -71,7 +81,10 @@ export function BandejaPedidoFlotante({
         <span className="relative flex h-6 w-6 items-center justify-center">
           <ShoppingBag className="h-5 w-5" strokeWidth={2.25} />
           {totalItems > 0 && (
-            <span className="absolute -top-2.5 -right-2.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-600 px-1 text-[11px] font-bold text-white ring-2 ring-zinc-900">
+            <span
+              key={rebotes}
+              className="animar-rebote absolute -top-2.5 -right-2.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-600 px-1 text-[11px] font-bold text-white ring-2 ring-zinc-900"
+            >
               {totalItems}
             </span>
           )}

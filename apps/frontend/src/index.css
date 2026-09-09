@@ -188,6 +188,42 @@ body {
   animation: vapor-subir 2.6s ease-in infinite;
 }
 
+@keyframes rebote-contador {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.45);
+  }
+  60% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Contador de "Mi pedido": rebota cada vez que sube (ver BandejaPedidoFlotante.tsx). */
+.animar-rebote {
+  animation: rebote-contador 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes mosaico-respirar {
+  0%,
+  100% {
+    transform: scale(1.08);
+  }
+  50% {
+    transform: scale(1.18);
+  }
+}
+
+/* Mosaico de fotos del hero de la carta pública: zoom lentísimo, para que se sienta "vivo"
+   sin llamar la atención sobre sí mismo. */
+.animar-mosaico {
+  animation: mosaico-respirar 18s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animar-trazo,
   .animar-area,
@@ -199,6 +235,8 @@ body {
   .cinta-desplazar,
   .animar-vapor,
   .animar-flotar,
+  .animar-rebote,
+  .animar-mosaico,
   .animate-fade-in,
   .animate-scale-in {
     animation: none;
