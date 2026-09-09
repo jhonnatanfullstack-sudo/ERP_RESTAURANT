@@ -14,6 +14,20 @@ export function formatearPrecio(precio: number): string {
   return formateadorSoles.format(precio);
 }
 
+/** Monto abreviado para ejes y espacios estrechos: "S/ 1.2k", "S/ 3.4M". */
+export function formatearPrecioCompacto(valor: number): string {
+  const absoluto = Math.abs(valor);
+  if (absoluto >= 1_000_000) return `S/ ${(valor / 1_000_000).toFixed(1)}M`;
+  if (absoluto >= 1_000) return `S/ ${(valor / 1_000).toFixed(absoluto >= 10_000 ? 0 : 1)}k`;
+  return `S/ ${Math.round(valor)}`;
+}
+
+const formateadorNumero = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 0 });
+
+export function formatearNumero(valor: number): string {
+  return formateadorNumero.format(valor);
+}
+
 const formateadorFechaHora = new Intl.DateTimeFormat('es-PE', {
   dateStyle: 'medium',
   timeStyle: 'short',

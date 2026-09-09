@@ -35,3 +35,103 @@ body {
 .animate-scale-in {
   animation: scale-in 0.15s ease-out;
 }
+
+/* --- Animaciones de gráficos (dashboard) --- */
+
+@keyframes dibujar-trazo {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes revelar-area {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes crecer-columna {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes crecer-barra {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes dibujar-anillo {
+  from {
+    stroke-dashoffset: var(--dash-inicial, 0);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes entrar-abajo {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Trazo de línea/arco: se dibuja de inicio a fin (requiere pathLength="1"). */
+.animar-trazo {
+  animation: dibujar-trazo 0.9s ease-out both;
+}
+
+.animar-area {
+  animation: revelar-area 0.7s 0.15s ease-out both;
+}
+
+.animar-barra {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: crecer-columna 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animar-barra-h {
+  transform-origin: left;
+  animation: crecer-barra 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animar-anillo {
+  animation: dibujar-anillo 0.9s ease-out both;
+}
+
+/* Entrada escalonada de las secciones del dashboard. */
+.animar-entrada {
+  animation: entrar-abajo 0.4s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animar-trazo,
+  .animar-area,
+  .animar-barra,
+  .animar-barra-h,
+  .animar-anillo,
+  .animar-entrada,
+  .animate-fade-in,
+  .animate-scale-in {
+    animation: none;
+  }
+}
