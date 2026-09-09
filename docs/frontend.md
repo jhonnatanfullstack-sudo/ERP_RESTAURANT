@@ -51,6 +51,12 @@ React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, conf
   - El header también tiene un botón "Escríbenos por WhatsApp" (oculto en móvil, `hidden sm:flex`, para no competir con el logo) y el hero uno más grande para consultas generales, ambos ocultos por completo si la empresa no tiene teléfono configurado — nunca se muestra un botón de WhatsApp roto.
   - Estado de carga: `CuadriculaCargando` (tarjetas fantasma con `animate-pulse`) reemplaza el `<Spinner/>` genérico que traía la versión anterior — más apropiado para una página pensada para clientes, no para el staff.
 
+- **Carta pública: carrusel 3D, más animaciones y guiños de restaurante (2026-09-09, pedido del usuario: "que tenga un carrusel de los platillos... los platillos que se muestren en 3D... un diseño moderno para restaurant con animaciones"):**
+  - **`components/public/CarruselPlatillos.tsx` — vitrina "coverflow" real en 3D:** el platillo activo queda de frente y grande; los vecinos se inclinan en perspectiva hacia los costados (`perspective` + `rotateY`/`translateZ`/`scale` por `transform`, recalculados según la distancia de cada platillo al activo). **Es 3D real** — transformaciones CSS sobre las fotos que ya existen — **no un visor de modelos `.glb`**: eso sigue necesitando contenido 3D por platillo que el proyecto no tiene, como ya se documentó en "Diseño visual: fotos con efectos en vez de 3D real" (`decisiones-tecnicas.md`, 2026-09-07). Con menos de 2 platillos activos no se renderiza (una vitrina de 1 elemento no tiene vecinos que mostrar); se probó en vivo agregando 6 productos de prueba vía SQL directo y se limpiaron al terminar. Navegación por botones, puntos, clic directo en un platillo lateral y deslizar con el dedo en móvil (umbral de 40px); autoavance cada 4.5s, pausado con `prefers-reduced-motion` (que además colapsa los vecinos y deja solo el platillo activo). Comparte el estado de "Mi pedido" con la grilla de abajo (mismo `useBandejaPedido`), así que agregar desde el carrusel también actualiza la tarjeta correspondiente en la grilla.
+  - **`hooks/useInclinacion3D.ts`:** inclinación 3D que sigue al cursor (`rotateX`/`rotateY` según la posición del puntero) aplicada a la foto de cada `ProductoCarta` de la grilla — el mismo lenguaje de profundidad del carrusel, pero como micro-interacción en vez de vitrina. Se desactiva con `prefers-reduced-motion` y se ignora en touch (`pointerType === 'touch'`, donde no hay cursor que seguir).
+  - **`hooks/useEnVista.ts`:** revela una sección (encabezado del carrusel, encabezado "Explora toda la carta") la primera vez que entra en el viewport, en vez de animar todo junto al montar. **Bug real encontrado y corregido:** la primera versión usaba `useRef` + `useEffect(fn, [])` para armar el `IntersectionObserver`, pero el contenedor del carrusel solo se monta en el DOM _después_ de que `productosQuery` resuelve (antes de eso `carrusel.length >= 2` es falso) — un efecto con dependencias fijas no se re-ejecuta solo porque el `ref` se adjuntó a un nodo nuevo, así que el observer nunca llegaba a observar el nodo real y la sección quedaba en `opacity-0` para siempre (intermitente en desarrollo por el doble-montaje de `StrictMode`, lo que lo hacía parecer que "a veces funcionaba"). Se reescribió como _callback ref_ con función de limpieza (soportado desde React 19): se dispara exactamente cuando el nodo real aparece o desaparece, sin depender de que algún otro estado cambie. **Gotcha del React Compiler al consumirlo:** `const revelar = useEnVista(); revelar.ref` / `revelar.visible` (acceso por propiedad sobre el objeto devuelto) dispara `react-hooks/refs` ("Cannot access refs during render") aunque `visible` no sea un ref — el lint trata como sospechosa cualquier propiedad leída de un objeto que también contiene un `ref`, y solo lo suelta si se desestructura primero (`const { ref, visible } = useEnVista()`). Mismo patrón que ya usa `useAnchoElemento` en los gráficos del dashboard — aplicar siempre desestructurando, nunca por acceso a propiedad.
+  - **Más guiños de restaurante:** divisor de onda en SVG entre el hero y el resto de la página (antes un corte recto); vapor animado (`animar-vapor`, 3 barritas con `blur` y `opacity`) sobre la insignia "Carta digital", el gesto visual de un plato recién servido; `components/public/CintaAnimada.tsx`, una cinta de frases genéricas en bucle (`cinta-desplazar`, contenido duplicado una vez para que el loop de `-50%` no salte) — frases sin cifras ni afirmaciones inventadas sobre el negocio; un ícono `UtensilsCrossed` grande y muy tenue (`text-zinc-900/[0.03]`) como textura de fondo en la sección de la grilla.
+
 ## Estructura
 
 ```
@@ -62,7 +68,8 @@ src/
   components/charts/ Gráficos SVG propios (sin librería): GraficoArea, GraficoBarras, GraficoDona,
                   GraficoRanking, AnilloProgreso, Sparkline, TooltipGrafico, paleta.ts
   components/public/ Solo para /carta: ProductoCarta (tarjeta con control de cantidad),
-                  BandejaPedidoFlotante (botón + panel de "Mi pedido")
+                  BandejaPedidoFlotante (botón + panel de "Mi pedido"), CarruselPlatillos
+                  (vitrina 3D "coverflow"), CintaAnimada (cinta de frases en bucle)
   layouts/         AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header con branding real
                    de Empresa + Outlet + pie de página con contacto)
   pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa, Categorias, Marcas, Productos, Salones, Mesas, Clientes, Reservas, Pedidos, PedidoDetalle, Cocina, Ventas
@@ -72,7 +79,8 @@ src/
   services/        api.ts (instancia Axios + interceptores) y un *.service.ts por módulo
   types/api.ts     Tipos compartidos de las respuestas de la API
   hooks/           useAnchoElemento (ancho real vía ResizeObserver), animacion.ts
-                   (useContadorAnimado, useMovimientoReducido), useBandejaPedido (carta pública)
+                   (useContadorAnimado, useMovimientoReducido), useBandejaPedido,
+                   useInclinacion3D, useEnVista (revelar al scroll) — los 3 últimos, carta pública
   utils/whatsapp.ts  numeroWhatsApp(), enlaceWhatsApp(), mensajePedido() — solo para /carta
 ```
 

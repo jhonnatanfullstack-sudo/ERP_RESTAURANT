@@ -1,14 +1,21 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { MessageCircle, Search, UtensilsCrossed, X } from 'lucide-react';
+import { MessageCircle, Search, Sparkles, UtensilsCrossed, X } from 'lucide-react';
 import * as productosService from '../../services/productos.service';
 import * as empresaService from '../../services/empresa.service';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ProductoCarta } from '../../components/public/ProductoCarta';
 import { BandejaPedidoFlotante } from '../../components/public/BandejaPedidoFlotante';
+import { CarruselPlatillos } from '../../components/public/CarruselPlatillos';
+import { CintaAnimada } from '../../components/public/CintaAnimada';
 import { useBandejaPedido } from '../../hooks/useBandejaPedido';
+import { useEnVista } from '../../hooks/useEnVista';
 import { enlaceWhatsApp } from '../../utils/whatsapp';
 import type { Producto } from '../../types/api';
+
+/** Máximo de platillos que muestra el carrusel — es una vitrina, no un listado completo
+ * (para eso está la grilla de abajo, con buscador y filtro). */
+const MAXIMO_EN_CARRUSEL = 10;
 
 // Referencia estable: `productosQuery.data ?? []` crearía un arreglo nuevo en cada render
 // mientras carga, invalidando innecesariamente los useMemo que dependen de `productos`.
@@ -83,10 +90,14 @@ export function Carta() {
       )
     : null;
 
+  const carrusel = productos.slice(0, MAXIMO_EN_CARRUSEL);
+  const { ref: refCarrusel, visible: carruselVisible } = useEnVista<HTMLDivElement>();
+  const { ref: refCartaCompleta, visible: cartaCompletaVisible } = useEnVista<HTMLDivElement>();
+
   return (
     <div>
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 py-16 text-white sm:py-24">
+      {/* Hero + vitrina de platillos */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-orange-600 via-orange-500 to-amber-500 pt-16 pb-20 text-white sm:pt-24 sm:pb-28">
         <div
           aria-hidden="true"
           className="animar-flotar pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl"
@@ -97,9 +108,26 @@ export function Carta() {
           style={{ animationDelay: '1.5s' }}
         />
         <div className="relative mx-auto max-w-3xl px-6 text-center">
-          <span className="animate-fade-in inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-1.5 text-xs font-semibold tracking-wide uppercase backdrop-blur">
-            🍽️ Carta digital
-          </span>
+          <div className="relative inline-block">
+            {/* Vapor: el mismo guiño visual de "recién servido" que un plato humeante. */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-3 left-1/2 flex -translate-x-1/2 gap-2.5"
+            >
+              <span className="animar-vapor h-6 w-1 rounded-full bg-white/50 blur-[2px]" />
+              <span
+                className="animar-vapor h-8 w-1 rounded-full bg-white/50 blur-[2px]"
+                style={{ animationDelay: '0.7s' }}
+              />
+              <span
+                className="animar-vapor h-6 w-1 rounded-full bg-white/50 blur-[2px]"
+                style={{ animationDelay: '1.4s' }}
+              />
+            </div>
+            <span className="animate-fade-in inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-1.5 text-xs font-semibold tracking-wide uppercase backdrop-blur">
+              🍽️ Carta digital
+            </span>
+          </div>
           <h1 className="animate-fade-in mt-4 text-4xl font-bold tracking-tight sm:text-5xl">
             Nuestra Carta
           </h1>
@@ -120,7 +148,43 @@ export function Carta() {
             </a>
           )}
         </div>
+
+        {carrusel.length >= 2 && (
+          <div
+            ref={refCarrusel}
+            className={`relative mt-14 transition-all duration-700 sm:mt-16 ${
+              carruselVisible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'
+            }`}
+          >
+            <p className="flex items-center justify-center gap-1.5 text-xs font-semibold tracking-wide text-orange-100 uppercase">
+              <Sparkles className="h-3.5 w-3.5" />
+              Desliza para ver más
+            </p>
+            <div className="mt-4">
+              <CarruselPlatillos
+                productos={carrusel}
+                items={bandeja.items}
+                onAgregar={(productoId) => bandeja.agregar(productoId)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Divisor de onda: cierra la zona de color hacia el fondo claro del resto de la página. */}
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 1440 100"
+          preserveAspectRatio="none"
+          className="absolute -bottom-px left-0 h-12 w-full text-zinc-50 sm:h-20"
+        >
+          <path
+            fill="currentColor"
+            d="M0,40 C240,90 480,0 720,40 C960,80 1200,10 1440,40 L1440,100 L0,100 Z"
+          />
+        </svg>
       </section>
+
+      <CintaAnimada />
 
       {/* Buscador + categorías */}
       {productos.length > 0 && (
@@ -178,7 +242,25 @@ export function Carta() {
         </div>
       )}
 
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="relative mx-auto max-w-6xl overflow-hidden px-6 py-10">
+        <UtensilsCrossed
+          aria-hidden="true"
+          strokeWidth={0.6}
+          className="pointer-events-none absolute -top-10 -right-16 h-64 w-64 text-zinc-900/[0.03]"
+        />
+
+        {productos.length > 0 && (
+          <div
+            ref={refCartaCompleta}
+            className={`relative mb-6 flex items-center gap-2 transition-all duration-700 ${
+              cartaCompletaVisible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
+            }`}
+          >
+            <UtensilsCrossed className="h-5 w-5 text-orange-600" strokeWidth={2} />
+            <h2 className="text-xl font-bold text-zinc-900">Explora toda la carta</h2>
+          </div>
+        )}
+
         {productosQuery.isLoading ? (
           <CuadriculaCargando />
         ) : productos.length === 0 ? (

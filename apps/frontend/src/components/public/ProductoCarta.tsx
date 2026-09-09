@@ -1,5 +1,6 @@
 import { Minus, Plus, UtensilsCrossed } from 'lucide-react';
 import { formatearPrecio, urlImagen } from '../../utils/formato';
+import { useInclinacion3D } from '../../hooks/useInclinacion3D';
 import type { Producto } from '../../types/api';
 
 interface ProductoCartaProps {
@@ -25,25 +26,44 @@ export function ProductoCarta({
   retraso = 0,
 }: ProductoCartaProps) {
   const imagen = urlImagen(producto.imagenUrl);
+  const {
+    ref: refFoto,
+    estilo: estiloInclinado,
+    alMoverPuntero,
+    alSalirPuntero,
+  } = useInclinacion3D(8);
 
   return (
     <div
       className="animar-entrada group flex flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:shadow-orange-900/5"
       style={{ animationDelay: `${retraso}ms` }}
     >
-      <div className="relative aspect-4/3 overflow-hidden bg-zinc-100">
-        {imagen ? (
-          <img
-            src={imagen}
-            alt={producto.nombre}
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-zinc-300">
-            <UtensilsCrossed className="h-10 w-10" strokeWidth={1.25} />
-          </div>
-        )}
+      {/* La inclinación 3D solo vive en la foto (perspective + rotateX/rotateY según el
+          cursor) — el resto de la tarjeta (precio, botón) queda plano y legible. */}
+      <div
+        ref={refFoto}
+        onPointerMove={alMoverPuntero}
+        onPointerLeave={alSalirPuntero}
+        className="relative aspect-4/3 overflow-hidden bg-zinc-100"
+        style={{ perspective: '600px' }}
+      >
+        <div
+          className="h-full w-full transition-transform duration-150 ease-out will-change-transform"
+          style={estiloInclinado}
+        >
+          {imagen ? (
+            <img
+              src={imagen}
+              alt={producto.nombre}
+              loading="lazy"
+              className="h-full w-full scale-105 object-cover transition-transform duration-700 ease-out group-hover:scale-110"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-zinc-300">
+              <UtensilsCrossed className="h-10 w-10" strokeWidth={1.25} />
+            </div>
+          )}
+        </div>
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
         <span className="absolute top-3 left-3 rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-zinc-600 shadow-sm backdrop-blur">
           {producto.categoria.nombre}

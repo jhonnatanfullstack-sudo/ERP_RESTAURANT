@@ -154,6 +154,40 @@ body {
   animation: flotar-suave 4s ease-in-out infinite;
 }
 
+@keyframes cinta-mover {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Cinta de frases de la carta pública: el contenido está duplicado una vez, así que
+   -50% completa exactamente un ciclo sin salto visible. */
+.cinta-desplazar {
+  animation: cinta-mover 22s linear infinite;
+}
+
+@keyframes vapor-subir {
+  0% {
+    transform: translateY(0) scaleX(1);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(-32px) scaleX(1.4);
+    opacity: 0;
+  }
+}
+
+/* Vapor sobre el ícono del hero de la carta pública — un plato "recién servido". */
+.animar-vapor {
+  animation: vapor-subir 2.6s ease-in infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animar-trazo,
   .animar-area,
@@ -162,6 +196,8 @@ body {
   .animar-anillo,
   .animar-entrada,
   .animar-bandeja,
+  .cinta-desplazar,
+  .animar-vapor,
   .animar-flotar,
   .animate-fade-in,
   .animate-scale-in {
