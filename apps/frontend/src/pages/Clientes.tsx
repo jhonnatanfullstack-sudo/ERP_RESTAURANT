@@ -10,28 +10,19 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CampoBusquedaDocumento } from '../components/CampoBusquedaDocumento';
 import { CamposIdentidadCliente } from '../components/CamposIdentidadCliente';
 import { ClienteCrearModal } from '../components/ClienteCrearModal';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Checkbox } from '../components/ui/Checkbox';
+import { FormActions } from '../components/ui/FormActions';
 import { nombreCliente } from '../utils/formato';
+import { mensajeError } from '../utils/errores';
+import { vacioANull } from '../utils/formulario';
 import type { ActualizarClienteInput } from '../services/clientes.service';
 import type { Cliente } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
-
-function vacioANull(valor?: string | null): string | null | undefined {
-  return valor === '' ? null : valor;
-}
 
 export function Clientes() {
   const { tienePermiso } = useAuth();
@@ -78,7 +69,10 @@ export function Clientes() {
     },
   });
 
-  if (clientesQuery.isLoading) return <Spinner />;
+  function cerrarEditar() {
+    setClienteEditando(null);
+    editarMutation.reset();
+  }
 
   return (
     <div>
@@ -158,6 +152,13 @@ export function Clientes() {
         filas={clientesQuery.data ?? []}
         claveFila={(c) => c.id}
         vacio="No hay clientes registrados"
+        cargando={clientesQuery.isLoading}
+        error={
+          clientesQuery.isError
+            ? mensajeError(clientesQuery.error, 'No se pudieron cargar los clientes')
+            : undefined
+        }
+        onReintentar={() => void clientesQuery.refetch()}
       />
 
       <ClienteCrearModal
@@ -166,15 +167,12 @@ export function Clientes() {
         onCreado={() => setModalAbierto(false)}
       />
 
-      <Modal
-        abierto={clienteEditando !== null}
-        titulo="Editar cliente"
-        onCerrar={() => setClienteEditando(null)}
-      >
+      <Modal abierto={clienteEditando !== null} titulo="Editar cliente" onCerrar={cerrarEditar}>
         {clienteEditando && (
           <form
             onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
             className="flex flex-col gap-4"
+            noValidate
           >
             {editarMutation.isError && (
               <Alert
@@ -183,18 +181,19 @@ export function Clientes() {
               />
             )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Tipo de documento</label>
-                <select {...editarForm.register('tipoDocumentoIdentidadId')} className={inputClass}>
-                  <option value="">Sin documento</option>
-                  {tiposDocQuery.data?.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Select
+                label="Tipo de documento"
+                error={editarForm.formState.errors.tipoDocumentoIdentidadId?.message}
+                {...editarForm.register('tipoDocumentoIdentidadId')}
+              >
+                <option value="">Sin documento</option>
+                {tiposDocQuery.data?.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </Select>
               <CampoBusquedaDocumento
                 control={editarForm.control}
                 tipos={tiposDocQuery.data}
@@ -230,38 +229,37 @@ export function Clientes() {
               campoRazonSocial="razonSocial"
             />
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Teléfono</label>
-                <input {...editarForm.register('telefono')} className={inputClass} />
-              </div>
-              <div>
-                <label className={labelClass}>Correo electrónico</label>
-                <input type="email" {...editarForm.register('email')} className={inputClass} />
-              </div>
-            </div>
-
-            <div>
-              <label className={labelClass}>Dirección</label>
-              <input {...editarForm.register('direccion')} className={inputClass} />
-            </div>
-
-            <label className="flex items-center gap-2.5 text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                {...editarForm.register('activo')}
-                className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Teléfono"
+                error={editarForm.formState.errors.telefono?.message}
+                {...editarForm.register('telefono')}
               />
-              Cliente activo
-            </label>
+              <Input
+                label="Correo electrónico"
+                type="email"
+                error={editarForm.formState.errors.email?.message}
+                {...editarForm.register('email')}
+              />
+            </div>
 
-            <Button
-              type="submit"
-              disabled={editarForm.formState.isSubmitting || editarMutation.isPending}
-              className="mt-2 w-full"
-            >
-              Guardar cambios
-            </Button>
+            <Input
+              label="Dirección"
+              error={editarForm.formState.errors.direccion?.message}
+              {...editarForm.register('direccion')}
+            />
+
+            <Checkbox
+              label="Cliente activo"
+              ayuda="Los clientes inactivos conservan su historial pero no se pueden usar en nuevos pedidos."
+              {...editarForm.register('activo')}
+            />
+
+            <FormActions
+              enviar="Guardar cambios"
+              onCancelar={cerrarEditar}
+              enviando={editarForm.formState.isSubmitting || editarMutation.isPending}
+            />
           </form>
         )}
       </Modal>

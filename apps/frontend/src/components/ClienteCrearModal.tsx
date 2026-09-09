@@ -5,25 +5,15 @@ import * as clientesService from '../services/clientes.service';
 import * as catalogosService from '../services/catalogos.service';
 import { Modal } from './ui/Modal';
 import { Alert } from './ui/Alert';
-import { Button } from './ui/Button';
+import { Input } from './ui/Input';
+import { Select } from './ui/Select';
+import { FormActions } from './ui/FormActions';
 import { CampoBusquedaDocumento } from './CampoBusquedaDocumento';
 import { CamposIdentidadCliente } from './CamposIdentidadCliente';
+import { mensajeError } from '../utils/errores';
+import { vacioANull } from '../utils/formulario';
 import type { CrearClienteInput } from '../services/clientes.service';
 import type { Cliente } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
-
-function vacioANull(valor?: string | null): string | null | undefined {
-  return valor === '' ? null : valor;
-}
 
 interface ClienteCrearModalProps {
   abierto: boolean;
@@ -80,6 +70,7 @@ export function ClienteCrearModal({
       <form
         onSubmit={form.handleSubmit((values) => crearMutation.mutate(values))}
         className="flex flex-col gap-4"
+        noValidate
       >
         {crearMutation.isError && (
           <Alert
@@ -88,18 +79,19 @@ export function ClienteCrearModal({
           />
         )}
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass}>Tipo de documento</label>
-            <select {...form.register('tipoDocumentoIdentidadId')} className={inputClass}>
-              <option value="">Sin documento</option>
-              {tiposDocQuery.data?.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Select
+            label="Tipo de documento"
+            error={form.formState.errors.tipoDocumentoIdentidadId?.message}
+            {...form.register('tipoDocumentoIdentidadId')}
+          >
+            <option value="">Sin documento</option>
+            {tiposDocQuery.data?.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nombre}
+              </option>
+            ))}
+          </Select>
           <CampoBusquedaDocumento
             control={form.control}
             tipos={tiposDocQuery.data}
@@ -133,29 +125,32 @@ export function ClienteCrearModal({
           campoRazonSocial="razonSocial"
         />
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass}>Teléfono</label>
-            <input {...form.register('telefono')} className={inputClass} />
-          </div>
-          <div>
-            <label className={labelClass}>Correo electrónico</label>
-            <input type="email" {...form.register('email')} className={inputClass} />
-          </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Input
+            label="Teléfono"
+            error={form.formState.errors.telefono?.message}
+            {...form.register('telefono')}
+          />
+          <Input
+            label="Correo electrónico"
+            type="email"
+            error={form.formState.errors.email?.message}
+            {...form.register('email')}
+          />
         </div>
 
-        <div>
-          <label className={labelClass}>Dirección</label>
-          <input {...form.register('direccion')} className={inputClass} />
-        </div>
+        <Input
+          label="Dirección"
+          error={form.formState.errors.direccion?.message}
+          {...form.register('direccion')}
+        />
 
-        <Button
-          type="submit"
-          disabled={form.formState.isSubmitting || crearMutation.isPending}
-          className="mt-2 w-full"
-        >
-          Crear cliente
-        </Button>
+        <FormActions
+          enviar="Crear cliente"
+          enviandoTexto="Creando…"
+          onCancelar={onCerrar}
+          enviando={form.formState.isSubmitting || crearMutation.isPending}
+        />
       </form>
     </Modal>
   );

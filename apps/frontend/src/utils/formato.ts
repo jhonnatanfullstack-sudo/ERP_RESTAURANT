@@ -66,6 +66,44 @@ export function nombreCliente(
   return `${cliente.nombres ?? ''} ${cliente.apellidos ?? ''}`.trim() || '—';
 }
 
+interface IdentidadPersona {
+  nombres: string | null;
+  apellidoPaterno?: string | null;
+  apellidoMaterno?: string | null;
+  razonSocial: string | null;
+}
+
+/** Nombre a mostrar de un personal: razón social si es persona jurídica (RUC 20...),
+ * o "nombres apellidos" en cualquier otro caso. Usar siempre esto en vez de leer
+ * `personal.nombres` directamente — un personal persona jurídica no tiene nombres. */
+export function nombrePersonal(personal: IdentidadPersona | null | undefined): string {
+  if (!personal) return '—';
+  if (personal.razonSocial) return personal.razonSocial;
+  return (
+    `${personal.nombres ?? ''} ${personal.apellidoPaterno ?? ''} ${personal.apellidoMaterno ?? ''}`
+      .replace(/\s+/g, ' ')
+      .trim() || '—'
+  );
+}
+
+/** Nombre breve para saludos y cabeceras: solo el nombre de pila (o la razón
+ * social, que no se puede acortar). */
+export function nombreCortoPersonal(personal: IdentidadPersona | null | undefined): string {
+  if (!personal) return '—';
+  return personal.razonSocial ?? personal.nombres ?? '—';
+}
+
+/** Iniciales para el avatar del Navbar, a partir del nombre a mostrar. */
+export function inicialesPersonal(personal: IdentidadPersona | null | undefined): string {
+  const palabras = nombrePersonal(personal).split(' ').filter(Boolean);
+  if (palabras[0] === '—') return '?';
+  return palabras
+    .slice(0, 2)
+    .map((palabra) => palabra[0])
+    .join('')
+    .toUpperCase();
+}
+
 /** Convierte un ISO (UTC) a la forma "YYYY-MM-DDTHH:mm" que espera <input type="datetime-local"> en hora local. */
 export function aInputDatetimeLocal(iso: string): string {
   const fecha = new Date(iso);

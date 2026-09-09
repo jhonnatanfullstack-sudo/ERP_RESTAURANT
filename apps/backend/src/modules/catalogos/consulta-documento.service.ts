@@ -10,9 +10,20 @@ export interface DatosDocumento {
   apellidoMaterno: string | null;
   /** Solo para RUC de persona jurídica (empieza en "20"); null en cualquier otro caso. */
   razonSocial: string | null;
+  /** Domicilio fiscal. SUNAT lo devuelve para RUC; RENIEC no lo entrega en el
+   * plan de consulta por DNI, así que ahí llega null. */
+  direccion: string | null;
 }
 
 const PREFIJO_RUC_PERSONA_JURIDICA = '20';
+
+/** El proveedor devuelve campos ausentes como null, cadena vacía o "-": todos
+ * significan "sin dato" y deben guardarse como null, no como texto basura. */
+function textoOpcional(valor: unknown): string | null {
+  if (typeof valor !== 'string') return null;
+  const limpio = valor.trim();
+  return limpio === '' || limpio === '-' ? null : limpio;
+}
 
 /**
  * Consulta datos de un DNI (RENIEC) o RUC (SUNAT) vía la API de apis.net.pe,
@@ -79,6 +90,8 @@ export async function consultarDocumento(
       apellidoPaterno: (datos.first_last_name as string | undefined) ?? null,
       apellidoMaterno: (datos.second_last_name as string | undefined) ?? null,
       razonSocial: null,
+      // El proveedor solo incluye dirección en algunos planes; si no viene, null.
+      direccion: textoOpcional(datos.direccion ?? datos.address),
     };
   }
 
@@ -96,5 +109,8 @@ export async function consultarDocumento(
     apellidoPaterno: null,
     apellidoMaterno: null,
     razonSocial: esPersonaJuridica ? razonSocial : null,
+    // `direccion_completa` incluye distrito/provincia/departamento; `direccion`
+    // es solo la vía. Se prefiere la completa cuando el proveedor la entrega.
+    direccion: textoOpcional(datos.direccion_completa ?? datos.direccion),
   };
 }

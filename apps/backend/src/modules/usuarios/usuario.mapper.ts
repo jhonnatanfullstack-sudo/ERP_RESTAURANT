@@ -10,6 +10,9 @@ export function usuarioPublico(usuario: Usuario) {
       nombres: usuario.personal.nombres,
       apellidoPaterno: usuario.personal.apellidoPaterno,
       apellidoMaterno: usuario.personal.apellidoMaterno,
+      // Un personal persona jurídica no tiene nombres: el frontend arma el
+      // nombre a mostrar con `nombrePersonal()`, que necesita este campo.
+      razonSocial: usuario.personal.razonSocial,
     },
     rol: {
       id: usuario.rol.id,

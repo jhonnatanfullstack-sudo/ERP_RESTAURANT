@@ -5,9 +5,13 @@ export interface CrearPersonalInput {
   empresaId: string;
   tipoDocumentoIdentidadId: string;
   numeroDocumento: string;
-  nombres: string;
-  apellidoPaterno?: string;
-  apellidoMaterno?: string;
+  /** Persona natural: nombres + apellidos. Persona jurídica (RUC "20…"): razonSocial.
+   * Son excluyentes; el backend valida cuál corresponde según el documento. */
+  nombres?: string | null;
+  apellidoPaterno?: string | null;
+  apellidoMaterno?: string | null;
+  razonSocial?: string | null;
+  direccion?: string | null;
 }
 
 export type ActualizarPersonalInput = Partial<CrearPersonalInput> & { activo?: boolean };

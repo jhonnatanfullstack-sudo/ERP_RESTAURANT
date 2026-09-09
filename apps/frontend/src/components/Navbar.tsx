@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { ChevronDown, KeyRound, LogOut, Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { inicialesPersonal, nombreCortoPersonal } from '../utils/formato';
 
 interface NavbarProps {
   onAbrirMenuMovil: () => void;
@@ -15,8 +16,9 @@ export function Navbar({ onAbrirMenuMovil }: NavbarProps) {
     return <header className="h-16 border-b border-zinc-200 bg-white" />;
   }
 
-  const iniciales =
-    `${usuario.personal.nombres[0] ?? ''}${usuario.personal.apellidoPaterno?.[0] ?? ''}`.toUpperCase();
+  // Un personal persona jurídica no tiene nombres: el nombre a mostrar y las
+  // iniciales salen de los helpers, nunca de `personal.nombres` directo.
+  const iniciales = inicialesPersonal(usuario.personal);
 
   return (
     <header className="flex h-16 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 md:px-6">
@@ -36,11 +38,11 @@ export function Navbar({ onAbrirMenuMovil }: NavbarProps) {
           className="flex items-center gap-3 rounded-lg py-1.5 pr-2 pl-1.5 hover:bg-zinc-50"
         >
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-100 text-sm font-semibold text-orange-700">
-            {iniciales || '?'}
+            {iniciales}
           </span>
           <span className="text-left">
-            <span className="block text-sm font-medium text-zinc-900">
-              {usuario.personal.nombres}
+            <span className="block max-w-40 truncate text-sm font-medium text-zinc-900">
+              {nombreCortoPersonal(usuario.personal)}
             </span>
             <span className="block text-xs text-zinc-500">{usuario.rol.nombre}</span>
           </span>

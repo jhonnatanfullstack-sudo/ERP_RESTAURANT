@@ -28,14 +28,20 @@ export class Personal {
   @Column({ name: 'numero_documento', type: 'varchar', length: 20 })
   numeroDocumento!: string;
 
-  @Column({ type: 'varchar', length: 150 })
-  nombres!: string;
+  /** null cuando es persona jurídica: en ese caso el nombre va en `razonSocial`. */
+  @Column({ type: 'varchar', length: 150, nullable: true })
+  nombres!: string | null;
 
   @Column({ name: 'apellido_paterno', type: 'varchar', length: 100, nullable: true })
   apellidoPaterno!: string | null;
 
   @Column({ name: 'apellido_materno', type: 'varchar', length: 100, nullable: true })
   apellidoMaterno!: string | null;
+
+  /** Solo para RUC de persona jurídica (empieza en "20"); mutuamente excluyente
+   * con nombres/apellidos. */
+  @Column({ name: 'razon_social', type: 'varchar', length: 255, nullable: true })
+  razonSocial!: string | null;
 
   @Column({ name: 'fecha_nacimiento', type: 'date', nullable: true })
   fechaNacimiento!: string | null;

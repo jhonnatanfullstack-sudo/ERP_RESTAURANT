@@ -47,9 +47,13 @@ export interface Personal {
   empresa: Empresa;
   tipoDocumentoIdentidad: TipoDocumentoIdentidad;
   numeroDocumento: string;
-  nombres: string;
+  /** null cuando es persona jurídica: en ese caso el nombre está en `razonSocial`. */
+  nombres: string | null;
   apellidoPaterno: string | null;
   apellidoMaterno: string | null;
+  /** Solo para RUC de persona jurídica (empieza en "20"); excluyente con nombres/apellidos. */
+  razonSocial: string | null;
+  direccion: string | null;
   activo: boolean;
 }
 
@@ -145,6 +149,8 @@ export interface DatosDocumento {
   apellidoPaterno: string | null;
   apellidoMaterno: string | null;
   razonSocial: string | null;
+  /** Domicilio fiscal. SUNAT lo devuelve para RUC; por DNI suele llegar null. */
+  direccion: string | null;
 }
 
 export type EstadoReserva = 'pendiente' | 'confirmada' | 'cancelada' | 'completada';
@@ -235,7 +241,10 @@ export interface Usuario {
   id: string;
   email: string;
   activo: boolean;
-  personal: Pick<Personal, 'id' | 'nombres' | 'apellidoPaterno' | 'apellidoMaterno'>;
+  personal: Pick<
+    Personal,
+    'id' | 'nombres' | 'apellidoPaterno' | 'apellidoMaterno' | 'razonSocial'
+  >;
   rol: Pick<Rol, 'id' | 'nombre'>;
 }
 
@@ -245,9 +254,10 @@ export interface UsuarioAutenticado {
   activo: boolean;
   personal: {
     id: string;
-    nombres: string;
+    nombres: string | null;
     apellidoPaterno: string | null;
     apellidoMaterno: string | null;
+    razonSocial: string | null;
   };
   rol: { id: string; nombre: string; permisos: string[] };
 }

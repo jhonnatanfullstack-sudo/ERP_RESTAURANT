@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
+import {
+  useForm,
+  type FieldErrors,
+  type FieldValues,
+  type Path,
+  type UseFormRegister,
+} from 'react-hook-form';
 import { Pencil, Trash2, UserPlus } from 'lucide-react';
 import * as personalService from '../services/personal.service';
 import * as empresaService from '../services/empresa.service';
@@ -11,19 +17,67 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { CampoBusquedaDocumento } from '../components/CampoBusquedaDocumento';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Checkbox } from '../components/ui/Checkbox';
+import { FormActions } from '../components/ui/FormActions';
+import { mensajeError } from '../utils/errores';
+import { vacioANull } from '../utils/formulario';
+import { nombrePersonal } from '../utils/formato';
+import { useEsPersonaJuridica } from '../hooks/useEsPersonaJuridica';
 import type { ActualizarPersonalInput, CrearPersonalInput } from '../services/personal.service';
 import type { Personal as PersonalType } from '../types/api';
 
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
+/**
+ * Razón social o nombres + apellidos, nunca ambos: depende de si el documento es un
+ * RUC de persona jurídica ("20…"). Mismo criterio que el backend
+ * (`personal.service.ts: resolverIdentidad`) y que el formulario de Clientes.
+ */
+function CamposIdentidadPersonal<T extends FieldValues>({
+  esJuridica,
+  register,
+  errores,
+}: {
+  esJuridica: boolean;
+  register: UseFormRegister<T>;
+  errores: FieldErrors<T>;
+}) {
+  const errorDe = (campo: string) =>
+    (errores as Record<string, { message?: string } | undefined>)[campo]?.message;
 
-function mensajeError(error: unknown, fallback: string): string {
+  if (esJuridica) {
+    return (
+      <Input
+        label="Razón social"
+        ayuda="Un RUC que empieza en 20 es de una empresa: se identifica por razón social."
+        error={errorDe('razonSocial')}
+        {...register('razonSocial' as Path<T>, { required: 'La razón social es obligatoria' })}
+      />
+    );
+  }
+
   return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
+    <>
+      <Input
+        label="Nombres"
+        error={errorDe('nombres')}
+        {...register('nombres' as Path<T>, { required: 'Los nombres son obligatorios' })}
+      />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Input
+          label="Apellido paterno"
+          error={errorDe('apellidoPaterno')}
+          {...register('apellidoPaterno' as Path<T>)}
+        />
+        <Input
+          label="Apellido materno"
+          error={errorDe('apellidoMaterno')}
+          {...register('apellidoMaterno' as Path<T>)}
+        />
+      </div>
+    </>
   );
 }
 
@@ -49,6 +103,16 @@ export function Personal() {
 
   const crearForm = useForm<CrearPersonalInput>();
   const editarForm = useForm<ActualizarPersonalInput>();
+
+  const crearEsJuridica = useEsPersonaJuridica({
+    control: crearForm.control,
+    tipos: tiposDocQuery.data,
+    campoTipo: 'tipoDocumentoIdentidadId',
+    campoNumero: 'numeroDocumento',
+  });
+  // Al editar no se cambia el documento, así que el tipo de persona es el que ya
+  // tiene el registro: solo una persona jurídica tiene razón social.
+  const editandoEsJuridica = !!personalEditando?.razonSocial;
 
   const crearMutation = useMutation({
     mutationFn: personalService.crearPersonal,
@@ -77,7 +141,16 @@ export function Personal() {
     },
   });
 
-  if (personalQuery.isLoading) return <Spinner />;
+  function cerrarCrear() {
+    setModalAbierto(false);
+    crearForm.reset();
+    crearMutation.reset();
+  }
+
+  function cerrarEditar() {
+    setPersonalEditando(null);
+    editarMutation.reset();
+  }
 
   return (
     <div>
@@ -95,10 +168,14 @@ export function Personal() {
 
       <Table
         columnas={[
+          { encabezado: 'Nombre / razón social', render: (p) => nombrePersonal(p) },
           {
-            encabezado: 'Nombre completo',
-            render: (p) =>
-              `${p.nombres} ${p.apellidoPaterno ?? ''} ${p.apellidoMaterno ?? ''}`.trim(),
+            encabezado: 'Tipo',
+            render: (p) => (
+              <span className="text-zinc-500">
+                {p.razonSocial ? 'Persona jurídica' : 'Persona natural'}
+              </span>
+            ),
           },
           {
             encabezado: 'Documento',
@@ -126,9 +203,11 @@ export function Personal() {
                         empresaId: p.empresa.id,
                         tipoDocumentoIdentidadId: p.tipoDocumentoIdentidad.id,
                         numeroDocumento: p.numeroDocumento,
-                        nombres: p.nombres,
+                        nombres: p.nombres ?? '',
                         apellidoPaterno: p.apellidoPaterno ?? '',
                         apellidoMaterno: p.apellidoMaterno ?? '',
+                        razonSocial: p.razonSocial ?? '',
+                        direccion: p.direccion ?? '',
                         activo: p.activo,
                       });
                     }}
@@ -155,12 +234,29 @@ export function Personal() {
         filas={personalQuery.data ?? []}
         claveFila={(p) => p.id}
         vacio="No hay personal registrado"
+        cargando={personalQuery.isLoading}
+        error={
+          personalQuery.isError
+            ? mensajeError(personalQuery.error, 'No se pudo cargar el personal')
+            : undefined
+        }
+        onReintentar={() => void personalQuery.refetch()}
       />
 
-      <Modal abierto={modalAbierto} titulo="Nuevo personal" onCerrar={() => setModalAbierto(false)}>
+      <Modal abierto={modalAbierto} titulo="Nuevo personal" onCerrar={cerrarCrear}>
         <form
-          onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
+          onSubmit={crearForm.handleSubmit((values) =>
+            crearMutation.mutate({
+              ...values,
+              nombres: vacioANull(values.nombres),
+              apellidoPaterno: vacioANull(values.apellidoPaterno),
+              apellidoMaterno: vacioANull(values.apellidoMaterno),
+              razonSocial: vacioANull(values.razonSocial),
+              direccion: vacioANull(values.direccion),
+            }),
+          )}
           className="flex flex-col gap-4"
+          noValidate
         >
           {crearMutation.isError && (
             <Alert
@@ -169,33 +265,34 @@ export function Personal() {
             />
           )}
 
-          <div>
-            <label className={labelClass}>Empresa</label>
-            <select {...crearForm.register('empresaId', { required: true })} className={inputClass}>
+          <Select
+            label="Empresa"
+            error={crearForm.formState.errors.empresaId?.message}
+            {...crearForm.register('empresaId', { required: 'Selecciona la empresa' })}
+          >
+            <option value="">Seleccionar…</option>
+            {empresasQuery.data?.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.razonSocial}
+              </option>
+            ))}
+          </Select>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Tipo de documento"
+              error={crearForm.formState.errors.tipoDocumentoIdentidadId?.message}
+              {...crearForm.register('tipoDocumentoIdentidadId', {
+                required: 'Selecciona el tipo de documento',
+              })}
+            >
               <option value="">Seleccionar…</option>
-              {empresasQuery.data?.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.razonSocial}
+              {tiposDocQuery.data?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
                 </option>
               ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Tipo de documento</label>
-              <select
-                {...crearForm.register('tipoDocumentoIdentidadId', { required: true })}
-                className={inputClass}
-              >
-                <option value="">Seleccionar…</option>
-                {tiposDocQuery.data?.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
+            </Select>
             <CampoBusquedaDocumento
               control={crearForm.control}
               tipos={tiposDocQuery.data}
@@ -207,51 +304,56 @@ export function Personal() {
               consultar={personalService.consultarDocumento}
               onEncontrado={(datos) => {
                 crearForm.setValue('nombres', datos.nombres ?? '', { shouldValidate: true });
-                if (datos.apellidoPaterno) {
-                  crearForm.setValue('apellidoPaterno', datos.apellidoPaterno);
-                }
-                if (datos.apellidoMaterno) {
-                  crearForm.setValue('apellidoMaterno', datos.apellidoMaterno);
+                crearForm.setValue('apellidoPaterno', datos.apellidoPaterno ?? '');
+                crearForm.setValue('apellidoMaterno', datos.apellidoMaterno ?? '');
+                crearForm.setValue('razonSocial', datos.razonSocial ?? '', {
+                  shouldValidate: true,
+                });
+                // Solo SUNAT (RUC) devuelve domicilio: si no viene, se respeta lo escrito.
+                if (datos.direccion) {
+                  crearForm.setValue('direccion', datos.direccion);
                 }
               }}
             />
           </div>
 
-          <div>
-            <label className={labelClass}>Nombres</label>
-            <input {...crearForm.register('nombres', { required: true })} className={inputClass} />
-          </div>
+          <CamposIdentidadPersonal
+            esJuridica={crearEsJuridica}
+            register={crearForm.register}
+            errores={crearForm.formState.errors}
+          />
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Apellido paterno</label>
-              <input {...crearForm.register('apellidoPaterno')} className={inputClass} />
-            </div>
-            <div>
-              <label className={labelClass}>Apellido materno</label>
-              <input {...crearForm.register('apellidoMaterno')} className={inputClass} />
-            </div>
-          </div>
+          <Input
+            label="Dirección"
+            ayuda="Se completa sola al buscar un RUC en SUNAT."
+            error={crearForm.formState.errors.direccion?.message}
+            {...crearForm.register('direccion')}
+          />
 
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
-          >
-            Crear personal
-          </Button>
+          <FormActions
+            enviar="Crear personal"
+            enviandoTexto="Creando…"
+            onCancelar={cerrarCrear}
+            enviando={crearForm.formState.isSubmitting || crearMutation.isPending}
+          />
         </form>
       </Modal>
 
-      <Modal
-        abierto={personalEditando !== null}
-        titulo="Editar personal"
-        onCerrar={() => setPersonalEditando(null)}
-      >
+      <Modal abierto={personalEditando !== null} titulo="Editar personal" onCerrar={cerrarEditar}>
         {personalEditando && (
           <form
-            onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
+            onSubmit={editarForm.handleSubmit((values) =>
+              editarMutation.mutate({
+                ...values,
+                nombres: vacioANull(values.nombres),
+                apellidoPaterno: vacioANull(values.apellidoPaterno),
+                apellidoMaterno: vacioANull(values.apellidoMaterno),
+                razonSocial: vacioANull(values.razonSocial),
+                direccion: vacioANull(values.direccion),
+              }),
+            )}
             className="flex flex-col gap-4"
+            noValidate
           >
             {editarMutation.isError && (
               <Alert
@@ -260,41 +362,29 @@ export function Personal() {
               />
             )}
 
-            <div>
-              <label className={labelClass}>Nombres</label>
-              <input
-                {...editarForm.register('nombres', { required: true })}
-                className={inputClass}
-              />
-            </div>
+            <CamposIdentidadPersonal
+              esJuridica={editandoEsJuridica}
+              register={editarForm.register}
+              errores={editarForm.formState.errors}
+            />
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Apellido paterno</label>
-                <input {...editarForm.register('apellidoPaterno')} className={inputClass} />
-              </div>
-              <div>
-                <label className={labelClass}>Apellido materno</label>
-                <input {...editarForm.register('apellidoMaterno')} className={inputClass} />
-              </div>
-            </div>
+            <Input
+              label="Dirección"
+              error={editarForm.formState.errors.direccion?.message}
+              {...editarForm.register('direccion')}
+            />
 
-            <label className="flex items-center gap-2.5 text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                {...editarForm.register('activo')}
-                className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
-              />
-              Registro activo
-            </label>
+            <Checkbox
+              label="Registro activo"
+              ayuda="Al desactivarlo, su cuenta de usuario también se desactiva."
+              {...editarForm.register('activo')}
+            />
 
-            <Button
-              type="submit"
-              disabled={editarForm.formState.isSubmitting || editarMutation.isPending}
-              className="mt-2 w-full"
-            >
-              Guardar cambios
-            </Button>
+            <FormActions
+              enviar="Guardar cambios"
+              onCancelar={cerrarEditar}
+              enviando={editarForm.formState.isSubmitting || editarMutation.isPending}
+            />
           </form>
         )}
       </Modal>
@@ -302,7 +392,7 @@ export function Personal() {
       <ConfirmDialog
         abierto={personalEliminando !== null}
         titulo="Desactivar personal"
-        mensaje={`¿Seguro que deseas desactivar a "${personalEliminando?.nombres}"? Si tiene una cuenta de usuario, también se desactivará.`}
+        mensaje={`¿Seguro que deseas desactivar a "${nombrePersonal(personalEliminando)}"? Si tiene una cuenta de usuario, también se desactivará.`}
         confirmando={eliminarMutation.isPending}
         onConfirmar={() => eliminarMutation.mutate()}
         onCancelar={() => setPersonalEliminando(null)}

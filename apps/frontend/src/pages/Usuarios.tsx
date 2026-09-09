@@ -6,27 +6,23 @@ import * as usuariosService from '../services/usuarios.service';
 import * as personalService from '../services/personal.service';
 import * as rolesService from '../services/roles.service';
 import { useAuth } from '../context/AuthContext';
+import { nombrePersonal } from '../utils/formato';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Checkbox } from '../components/ui/Checkbox';
+import { FormField } from '../components/ui/FormField';
+import { FormActions } from '../components/ui/FormActions';
+import { mensajeError } from '../utils/errores';
 import type { CrearUsuarioInput, ActualizarUsuarioInput } from '../services/usuarios.service';
 import type { Usuario } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
 
 export function Usuarios() {
   const { tienePermiso } = useAuth();
@@ -80,11 +76,20 @@ export function Usuarios() {
 
   const opcionesPersonal: OpcionCombobox[] = personalSinUsuario.map((p) => ({
     valor: p.id,
-    etiqueta: `${p.nombres} ${p.apellidoPaterno ?? ''}`.trim(),
+    etiqueta: nombrePersonal(p),
     descripcion: p.numeroDocumento ?? undefined,
   }));
 
-  if (usuariosQuery.isLoading) return <Spinner />;
+  function cerrarCrear() {
+    setModalAbierto(false);
+    crearForm.reset();
+    crearMutation.reset();
+  }
+
+  function cerrarEditar() {
+    setUsuarioEditando(null);
+    editarMutation.reset();
+  }
 
   return (
     <div>
@@ -104,7 +109,7 @@ export function Usuarios() {
         columnas={[
           {
             encabezado: 'Nombre',
-            render: (u) => `${u.personal.nombres} ${u.personal.apellidoPaterno ?? ''}`.trim(),
+            render: (u) => nombrePersonal(u.personal),
           },
           { encabezado: 'Correo', render: (u) => u.email },
           { encabezado: 'Rol', render: (u) => u.rol.nombre },
@@ -150,12 +155,20 @@ export function Usuarios() {
         filas={usuariosQuery.data ?? []}
         claveFila={(u) => u.id}
         vacio="No hay usuarios registrados"
+        cargando={usuariosQuery.isLoading}
+        error={
+          usuariosQuery.isError
+            ? mensajeError(usuariosQuery.error, 'No se pudieron cargar los usuarios')
+            : undefined
+        }
+        onReintentar={() => void usuariosQuery.refetch()}
       />
 
-      <Modal abierto={modalAbierto} titulo="Nuevo usuario" onCerrar={() => setModalAbierto(false)}>
+      <Modal abierto={modalAbierto} titulo="Nuevo usuario" onCerrar={cerrarCrear}>
         <form
           onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
           className="flex flex-col gap-4"
+          noValidate
         >
           {crearMutation.isError && (
             <Alert
@@ -164,73 +177,77 @@ export function Usuarios() {
             />
           )}
 
-          <div>
-            <label className={labelClass}>Personal</label>
-            <Controller
-              control={crearForm.control}
-              name="personalId"
-              rules={{ required: true }}
-              render={({ field }) => (
+          <Controller
+            control={crearForm.control}
+            name="personalId"
+            rules={{ required: 'Selecciona a qué personal pertenece la cuenta' }}
+            render={({ field, fieldState }) => (
+              <FormField
+                id="usuario-personal"
+                label="Personal"
+                ayuda="Solo aparece el personal que todavía no tiene cuenta."
+                error={fieldState.error?.message}
+              >
                 <Combobox
+                  id="usuario-personal"
                   opciones={opcionesPersonal}
                   valor={field.value}
                   onCambiar={field.onChange}
                   placeholder="Buscar personal…"
                   vacio="No hay personal disponible"
                 />
-              )}
-            />
-          </div>
+              </FormField>
+            )}
+          />
 
-          <div>
-            <label className={labelClass}>Rol</label>
-            <select {...crearForm.register('rolId', { required: true })} className={inputClass}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Rol"
+              error={crearForm.formState.errors.rolId?.message}
+              {...crearForm.register('rolId', { required: 'Selecciona un rol' })}
+            >
               <option value="">Seleccionar…</option>
               {rolesQuery.data?.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.nombre}
                 </option>
               ))}
-            </select>
-          </div>
+            </Select>
 
-          <div>
-            <label className={labelClass}>Correo electrónico</label>
-            <input
+            <Input
+              label="Correo electrónico"
               type="email"
-              {...crearForm.register('email', { required: true })}
-              className={inputClass}
+              error={crearForm.formState.errors.email?.message}
+              {...crearForm.register('email', { required: 'El correo es obligatorio' })}
             />
           </div>
 
-          <div>
-            <label className={labelClass}>Contraseña</label>
-            <input
-              type="password"
-              {...crearForm.register('password', { required: true, minLength: 8 })}
-              className={inputClass}
-            />
-          </div>
+          <Input
+            label="Contraseña"
+            type="password"
+            ayuda="Mínimo 8 caracteres."
+            error={crearForm.formState.errors.password?.message}
+            {...crearForm.register('password', {
+              required: 'La contraseña es obligatoria',
+              minLength: { value: 8, message: 'La contraseña debe tener al menos 8 caracteres' },
+            })}
+          />
 
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
-          >
-            Crear usuario
-          </Button>
+          <FormActions
+            enviar="Crear usuario"
+            enviandoTexto="Creando…"
+            onCancelar={cerrarCrear}
+            enviando={crearForm.formState.isSubmitting || crearMutation.isPending}
+          />
         </form>
       </Modal>
 
-      <Modal
-        abierto={usuarioEditando !== null}
-        titulo="Editar usuario"
-        onCerrar={() => setUsuarioEditando(null)}
-      >
+      <Modal abierto={usuarioEditando !== null} titulo="Editar usuario" onCerrar={cerrarEditar}>
         {usuarioEditando && (
           <form
             onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
             className="flex flex-col gap-4"
+            noValidate
           >
             {editarMutation.isError && (
               <Alert
@@ -239,42 +256,38 @@ export function Usuarios() {
               />
             )}
 
-            <div>
-              <label className={labelClass}>Correo electrónico</label>
-              <input
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Correo electrónico"
                 type="email"
-                {...editarForm.register('email', { required: true })}
-                className={inputClass}
+                error={editarForm.formState.errors.email?.message}
+                {...editarForm.register('email', { required: 'El correo es obligatorio' })}
               />
-            </div>
 
-            <div>
-              <label className={labelClass}>Rol</label>
-              <select {...editarForm.register('rolId', { required: true })} className={inputClass}>
+              <Select
+                label="Rol"
+                error={editarForm.formState.errors.rolId?.message}
+                {...editarForm.register('rolId', { required: 'Selecciona un rol' })}
+              >
                 {rolesQuery.data?.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.nombre}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
 
-            <label className="flex items-center gap-2.5 text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                {...editarForm.register('activo')}
-                className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
-              />
-              Cuenta activa
-            </label>
+            <Checkbox
+              label="Cuenta activa"
+              ayuda="Una cuenta inactiva no puede iniciar sesión."
+              {...editarForm.register('activo')}
+            />
 
-            <Button
-              type="submit"
-              disabled={editarForm.formState.isSubmitting || editarMutation.isPending}
-              className="mt-2 w-full"
-            >
-              Guardar cambios
-            </Button>
+            <FormActions
+              enviar="Guardar cambios"
+              onCancelar={cerrarEditar}
+              enviando={editarForm.formState.isSubmitting || editarMutation.isPending}
+            />
           </form>
         )}
       </Modal>
@@ -282,7 +295,7 @@ export function Usuarios() {
       <ConfirmDialog
         abierto={usuarioEliminando !== null}
         titulo="Desactivar usuario"
-        mensaje={`¿Seguro que deseas desactivar a "${usuarioEliminando?.personal.nombres}"? Perderá acceso al sistema, pero su registro se conserva.`}
+        mensaje={`¿Seguro que deseas desactivar a "${nombrePersonal(usuarioEliminando?.personal)}"? Perderá acceso al sistema, pero su registro se conserva.`}
         confirmando={eliminarMutation.isPending}
         onConfirmar={() => eliminarMutation.mutate()}
         onCancelar={() => setUsuarioEliminando(null)}

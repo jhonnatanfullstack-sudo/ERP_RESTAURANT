@@ -9,6 +9,9 @@ import type { Personal } from './personal.entity';
 
 const RELACIONES = { empresa: true, tipoDocumentoIdentidad: true } as const;
 
+const CODIGO_RUC = '6';
+const PREFIJO_RUC_PERSONA_JURIDICA = '20';
+
 export async function listarPersonal(): Promise<Personal[]> {
   return personalRepository.find({ relations: RELACIONES, order: { creadoEn: 'DESC' } });
 }
@@ -19,6 +22,66 @@ export async function obtenerPersonal(id: string): Promise<Personal> {
     throw new HttpError(404, 'Personal no encontrado');
   }
   return personal;
+}
+
+/** Un RUC que empieza en "20" es de persona jurídica (empresa): se identifica por
+ * razón social y no tiene nombres ni apellidos. Misma regla que en Clientes
+ * (`cliente.service.ts: esPersonaJuridica`) — si cambia, cambia en ambos. */
+function esPersonaJuridica(
+  tipoDocumentoIdentidad: { codigo: string },
+  numeroDocumento: string,
+): boolean {
+  return (
+    tipoDocumentoIdentidad.codigo === CODIGO_RUC &&
+    numeroDocumento.startsWith(PREFIJO_RUC_PERSONA_JURIDICA)
+  );
+}
+
+interface CamposIdentidad {
+  nombres?: string | null;
+  apellidoPaterno?: string | null;
+  apellidoMaterno?: string | null;
+  razonSocial?: string | null;
+}
+
+/**
+ * Persona jurídica → razón social; persona natural → nombres y apellidos.
+ * Son mutuamente excluyentes: se devuelve limpio el que no corresponde, para que
+ * un registro no quede con datos contradictorios al cambiar de tipo de documento.
+ */
+function resolverIdentidad(
+  campos: CamposIdentidad,
+  tipoDocumentoIdentidad: { codigo: string },
+  numeroDocumento: string,
+): {
+  nombres: string | null;
+  apellidoPaterno: string | null;
+  apellidoMaterno: string | null;
+  razonSocial: string | null;
+} {
+  if (esPersonaJuridica(tipoDocumentoIdentidad, numeroDocumento)) {
+    if (!campos.razonSocial?.trim()) {
+      throw new HttpError(400, 'Un registro con RUC de empresa (20...) requiere razón social', [
+        'razonSocial es requerido',
+      ]);
+    }
+    return {
+      nombres: null,
+      apellidoPaterno: null,
+      apellidoMaterno: null,
+      razonSocial: campos.razonSocial,
+    };
+  }
+
+  if (!campos.nombres?.trim()) {
+    throw new HttpError(400, 'El personal requiere nombres', ['nombres es requerido']);
+  }
+  return {
+    nombres: campos.nombres,
+    apellidoPaterno: campos.apellidoPaterno ?? null,
+    apellidoMaterno: campos.apellidoMaterno ?? null,
+    razonSocial: null,
+  };
 }
 
 async function validarDocumentoUnico(
@@ -52,10 +115,13 @@ export async function crearPersonal(dto: CrearPersonalDto): Promise<Personal> {
   validarFormatoDocumento(tipoDocumentoIdentidad, dto.numeroDocumento);
   await validarDocumentoUnico(dto.tipoDocumentoIdentidadId, dto.numeroDocumento);
 
+  const identidad = resolverIdentidad(dto, tipoDocumentoIdentidad, dto.numeroDocumento);
+
   const personal = personalRepository.create({
     ...dto,
     empresa,
     tipoDocumentoIdentidad,
+    ...identidad,
   });
   return personalRepository.save(personal);
 }
@@ -100,6 +166,15 @@ export async function actualizarPersonal(
 
   const { empresaId: _empresaId, tipoDocumentoIdentidadId: _tipoDocId, ...resto } = dto;
   Object.assign(personal, resto);
+
+  // La identidad se revalida sobre el registro ya fusionado: así un cambio de
+  // documento (p. ej. DNI → RUC 20) exige la razón social aunque el resto del
+  // formulario no haya cambiado, y limpia los campos que dejan de aplicar.
+  Object.assign(
+    personal,
+    resolverIdentidad(personal, personal.tipoDocumentoIdentidad, personal.numeroDocumento),
+  );
+
   return personalRepository.save(personal);
 }
 

@@ -1,16 +1,13 @@
 import {
-  useWatch,
+  useFormState,
   type Control,
   type FieldValues,
   type Path,
   type UseFormRegister,
 } from 'react-hook-form';
-import { esRucPersonaJuridica } from '../utils/documento';
+import { useEsPersonaJuridica } from '../hooks/useEsPersonaJuridica';
+import { Input } from './ui/Input';
 import type { TipoDocumentoIdentidad } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
 interface CamposIdentidadClienteProps<T extends FieldValues> {
   control: Control<T>;
@@ -36,34 +33,32 @@ export function CamposIdentidadCliente<T extends FieldValues>({
   campoApellidos,
   campoRazonSocial,
 }: CamposIdentidadClienteProps<T>) {
-  const tipoId = useWatch({ control, name: campoTipo });
-  const numero = useWatch({ control, name: campoNumero });
-  const codigo = tipos?.find((t) => t.id === tipoId)?.codigo;
-  const esJuridica = esRucPersonaJuridica(codigo, numero as unknown as string);
+  const { errors } = useFormState({ control });
+  const esJuridica = useEsPersonaJuridica({ control, tipos, campoTipo, campoNumero });
+
+  const errorDe = (campo: Path<T>) =>
+    (errors as Record<string, { message?: string } | undefined>)[campo]?.message;
 
   if (esJuridica) {
     return (
-      <div>
-        <label className={labelClass}>Razón social</label>
-        <input
-          {...register(campoRazonSocial, { required: true })}
-          className={inputClass}
-          placeholder="Ej. Restaurantes Reunidos S.A.C."
-        />
-      </div>
+      <Input
+        label="Razón social"
+        placeholder="Ej. Restaurantes Reunidos S.A.C."
+        ayuda="Un RUC que empieza en 20 es de una empresa: se identifica por razón social."
+        error={errorDe(campoRazonSocial)}
+        {...register(campoRazonSocial, { required: 'La razón social es obligatoria' })}
+      />
     );
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <div>
-        <label className={labelClass}>Nombres</label>
-        <input {...register(campoNombres, { required: true })} className={inputClass} />
-      </div>
-      <div>
-        <label className={labelClass}>Apellidos</label>
-        <input {...register(campoApellidos)} className={inputClass} />
-      </div>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Input
+        label="Nombres"
+        error={errorDe(campoNombres)}
+        {...register(campoNombres, { required: 'Los nombres son obligatorios' })}
+      />
+      <Input label="Apellidos" error={errorDe(campoApellidos)} {...register(campoApellidos)} />
     </div>
   );
 }

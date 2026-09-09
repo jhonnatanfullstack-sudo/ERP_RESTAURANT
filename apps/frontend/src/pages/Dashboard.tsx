@@ -82,6 +82,7 @@ import {
   formatearPrecio,
   formatearPrecioCompacto,
   nombreCliente,
+  nombreCortoPersonal,
 } from '../utils/formato';
 import type { EstadoComanda } from '../types/api';
 
@@ -390,7 +391,7 @@ export function Dashboard() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-            Hola, {usuario?.personal.nombres} 👋
+            Hola, {nombreCortoPersonal(usuario?.personal)} 👋
           </h1>
           <p className="mt-1 text-sm text-zinc-500">
             Resumen de la operación · {formatearFechaLarga(ahora)}
