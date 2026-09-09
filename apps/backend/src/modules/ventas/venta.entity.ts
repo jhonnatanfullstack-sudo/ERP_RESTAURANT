@@ -34,9 +34,13 @@ export class Venta {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @ManyToOne(() => Pedido, { nullable: false, onDelete: 'RESTRICT' })
+  /** null en una venta directa (sin pedido de origen) — ver venta.service.ts: crearVenta.
+   * El índice único de abajo sigue impidiendo dos ventas del mismo pedido: Postgres no
+   * considera iguales dos NULL en una columna UNIQUE, así que admite cualquier cantidad
+   * de ventas directas sin necesitar un índice parcial. */
+  @ManyToOne(() => Pedido, { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'pedido_id' })
-  pedido!: Pedido;
+  pedido!: Pedido | null;
 
   @ManyToOne(() => Cliente, { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'cliente_id' })

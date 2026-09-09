@@ -8,7 +8,7 @@ import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { formatearFechaHora } from '../utils/formato';
+import { formatearFechaHora, nombreMesa } from '../utils/formato';
 import type { Comanda, EstadoComanda } from '../types/api';
 
 const ETIQUETA_ESTADO: Record<EstadoComanda, string> = {
@@ -114,9 +114,7 @@ export function Cocina() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <p className="font-bold text-zinc-900">
-                      {comanda.pedido.mesa.salon.nombre} — Mesa {comanda.pedido.mesa.numero}
-                    </p>
+                    <p className="font-bold text-zinc-900">{nombreMesa(comanda.pedido.mesa)}</p>
                     <p className="text-xs text-zinc-500">{formatearFechaHora(comanda.creadoEn)}</p>
                   </div>
                   <Badge tono={TONO_ESTADO[comanda.estado]}>

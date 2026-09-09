@@ -181,7 +181,8 @@ export interface DetallePedido {
 
 export interface Pedido {
   id: string;
-  mesa: Mesa;
+  /** null cuando el pedido es "para llevar" (sin mesa asignada). */
+  mesa: Mesa | null;
   cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos' | 'razonSocial'> | null;
   estado: EstadoPedido;
   total: number;
@@ -217,7 +218,8 @@ export interface DetalleVenta {
 
 export interface Venta {
   id: string;
-  pedido: Pick<Pedido, 'id' | 'mesa' | 'estado' | 'total' | 'creadoEn'>;
+  /** null en una venta directa (sin pedido de origen: los productos se venden sueltos). */
+  pedido: Pick<Pedido, 'id' | 'mesa' | 'estado' | 'total' | 'creadoEn'> | null;
   cliente: Pick<
     Cliente,
     'id' | 'nombres' | 'apellidos' | 'razonSocial' | 'numeroDocumento' | 'tipoDocumentoIdentidad'

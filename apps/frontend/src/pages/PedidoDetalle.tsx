@@ -2,7 +2,17 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router';
-import { ArrowLeft, CheckCircle2, Pencil, Plus, Send, Trash2, XCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Pencil,
+  Plus,
+  Send,
+  ShoppingBag,
+  Trash2,
+  Utensils,
+  XCircle,
+} from 'lucide-react';
 import * as pedidosService from '../services/pedidos.service';
 import * as productosService from '../services/productos.service';
 import * as comandasService from '../services/comandas.service';
@@ -13,14 +23,16 @@ import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Modal } from '../components/ui/Modal';
+import { Input } from '../components/ui/Input';
+import { FormField } from '../components/ui/FormField';
+import { FormActions } from '../components/ui/FormActions';
+import { mensajeError } from '../utils/errores';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
-import { formatearFechaHora, formatearPrecio, nombreCliente } from '../utils/formato';
+import { formatearFechaHora, formatearPrecio, nombreCliente, nombreMesa } from '../utils/formato';
 import type { AgregarDetalleInput } from '../services/pedidos.service';
 import type { DetallePedido, EstadoComanda, EstadoPedido } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
 
 const ETIQUETA_ESTADO: Record<EstadoPedido, string> = {
   abierto: 'Abierto',
@@ -49,12 +61,6 @@ const TONO_COMANDA: Record<EstadoComanda, 'exito' | 'neutral' | 'peligro'> = {
   entregado: 'neutral',
   cancelada: 'peligro',
 };
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
 
 export function PedidoDetalle() {
   const { id } = useParams<{ id: string }>();
@@ -159,6 +165,11 @@ export function PedidoDetalle() {
     },
   });
 
+  function cerrarEdicionLinea() {
+    setDetalleEditando(null);
+    editarMutation.reset();
+  }
+
   if (pedidoQuery.isLoading) return <Spinner />;
   if (!pedidoQuery.data) {
     return <EmptyState icono={XCircle} titulo="Pedido no encontrado" />;
@@ -180,8 +191,13 @@ export function PedidoDetalle() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-zinc-900">
-              {pedido.mesa.salon.nombre} — Mesa {pedido.mesa.numero}
+            <h1 className="flex items-center gap-2 text-2xl font-bold text-zinc-900">
+              {pedido.mesa ? (
+                <Utensils className="h-5 w-5 text-zinc-400" />
+              ) : (
+                <ShoppingBag className="h-5 w-5 text-zinc-400" />
+              )}
+              {nombreMesa(pedido.mesa)}
             </h1>
             <Badge tono={TONO_ESTADO[pedido.estado]}>{ETIQUETA_ESTADO[pedido.estado]}</Badge>
           </div>
@@ -359,38 +375,48 @@ export function PedidoDetalle() {
           )}
           <form
             onSubmit={agregarForm.handleSubmit((values) => agregarMutation.mutate(values))}
-            className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_100px_1fr_auto]"
+            className="grid grid-cols-1 items-start gap-3 sm:grid-cols-[1fr_110px_1fr_auto]"
+            noValidate
           >
             <Controller
               control={agregarForm.control}
               name="productoId"
-              rules={{ required: true }}
-              render={({ field }) => (
-                <Combobox
-                  opciones={opcionesProductos}
-                  valor={field.value}
-                  onCambiar={field.onChange}
-                  placeholder="Buscar producto…"
-                  vacio="No se encontraron productos"
-                />
+              rules={{ required: 'Elige un producto' }}
+              render={({ field, fieldState }) => (
+                <FormField id="linea-producto" label="Producto" error={fieldState.error?.message}>
+                  <Combobox
+                    id="linea-producto"
+                    opciones={opcionesProductos}
+                    valor={field.value}
+                    onCambiar={field.onChange}
+                    placeholder="Buscar producto…"
+                    vacio="No se encontraron productos"
+                  />
+                </FormField>
               )}
             />
-            <input
+            <Input
+              label="Cantidad"
               type="number"
               min="1"
-              placeholder="Cant."
-              {...agregarForm.register('cantidad', { required: true, valueAsNumber: true })}
-              className={inputClass}
+              error={agregarForm.formState.errors.cantidad?.message}
+              {...agregarForm.register('cantidad', {
+                required: 'Indica la cantidad',
+                valueAsNumber: true,
+                min: { value: 1, message: 'Mínimo 1' },
+              })}
             />
-            <input
-              placeholder="Notas (ej. sin cebolla)"
+            <Input
+              label="Notas"
+              placeholder="Ej. sin cebolla"
+              error={agregarForm.formState.errors.notas?.message}
               {...agregarForm.register('notas')}
-              className={inputClass}
             />
             <Button
               type="submit"
               icono={<Plus className="h-4 w-4" />}
-              disabled={agregarMutation.isPending}
+              cargando={agregarMutation.isPending}
+              className="sm:mt-7"
             >
               Agregar
             </Button>
@@ -398,47 +424,52 @@ export function PedidoDetalle() {
         </div>
       )}
 
-      {detalleEditando && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="mb-4 text-lg font-bold text-zinc-900">
-              Editar {detalleEditando.producto.nombre}
-            </h2>
-            <form
-              onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
-              className="flex flex-col gap-4"
-            >
-              {editarMutation.isError && (
-                <Alert
-                  tipo="error"
-                  mensaje={mensajeError(editarMutation.error, 'No se pudo actualizar el producto')}
-                />
-              )}
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700">Cantidad</label>
-                <input
-                  type="number"
-                  min="1"
-                  {...editarForm.register('cantidad', { required: true, valueAsNumber: true })}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-sm font-medium text-zinc-700">Notas</label>
-                <input {...editarForm.register('notas')} className={inputClass} />
-              </div>
-              <div className="flex justify-end gap-3">
-                <Button type="button" variante="secondary" onClick={() => setDetalleEditando(null)}>
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={editarMutation.isPending}>
-                  Guardar
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Modal
+        abierto={detalleEditando !== null}
+        titulo={detalleEditando ? `Editar ${detalleEditando.producto.nombre}` : 'Editar producto'}
+        onCerrar={cerrarEdicionLinea}
+      >
+        {detalleEditando && (
+          <form
+            onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
+            className="flex flex-col gap-4"
+            noValidate
+          >
+            {editarMutation.isError && (
+              <Alert
+                tipo="error"
+                mensaje={mensajeError(editarMutation.error, 'No se pudo actualizar el producto')}
+              />
+            )}
+
+            <Input
+              label="Cantidad"
+              type="number"
+              min="1"
+              error={editarForm.formState.errors.cantidad?.message}
+              {...editarForm.register('cantidad', {
+                required: 'Indica la cantidad',
+                valueAsNumber: true,
+                min: { value: 1, message: 'Mínimo 1' },
+              })}
+            />
+
+            <Input
+              label="Notas"
+              placeholder="Ej. sin cebolla"
+              ayuda="Opcional. Se envía a cocina con la comanda."
+              error={editarForm.formState.errors.notas?.message}
+              {...editarForm.register('notas')}
+            />
+
+            <FormActions
+              enviar="Guardar"
+              onCancelar={cerrarEdicionLinea}
+              enviando={editarMutation.isPending}
+            />
+          </form>
+        )}
+      </Modal>
 
       <ConfirmDialog
         abierto={detalleEliminando !== null}

@@ -51,14 +51,14 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 - `clientes.tipo_documento_identidad_id` → `tipos_documento_identidad.id`, **nullable** (`ON DELETE RESTRICT`); índice único compuesto `(tipo_documento_identidad_id, numero_documento)` — mismo patrón que `personal`, pero ambas columnas son nullable: un cliente puede no tener documento registrado, y si lo tiene, debe venir el tipo y el número juntos (validado en `cliente.service.ts`, no solo por la constraint de BD)
 - `reservas.cliente_id` → `clientes.id`, obligatoria (`ON DELETE RESTRICT`)
 - `reservas.mesa_id` → `mesas.id`, obligatoria (`ON DELETE RESTRICT`)
-- `pedidos.mesa_id` → `mesas.id`, obligatoria (`ON DELETE RESTRICT`)
+- `pedidos.mesa_id` → `mesas.id`, **nullable** desde 2026-09-09 (`ON DELETE RESTRICT`): `null` = pedido "para llevar", sin mesa asignada; la regla de "un solo pedido `abierto` por mesa" solo aplica cuando sí hay mesa (ver `api.md`)
 - `pedidos.cliente_id` → `clientes.id`, **nullable** (`ON DELETE RESTRICT`): identifica a qué cliente se le abrió el pedido; obligatorio solo cuando la mesa tiene una reserva activa de otro cliente en ese momento (ver `api.md`)
 - `detalle_pedidos.pedido_id` → `pedidos.id`, obligatoria (`ON DELETE CASCADE`: una línea no tiene sentido sin su pedido; primer uso de CASCADE en este esquema fuera de `refresh_tokens`, ya que es una relación padre-hijo real, no un catálogo compartido)
 - `detalle_pedidos.producto_id` → `productos.id`, obligatoria (`ON DELETE RESTRICT`: protege el historial de pedidos aunque el producto deje de existir)
 - `comandas.pedido_id` → `pedidos.id`, obligatoria (`ON DELETE CASCADE`: una comanda no tiene sentido sin su pedido, mismo criterio que `detalle_pedidos.pedido_id`)
 - `detalle_pedidos.comanda_id` → `comandas.id`, **nullable** (`ON DELETE RESTRICT`): `null` = línea todavía no enviada a cocina; una vez asignada a una comanda, la línea queda bloqueada para edición/borrado desde Pedidos hasta que la comanda se cancele (lo que libera la línea, poniendo `comanda_id` de vuelta a `null`)
 - `productos.tipo_afectacion_igv_id` → `tipos_afectacion_igv.id`, obligatoria (`ON DELETE RESTRICT`)
-- `ventas.pedido_id` → `pedidos.id`, obligatoria y **única** (`ON DELETE RESTRICT`): 1 pedido → a lo más 1 venta
+- `ventas.pedido_id` → `pedidos.id`, **nullable** desde 2026-09-09 y **única** (`ON DELETE RESTRICT`): 1 pedido → a lo más 1 venta; `null` = venta directa (sin pedido de origen, líneas agregadas a mano). El índice único no necesitó volverse parcial: Postgres no considera iguales dos `NULL`, así que sigue impidiendo dos ventas del mismo pedido mientras admite cualquier cantidad de ventas directas (ver `api.md`)
 - `ventas.cliente_id` → `clientes.id`, **nullable** (`ON DELETE RESTRICT`): obligatorio en la práctica solo para Factura (validado en el service, no por la BD)
 - `ventas.tipo_comprobante_id` → `tipos_comprobante.id`, obligatoria (`ON DELETE RESTRICT`); índice único compuesto `(tipo_comprobante_id, serie, numero)` — el correlativo nunca se repite dentro de una misma serie/comprobante
 - `ventas.tipo_operacion_id` → `tipos_operacion.id`, obligatoria (`ON DELETE RESTRICT`)
@@ -143,5 +143,7 @@ Migraciones aplicadas (en orden):
 26. `CamposEmpresa` — agrega `empresas.ubigeo` y `empresas.logo` (cambio en curso en paralelo, no documentado en detalle aquí; ver el módulo Empresa cuando se cierre esa fase de trabajo).
 27. `ClienteRazonSocial` — `clientes.nombres` pasa a nullable y se agrega `clientes.razon_social` (ver nota de `razon_social` arriba).
 28. `VentaTipoCambio` — agrega `ventas.tipo_cambio` (nullable), tipo de cambio USD/PEN de SUNAT en la fecha de emisión (ver `api.md`).
+29. `PersonalRazonSocial` — mismo patrón que `ClienteRazonSocial`: `personal.nombres` pasa a nullable y se agrega `personal.razon_social`, para que un registro de personal con RUC de persona jurídica se identifique por razón social (2026-09-09).
+30. `PedidoMesaVentaPedidoOpcionales` — `pedidos.mesa_id` y `ventas.pedido_id` pasan a nullable (pedidos "para llevar" y ventas directas, ver `api.md`); el `down()` falla si quedan filas con `NULL` en vez de corromperlas, obligando a resolver esos datos antes de revertir (2026-09-09).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.

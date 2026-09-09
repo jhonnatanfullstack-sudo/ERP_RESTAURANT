@@ -83,6 +83,7 @@ import {
   formatearPrecioCompacto,
   nombreCliente,
   nombreCortoPersonal,
+  origenVenta,
 } from '../utils/formato';
 import type { EstadoComanda } from '../types/api';
 
@@ -282,7 +283,10 @@ export function Dashboard() {
       (pedido) => pedido.estado === 'abierto',
     );
     const mesasActivas = (mesasQuery.data ?? []).filter((mesa) => mesa.activo);
-    const idsOcupadas = new Set(pedidosAbiertos.map((pedido) => pedido.mesa.id));
+    // Un pedido "para llevar" (sin mesa) no ocupa ninguna mesa: se excluye del cálculo.
+    const idsOcupadas = new Set(
+      pedidosAbiertos.filter((pedido) => pedido.mesa).map((pedido) => pedido.mesa!.id),
+    );
     const enCurso = comandasEnCurso(comandasQuery.data ?? []);
     const reservas = (reservasQuery.data ?? []).filter(
       (reserva) => reserva.estado !== 'cancelada' && esMismoDia(new Date(reserva.fechaHora), ahora),
@@ -685,7 +689,7 @@ export function Dashboard() {
                   return (
                     <li key={comanda.id} className="flex items-center gap-2 py-2">
                       <span className="min-w-0 flex-1 truncate text-sm text-zinc-700">
-                        Mesa {comanda.pedido.mesa.numero}
+                        {comanda.pedido.mesa ? `Mesa ${comanda.pedido.mesa.numero}` : 'Para llevar'}
                         <span className="text-zinc-400"> · {comanda.detalles.length} ítem(s)</span>
                       </span>
                       <span
@@ -777,7 +781,7 @@ export function Dashboard() {
                 ),
               },
               { encabezado: 'Cliente', render: (venta) => nombreCliente(venta.cliente) },
-              { encabezado: 'Mesa', render: (venta) => `Mesa ${venta.pedido.mesa.numero}` },
+              { encabezado: 'Mesa', render: (venta) => origenVenta(venta) },
               { encabezado: 'Medio de pago', render: (venta) => venta.medioPago?.nombre ?? '—' },
               { encabezado: 'Hora', render: (venta) => formatearHora(venta.creadoEn) },
               {

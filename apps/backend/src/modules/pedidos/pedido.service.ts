@@ -118,14 +118,23 @@ async function recalcularTotal(pedidoId: string): Promise<void> {
 }
 
 export async function crearPedido(dto: CrearPedidoDto): Promise<Pedido> {
-  const mesa = await resolverMesa(dto.mesaId);
+  // Sin mesaId el pedido es "para llevar": no hay mesa que ocupar ni reserva que chocar,
+  // así que las validaciones de esta sección solo corren cuando sí se indicó una mesa.
+  let mesa: Mesa | null = null;
+  let reservaActiva: Reserva | null = null;
 
-  const pedidoAbierto = await pedidoRepository.findOneBy({
-    mesa: { id: mesa.id },
-    estado: EstadoPedido.ABIERTO,
-  });
-  if (pedidoAbierto) {
-    throw new HttpError(409, 'La mesa ya tiene un pedido abierto');
+  if (dto.mesaId) {
+    mesa = await resolverMesa(dto.mesaId);
+
+    const pedidoAbierto = await pedidoRepository.findOneBy({
+      mesa: { id: mesa.id },
+      estado: EstadoPedido.ABIERTO,
+    });
+    if (pedidoAbierto) {
+      throw new HttpError(409, 'La mesa ya tiene un pedido abierto');
+    }
+
+    reservaActiva = await obtenerReservaActivaDeMesa(mesa.id);
   }
 
   let cliente: Cliente | null = null;
@@ -133,7 +142,6 @@ export async function crearPedido(dto: CrearPedidoDto): Promise<Pedido> {
     cliente = await resolverCliente(dto.clienteId);
   }
 
-  const reservaActiva = await obtenerReservaActivaDeMesa(mesa.id);
   if (reservaActiva && reservaActiva.cliente.id !== dto.clienteId) {
     const hora = formateadorHora.format(reservaActiva.fechaHora);
     throw new HttpError(

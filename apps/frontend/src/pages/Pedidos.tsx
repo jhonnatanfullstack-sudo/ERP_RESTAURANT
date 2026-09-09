@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { Link } from 'react-router';
-import { ClipboardList, Eye, XCircle } from 'lucide-react';
+import { ClipboardList, Eye, ShoppingBag, Utensils, XCircle } from 'lucide-react';
 import * as pedidosService from '../services/pedidos.service';
 import * as mesasService from '../services/mesas.service';
 import * as reservasService from '../services/reservas.service';
@@ -12,23 +12,24 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Combobox } from '../components/ui/Combobox';
+import { TarjetaOpcion } from '../components/ui/TarjetaOpcion';
 import type { OpcionCombobox } from '../components/ui/Combobox';
 import { BuscadorCliente } from '../components/BuscadorCliente';
+import { Input } from '../components/ui/Input';
+import { FormField } from '../components/ui/FormField';
+import { FormActions } from '../components/ui/FormActions';
+import { mensajeError } from '../utils/errores';
 import {
   formatearFechaHora,
   formatearHora,
   formatearPrecio,
   nombreCliente,
+  nombreMesa,
 } from '../utils/formato';
 import type { CrearPedidoInput } from '../services/pedidos.service';
 import type { EstadoPedido, Pedido, Reserva } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
 const ETIQUETA_ESTADO: Record<EstadoPedido, string> = {
   abierto: 'Abierto',
@@ -42,11 +43,7 @@ const TONO_ESTADO: Record<EstadoPedido, 'exito' | 'neutral' | 'peligro'> = {
   cancelado: 'peligro',
 };
 
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
+type TipoPedido = 'mesa' | 'llevar';
 
 export function Pedidos() {
   const { tienePermiso } = useAuth();
@@ -54,6 +51,8 @@ export function Pedidos() {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [pedidoCancelando, setPedidoCancelando] = useState<Pedido | null>(null);
   const [filtroEstado, setFiltroEstado] = useState<'todos' | EstadoPedido>('todos');
+  // No depende únicamente de que haya una mesa libre: "Para llevar" crea el pedido sin mesa.
+  const [tipoPedido, setTipoPedido] = useState<TipoPedido>('mesa');
 
   const pedidosQuery = useQuery({ queryKey: ['pedidos'], queryFn: pedidosService.listarPedidos });
   const mesasQuery = useQuery({ queryKey: ['mesas'], queryFn: mesasService.listarMesas });
@@ -106,7 +105,20 @@ export function Pedidos() {
     },
   });
 
-  if (pedidosQuery.isLoading) return <Spinner />;
+  function cerrarCrear() {
+    setModalAbierto(false);
+    crearForm.reset();
+    crearMutation.reset();
+    setTipoPedido('mesa');
+  }
+
+  function elegirTipoPedido(tipo: TipoPedido) {
+    setTipoPedido(tipo);
+    if (tipo === 'llevar') {
+      // Un pedido "para llevar" no lleva mesa: se limpia por si ya se había elegido una.
+      crearForm.setValue('mesaId', undefined);
+    }
+  }
 
   const pedidos = pedidosQuery.data ?? [];
   const pedidosFiltrados =
@@ -117,7 +129,9 @@ export function Pedidos() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-zinc-900">Pedidos</h1>
-          <p className="mt-1 text-sm text-zinc-500">Pedidos de mesa en curso y su historial</p>
+          <p className="mt-1 text-sm text-zinc-500">
+            Pedidos en curso y su historial — en el local o para llevar
+          </p>
         </div>
         {tienePermiso('pedidos.crear') && (
           <Button
@@ -148,7 +162,19 @@ export function Pedidos() {
 
       <Table
         columnas={[
-          { encabezado: 'Mesa', render: (p) => `${p.mesa.salon.nombre} — ${p.mesa.numero}` },
+          {
+            encabezado: 'Mesa',
+            render: (p) => (
+              <span className="flex items-center gap-1.5">
+                {p.mesa ? (
+                  <Utensils className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                ) : (
+                  <ShoppingBag className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                )}
+                {nombreMesa(p.mesa)}
+              </span>
+            ),
+          },
           { encabezado: 'Apertura', render: (p) => formatearFechaHora(p.creadoEn) },
           { encabezado: 'Productos', render: (p) => p.detalles.length },
           { encabezado: 'Total', render: (p) => formatearPrecio(p.total) },
@@ -184,12 +210,20 @@ export function Pedidos() {
         filas={pedidosFiltrados}
         claveFila={(p) => p.id}
         vacio="No hay pedidos registrados"
+        cargando={pedidosQuery.isLoading}
+        error={
+          pedidosQuery.isError
+            ? mensajeError(pedidosQuery.error, 'No se pudieron cargar los pedidos')
+            : undefined
+        }
+        onReintentar={() => void pedidosQuery.refetch()}
       />
 
-      <Modal abierto={modalAbierto} titulo="Nuevo pedido" onCerrar={() => setModalAbierto(false)}>
+      <Modal abierto={modalAbierto} titulo="Nuevo pedido" onCerrar={cerrarCrear}>
         <form
           onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
           className="flex flex-col gap-4"
+          noValidate
         >
           {crearMutation.isError && (
             <Alert
@@ -198,27 +232,46 @@ export function Pedidos() {
             />
           )}
 
-          <div>
-            <label className={labelClass}>Mesa</label>
-            <Controller
-              control={crearForm.control}
-              name="mesaId"
-              rules={{ required: true }}
-              render={({ field }) => (
-                <Combobox
-                  opciones={opcionesMesas}
-                  valor={field.value}
-                  onCambiar={field.onChange}
-                  placeholder="Buscar mesa…"
-                  vacio="No se encontraron mesas"
-                />
-              )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <TarjetaOpcion
+              activo={tipoPedido === 'mesa'}
+              icono={Utensils}
+              titulo="En el local"
+              descripcion="Asigna una mesa del salón"
+              onClick={() => elegirTipoPedido('mesa')}
+            />
+            <TarjetaOpcion
+              activo={tipoPedido === 'llevar'}
+              icono={ShoppingBag}
+              titulo="Para llevar"
+              descripcion="Sin mesa asignada"
+              onClick={() => elegirTipoPedido('llevar')}
             />
           </div>
 
+          {tipoPedido === 'mesa' && (
+            <Controller
+              control={crearForm.control}
+              name="mesaId"
+              rules={{ required: 'Selecciona la mesa del pedido' }}
+              render={({ field, fieldState }) => (
+                <FormField id="pedido-mesa" label="Mesa" error={fieldState.error?.message}>
+                  <Combobox
+                    id="pedido-mesa"
+                    opciones={opcionesMesas}
+                    valor={field.value}
+                    onCambiar={field.onChange}
+                    placeholder="Buscar mesa…"
+                    vacio="No se encontraron mesas"
+                  />
+                </FormField>
+              )}
+            />
+          )}
+
           {reservaDeSeleccion && (
             <Alert
-              tipo="error"
+              tipo="advertencia"
               mensaje={`Esta mesa está reservada para ${nombreCliente(reservaDeSeleccion.cliente)} a las ${formatearHora(reservaDeSeleccion.fechaHora)}. Selecciona ese mismo cliente para continuar.`}
             />
           )}
@@ -226,35 +279,41 @@ export function Pedidos() {
           <Controller
             control={crearForm.control}
             name="clienteId"
-            rules={{ required: !!reservaDeSeleccion }}
-            render={({ field }) => (
+            rules={{
+              required: reservaDeSeleccion
+                ? 'Esta mesa está reservada: indica el cliente de la reserva'
+                : false,
+            }}
+            render={({ field, fieldState }) => (
               <BuscadorCliente
                 clienteId={field.value}
                 onCambiar={field.onChange}
                 requerido={!!reservaDeSeleccion}
+                error={fieldState.error?.message}
               />
             )}
           />
 
-          <div>
-            <label className={labelClass}>Notas</label>
-            <input {...crearForm.register('notas')} className={inputClass} />
-          </div>
+          <Input
+            label="Notas"
+            ayuda="Opcional. Ej. cumpleaños, cliente con apuro, alergias."
+            error={crearForm.formState.errors.notas?.message}
+            {...crearForm.register('notas')}
+          />
 
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
-          >
-            Crear pedido
-          </Button>
+          <FormActions
+            enviar="Crear pedido"
+            enviandoTexto="Creando…"
+            onCancelar={cerrarCrear}
+            enviando={crearForm.formState.isSubmitting || crearMutation.isPending}
+          />
         </form>
       </Modal>
 
       <ConfirmDialog
         abierto={pedidoCancelando !== null}
         titulo="Cancelar pedido"
-        mensaje={`¿Seguro que deseas cancelar el pedido de la mesa "${pedidoCancelando?.mesa.numero}"?`}
+        mensaje={`¿Seguro que deseas cancelar el pedido de "${pedidoCancelando ? nombreMesa(pedidoCancelando.mesa) : ''}"?`}
         confirmando={cancelarMutation.isPending}
         onConfirmar={() => cancelarMutation.mutate()}
         onCancelar={() => setPedidoCancelando(null)}

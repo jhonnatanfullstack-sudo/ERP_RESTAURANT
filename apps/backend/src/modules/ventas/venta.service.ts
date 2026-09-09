@@ -2,6 +2,7 @@ import { HttpError } from '../../utils/http-error';
 import { pedidoRepository } from '../pedidos/pedido.repository';
 import { EstadoPedido } from '../pedidos/pedido.entity';
 import { clienteRepository } from '../clientes/cliente.repository';
+import { productoRepository } from '../productos/producto.repository';
 import {
   tipoComprobanteRepository,
   tipoOperacionRepository,
@@ -11,8 +12,11 @@ import { consultarTipoCambio } from '../catalogos/tipo-cambio.service';
 import { ventaRepository, detalleVentaRepository } from './venta.repository';
 import { EstadoVenta, FormaPago, Venta } from './venta.entity';
 import { DetalleVenta } from './detalle-venta.entity';
-import type { CrearVentaDto } from './venta.dto';
+import type { CrearVentaDto, LineaVentaDto } from './venta.dto';
 import type { Cliente } from '../clientes/cliente.entity';
+import type { Pedido } from '../pedidos/pedido.entity';
+import type { Producto } from '../productos/producto.entity';
+import type { TipoAfectacionIgv } from '../catalogos/tipo-afectacion-igv.entity';
 import type { TipoComprobante } from '../catalogos/tipo-comprobante.entity';
 import type { TipoOperacion } from '../catalogos/tipo-operacion.entity';
 import type { MedioPago } from '../catalogos/medio-pago.entity';
@@ -32,6 +36,7 @@ const TASA_IGV = 0.18;
 const CODIGO_BOLETA = '03';
 const CODIGO_FACTURA = '01';
 const CODIGO_RUC = '6';
+const CODIGO_AFECTACION_GRAVADO = '10';
 const CODIGO_TIPO_OPERACION_DEFECTO = '0101';
 
 const SERIE_POR_COMPROBANTE: Record<string, string> = {
@@ -147,23 +152,142 @@ async function generarNumeroCorrelativo(tipoComprobanteId: string, serie: string
   return (ultima?.numero ?? 0) + 1;
 }
 
-export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
-  const pedido = await pedidoRepository.findOne({
-    where: { id: dto.pedidoId },
-    relations: { detalles: { producto: { tipoAfectacionIgv: true } } },
+interface LineasResueltas {
+  detalles: DetalleVenta[];
+  subtotal: number;
+  igv: number;
+  total: number;
+}
+
+/**
+ * Desglose de IGV de una línea a partir de su subtotal (que ya lo incluye si el producto es
+ * gravado) — mismo cálculo tanto si la línea viene copiada de un Pedido como si se agregó
+ * directamente en una venta manual, para no bifurcar la regla fiscal según el origen.
+ */
+function calcularLinea(
+  producto: Producto,
+  subtotalLinea: number,
+): { tipoAfectacionIgv: TipoAfectacionIgv; valorVenta: number; igv: number } {
+  const tipoAfectacionIgv = producto.tipoAfectacionIgv;
+  const esGravado = tipoAfectacionIgv.codigo === CODIGO_AFECTACION_GRAVADO;
+  const valorVenta = esGravado
+    ? Math.round((subtotalLinea / (1 + TASA_IGV)) * 100) / 100
+    : subtotalLinea;
+  const igv = esGravado ? Math.round((subtotalLinea - valorVenta) * 100) / 100 : 0;
+  return { tipoAfectacionIgv, valorVenta, igv };
+}
+
+/** Venta a partir de un pedido cerrado: copia (snapshot) cada línea del pedido tal cual. */
+function construirDesdePedido(pedido: Pedido): LineasResueltas {
+  let subtotal = 0;
+  let igv = 0;
+  const detalles = pedido.detalles.map((detallePedido) => {
+    const {
+      tipoAfectacionIgv,
+      valorVenta,
+      igv: igvLinea,
+    } = calcularLinea(detallePedido.producto, detallePedido.subtotal);
+    subtotal += valorVenta;
+    igv += igvLinea;
+    return detalleVentaRepository.create({
+      producto: detallePedido.producto,
+      descripcionProducto: detallePedido.producto.nombre,
+      cantidad: detallePedido.cantidad,
+      precioUnitario: detallePedido.precioUnitario,
+      tipoAfectacionIgv,
+      valorVenta,
+      igv: igvLinea,
+      subtotal: detallePedido.subtotal,
+    });
   });
-  if (!pedido) {
-    throw new HttpError(400, 'El pedido indicado no existe', ['pedidoId inválido']);
+  return {
+    detalles,
+    subtotal: Math.round(subtotal * 100) / 100,
+    igv: Math.round(igv * 100) / 100,
+    total: pedido.total,
+  };
+}
+
+/**
+ * Venta directa (sin pedido de origen): resuelve cada línea contra el catálogo de productos
+ * vigente, igual que `agregarDetalle` de Pedidos — es la misma idea (producto + cantidad →
+ * snapshot de precio), solo que aquí el snapshot queda directamente en `detalle_ventas`
+ * porque nunca existió un `DetallePedido` intermedio.
+ */
+async function construirDirectas(lineas: LineaVentaDto[]): Promise<LineasResueltas> {
+  let subtotal = 0;
+  let igv = 0;
+  let total = 0;
+  const detalles: DetalleVenta[] = [];
+
+  for (const linea of lineas) {
+    const producto = await productoRepository.findOne({
+      where: { id: linea.productoId },
+      relations: { tipoAfectacionIgv: true },
+    });
+    if (!producto) {
+      throw new HttpError(400, 'Uno de los productos indicados no existe', [
+        'detalles[].productoId inválido',
+      ]);
+    }
+    if (!producto.activo) {
+      throw new HttpError(400, `El producto "${producto.nombre}" está inactivo`);
+    }
+
+    const subtotalLinea = Math.round(producto.precio * linea.cantidad * 100) / 100;
+    const { tipoAfectacionIgv, valorVenta, igv: igvLinea } = calcularLinea(producto, subtotalLinea);
+
+    subtotal += valorVenta;
+    igv += igvLinea;
+    total += subtotalLinea;
+    detalles.push(
+      detalleVentaRepository.create({
+        producto,
+        descripcionProducto: producto.nombre,
+        cantidad: linea.cantidad,
+        precioUnitario: producto.precio,
+        tipoAfectacionIgv,
+        valorVenta,
+        igv: igvLinea,
+        subtotal: subtotalLinea,
+      }),
+    );
   }
-  if (pedido.estado !== EstadoPedido.CERRADO) {
-    throw new HttpError(400, 'Solo se puede facturar un pedido cerrado');
-  }
-  const ventaExistente = await ventaRepository.findOneBy({ pedido: { id: pedido.id } });
-  if (ventaExistente) {
-    throw new HttpError(409, 'Este pedido ya tiene una venta registrada');
-  }
-  if (pedido.detalles.length === 0) {
-    throw new HttpError(400, 'El pedido no tiene productos');
+
+  return {
+    detalles,
+    subtotal: Math.round(subtotal * 100) / 100,
+    igv: Math.round(igv * 100) / 100,
+    total: Math.round(total * 100) / 100,
+  };
+}
+
+export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
+  let pedido: Pedido | null = null;
+  let lineas: LineasResueltas;
+
+  if (dto.pedidoId) {
+    pedido = await pedidoRepository.findOne({
+      where: { id: dto.pedidoId },
+      relations: { detalles: { producto: { tipoAfectacionIgv: true } } },
+    });
+    if (!pedido) {
+      throw new HttpError(400, 'El pedido indicado no existe', ['pedidoId inválido']);
+    }
+    if (pedido.estado !== EstadoPedido.CERRADO) {
+      throw new HttpError(400, 'Solo se puede facturar un pedido cerrado');
+    }
+    const ventaExistente = await ventaRepository.findOneBy({ pedido: { id: pedido.id } });
+    if (ventaExistente) {
+      throw new HttpError(409, 'Este pedido ya tiene una venta registrada');
+    }
+    if (pedido.detalles.length === 0) {
+      throw new HttpError(400, 'El pedido no tiene productos');
+    }
+    lineas = construirDesdePedido(pedido);
+  } else {
+    // El schema exige `detalles` cuando no hay pedidoId (ver crearVentaSchema.refine).
+    lineas = await construirDirectas(dto.detalles!);
   }
 
   const tipoComprobante = await resolverTipoComprobante(dto.tipoComprobanteId);
@@ -177,32 +301,6 @@ export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
   const fechaEmision = new Date();
   const tipoCambio = await consultarTipoCambio(fechaEmision);
 
-  let subtotal = 0;
-  let igv = 0;
-  const detalles: DetalleVenta[] = pedido.detalles.map((detallePedido) => {
-    const tipoAfectacionIgv = detallePedido.producto.tipoAfectacionIgv;
-    const esGravado = tipoAfectacionIgv.codigo === '10';
-    const subtotalLinea = detallePedido.subtotal;
-    const valorVentaLinea = esGravado
-      ? Math.round((subtotalLinea / (1 + TASA_IGV)) * 100) / 100
-      : subtotalLinea;
-    const igvLinea = esGravado ? Math.round((subtotalLinea - valorVentaLinea) * 100) / 100 : 0;
-
-    subtotal += valorVentaLinea;
-    igv += igvLinea;
-
-    return detalleVentaRepository.create({
-      producto: detallePedido.producto,
-      descripcionProducto: detallePedido.producto.nombre,
-      cantidad: detallePedido.cantidad,
-      precioUnitario: detallePedido.precioUnitario,
-      tipoAfectacionIgv,
-      valorVenta: valorVentaLinea,
-      igv: igvLinea,
-      subtotal: subtotalLinea,
-    });
-  });
-
   const venta = ventaRepository.create({
     pedido,
     cliente,
@@ -212,17 +310,17 @@ export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
     tipoOperacion,
     formaPago,
     medioPago,
-    subtotal: Math.round(subtotal * 100) / 100,
-    igv: Math.round(igv * 100) / 100,
-    total: pedido.total,
+    subtotal: lineas.subtotal,
+    igv: lineas.igv,
+    total: lineas.total,
     tipoCambio: tipoCambio?.venta ?? null,
   });
   const guardada = await ventaRepository.save(venta);
 
-  detalles.forEach((detalle) => {
+  lineas.detalles.forEach((detalle) => {
     detalle.venta = guardada;
   });
-  await detalleVentaRepository.save(detalles);
+  await detalleVentaRepository.save(lineas.detalles);
 
   return obtenerVenta(guardada.id);
 }

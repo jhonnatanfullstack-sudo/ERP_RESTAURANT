@@ -24,9 +24,10 @@ export class Pedido {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @ManyToOne(() => Mesa, { nullable: false, onDelete: 'RESTRICT' })
+  /** null cuando el pedido es "para llevar" (sin mesa asignada) — ver pedido.service.ts. */
+  @ManyToOne(() => Mesa, { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'mesa_id' })
-  mesa!: Mesa;
+  mesa!: Mesa | null;
 
   @ManyToOne(() => Cliente, { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'cliente_id' })

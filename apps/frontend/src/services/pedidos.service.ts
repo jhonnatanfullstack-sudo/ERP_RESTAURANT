@@ -2,7 +2,8 @@ import { api } from './api';
 import type { ApiSuccess, DetallePedido, EstadoPedido, Pedido } from '../types/api';
 
 export interface CrearPedidoInput {
-  mesaId: string;
+  /** Sin mesaId el pedido es "para llevar". */
+  mesaId?: string;
   clienteId?: string;
   notas?: string | null;
 }

@@ -66,6 +66,24 @@ export function nombreCliente(
   return `${cliente.nombres ?? ''} ${cliente.apellidos ?? ''}`.trim() || '—';
 }
 
+/** Nombre a mostrar de la mesa de un pedido/venta: "Salón — Mesa N" o "Para llevar" cuando
+ * no tiene mesa asignada. Usar siempre esto en vez de leer `mesa.numero` directamente — un
+ * pedido "para llevar" no tiene mesa. */
+export function nombreMesa(mesa: { salon: { nombre: string }; numero: string } | null): string {
+  if (!mesa) return 'Para llevar';
+  return `${mesa.salon.nombre} — Mesa ${mesa.numero}`;
+}
+
+/** Columna "Mesa"/"Origen" de una venta: distingue una venta directa (sin pedido de por
+ * medio: no hay mesa que mostrar) de una venta facturada desde un pedido, que sí puede
+ * tener mesa o ser "para llevar". */
+export function origenVenta(venta: {
+  pedido: { mesa: Parameters<typeof nombreMesa>[0] } | null;
+}): string {
+  if (!venta.pedido) return 'Venta directa';
+  return nombreMesa(venta.pedido.mesa);
+}
+
 interface IdentidadPersona {
   nombres: string | null;
   apellidoPaterno?: string | null;

@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { EstadoPedido } from './pedido.entity';
 
 export const crearPedidoSchema = z.object({
-  mesaId: z.string().uuid(),
+  // Sin mesaId el pedido es "para llevar" — ver pedido.service.ts: crearPedido.
+  mesaId: z.string().uuid().optional(),
   clienteId: z.string().uuid().optional(),
   notas: z.string().trim().max(255).nullable().optional(),
 });

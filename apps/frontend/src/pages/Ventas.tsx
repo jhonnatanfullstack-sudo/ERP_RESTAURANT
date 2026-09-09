@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Controller, useForm, useWatch } from 'react-hook-form';
-import { Eye, Receipt, XCircle } from 'lucide-react';
+import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
+import { ClipboardList, Eye, Plus, Receipt, ShoppingCart, Trash2, XCircle } from 'lucide-react';
 import * as ventasService from '../services/ventas.service';
 import * as pedidosService from '../services/pedidos.service';
+import * as productosService from '../services/productos.service';
 import * as catalogosService from '../services/catalogos.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
@@ -11,20 +12,29 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
 import { BuscadorCliente } from '../components/BuscadorCliente';
-import { formatearFechaHora, formatearPrecio, nombreCliente } from '../utils/formato';
-import type { CrearVentaInput } from '../services/ventas.service';
+import { Select } from '../components/ui/Select';
+import { Input } from '../components/ui/Input';
+import { FormField } from '../components/ui/FormField';
+import { FormActions } from '../components/ui/FormActions';
+import { TarjetaOpcion } from '../components/ui/TarjetaOpcion';
+import { EmptyState } from '../components/ui/EmptyState';
+import {
+  formatearFechaHora,
+  formatearPrecio,
+  nombreCliente,
+  nombreMesa,
+  origenVenta,
+} from '../utils/formato';
+import { mensajeError } from '../utils/errores';
+import type { CrearVentaInput, LineaVentaInput } from '../services/ventas.service';
 import type { EstadoVenta, Venta } from '../types/api';
 
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
 const CODIGO_FACTURA = '01';
+const MAXIMO_LINEAS_DIRECTAS = 50;
 
 const ETIQUETA_ESTADO: Record<EstadoVenta, string> = {
   emitida: 'Emitida',
@@ -36,11 +46,9 @@ const TONO_ESTADO: Record<EstadoVenta, 'exito' | 'neutral' | 'peligro'> = {
   anulada: 'peligro',
 };
 
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
+/** Origen de una venta al crearla: desde un pedido cerrado (flujo original) o directa,
+ * agregando productos sin depender de que exista un pedido facturable. */
+type ModoVenta = 'pedido' | 'directa';
 
 function numeroComprobante(venta: Pick<Venta, 'serie' | 'numero'>): string {
   return `${venta.serie}-${String(venta.numero).padStart(6, '0')}`;
@@ -65,10 +73,8 @@ function VentaDetalleModal({ venta, onCerrar }: { venta: Venta | null; onCerrar:
 
           <div className="grid grid-cols-2 gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
             <div>
-              <p className="text-zinc-500">Mesa</p>
-              <p className="font-medium text-zinc-900">
-                {venta.pedido.mesa.salon.nombre} — {venta.pedido.mesa.numero}
-              </p>
+              <p className="text-zinc-500">Origen</p>
+              <p className="font-medium text-zinc-900">{origenVenta(venta)}</p>
             </div>
             <div>
               <p className="text-zinc-500">Cliente</p>
@@ -160,12 +166,22 @@ export function Ventas() {
   const [ventaViendo, setVentaViendo] = useState<Venta | null>(null);
   const [ventaAnulando, setVentaAnulando] = useState<Venta | null>(null);
   const [filtroEstado, setFiltroEstado] = useState<'todas' | EstadoVenta>('todas');
+  // No depende únicamente de que haya un pedido cerrado disponible: "Venta directa" agrega
+  // productos sin necesitar ningún pedido de por medio.
+  const [modo, setModo] = useState<ModoVenta>('pedido');
+  const [productoStaging, setProductoStaging] = useState<string | undefined>(undefined);
+  const [cantidadStaging, setCantidadStaging] = useState(1);
+  const [errorCarrito, setErrorCarrito] = useState<string | null>(null);
 
   const ventasQuery = useQuery({
     queryKey: ['ventas'],
     queryFn: () => ventasService.listarVentas(),
   });
   const pedidosQuery = useQuery({ queryKey: ['pedidos'], queryFn: pedidosService.listarPedidos });
+  const productosQuery = useQuery({
+    queryKey: ['productos'],
+    queryFn: productosService.listarProductos,
+  });
   const tiposComprobanteQuery = useQuery({
     queryKey: ['tipos-comprobante'],
     queryFn: catalogosService.listarTiposComprobante,
@@ -182,12 +198,12 @@ export function Ventas() {
   const pedidosFacturables = (pedidosQuery.data ?? []).filter(
     (p) =>
       p.estado === 'cerrado' &&
-      !(ventasQuery.data ?? []).some((v) => v.pedido.id === p.id && v.estado === 'emitida'),
+      !(ventasQuery.data ?? []).some((v) => v.pedido?.id === p.id && v.estado === 'emitida'),
   );
 
   const opcionesPedidos: OpcionCombobox[] = pedidosFacturables.map((p) => ({
     valor: p.id,
-    etiqueta: `${p.mesa.salon.nombre} — Mesa ${p.mesa.numero}`,
+    etiqueta: nombreMesa(p.mesa),
     descripcion: `${formatearPrecio(p.total)} · ${formatearFechaHora(p.creadoEn)}`,
   }));
 
@@ -196,19 +212,41 @@ export function Ventas() {
     etiqueta: m.nombre,
   }));
 
-  const crearForm = useForm<CrearVentaInput>({ defaultValues: { formaPago: 'contado' } });
+  const productosActivos = (productosQuery.data ?? []).filter((p) => p.activo);
+  const opcionesProductos: OpcionCombobox[] = productosActivos.map((p) => ({
+    valor: p.id,
+    etiqueta: p.nombre,
+    descripcion: formatearPrecio(p.precio),
+  }));
+
+  const crearForm = useForm<CrearVentaInput>({
+    defaultValues: { formaPago: 'contado', detalles: [] },
+  });
+  const carrito = useFieldArray({ control: crearForm.control, name: 'detalles' });
   const tipoComprobanteId = useWatch({ control: crearForm.control, name: 'tipoComprobanteId' });
   const formaPago = useWatch({ control: crearForm.control, name: 'formaPago' });
+  const pedidoIdSeleccionado = useWatch({ control: crearForm.control, name: 'pedidoId' });
+  const lineasCarrito = useWatch({ control: crearForm.control, name: 'detalles' }) ?? [];
   const esFactura =
     tiposComprobanteFacturables.find((t) => t.id === tipoComprobanteId)?.codigo === CODIGO_FACTURA;
+
+  const pedidoSeleccionado = pedidosFacturables.find((p) => p.id === pedidoIdSeleccionado);
+
+  function productoDe(productoId: string) {
+    return productosActivos.find((p) => p.id === productoId);
+  }
+
+  const totalDirecta = lineasCarrito.reduce((suma, linea) => {
+    const producto = productoDe(linea.productoId);
+    return suma + (producto ? producto.precio * linea.cantidad : 0);
+  }, 0);
 
   const crearMutation = useMutation({
     mutationFn: ventasService.crearVenta,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ventas'] });
       queryClient.invalidateQueries({ queryKey: ['pedidos'] });
-      setModalAbierto(false);
-      crearForm.reset({ formaPago: 'contado' });
+      cerrarCrear();
     },
   });
 
@@ -220,7 +258,64 @@ export function Ventas() {
     },
   });
 
-  if (ventasQuery.isLoading) return <Spinner />;
+  function cerrarCrear() {
+    setModalAbierto(false);
+    crearForm.reset({ formaPago: 'contado', detalles: [] });
+    crearMutation.reset();
+    setModo('pedido');
+    setProductoStaging(undefined);
+    setCantidadStaging(1);
+    setErrorCarrito(null);
+  }
+
+  function elegirModo(nuevo: ModoVenta) {
+    setModo(nuevo);
+    setErrorCarrito(null);
+  }
+
+  function agregarLinea() {
+    if (!productoStaging) return;
+    const cantidad = Math.max(1, Math.round(cantidadStaging) || 1);
+    const indiceExistente = carrito.fields.findIndex((f) => f.productoId === productoStaging);
+
+    if (indiceExistente >= 0) {
+      const previa = carrito.fields[indiceExistente];
+      carrito.update(indiceExistente, {
+        productoId: previa.productoId,
+        cantidad: previa.cantidad + cantidad,
+      });
+    } else {
+      if (carrito.fields.length >= MAXIMO_LINEAS_DIRECTAS) return;
+      carrito.append({ productoId: productoStaging, cantidad });
+    }
+    setProductoStaging(undefined);
+    setCantidadStaging(1);
+    setErrorCarrito(null);
+  }
+
+  function cambiarCantidadLinea(indice: number, cantidad: number) {
+    const linea = carrito.fields[indice];
+    carrito.update(indice, {
+      productoId: linea.productoId,
+      cantidad: Math.max(1, Math.round(cantidad) || 1),
+    });
+  }
+
+  function alEnviar(values: CrearVentaInput) {
+    if (modo === 'directa') {
+      if (!values.detalles || values.detalles.length === 0) {
+        setErrorCarrito('Agrega al menos un producto antes de registrar la venta');
+        return;
+      }
+      const detalles: LineaVentaInput[] = values.detalles.map((linea) => ({
+        productoId: linea.productoId,
+        cantidad: linea.cantidad,
+      }));
+      crearMutation.mutate({ ...values, pedidoId: undefined, detalles });
+    } else {
+      crearMutation.mutate({ ...values, detalles: undefined });
+    }
+  }
 
   const ventas = ventasQuery.data ?? [];
   const ventasFiltradas =
@@ -232,7 +327,7 @@ export function Ventas() {
         <div>
           <h1 className="text-2xl font-bold text-zinc-900">Ventas</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Comprobantes emitidos a partir de pedidos cerrados
+            Comprobantes emitidos desde un pedido cerrado o como venta directa
           </p>
         </div>
         {tienePermiso('ventas.crear') && (
@@ -274,10 +369,7 @@ export function Ventas() {
             ),
           },
           { encabezado: 'Fecha emisión', render: (v) => formatearFechaHora(v.creadoEn) },
-          {
-            encabezado: 'Mesa',
-            render: (v) => `${v.pedido.mesa.salon.nombre} — ${v.pedido.mesa.numero}`,
-          },
+          { encabezado: 'Mesa', render: (v) => origenVenta(v) },
           { encabezado: 'Cliente', render: (v) => nombreCliente(v.cliente) },
           { encabezado: 'Subtotal', render: (v) => formatearPrecio(v.subtotal) },
           { encabezado: 'IGV', render: (v) => formatearPrecio(v.igv) },
@@ -315,12 +407,26 @@ export function Ventas() {
         filas={ventasFiltradas}
         claveFila={(v) => v.id}
         vacio="No hay ventas registradas"
+        cargando={ventasQuery.isLoading}
+        error={
+          ventasQuery.isError
+            ? mensajeError(ventasQuery.error, 'No se pudieron cargar las ventas')
+            : undefined
+        }
+        onReintentar={() => void ventasQuery.refetch()}
       />
 
-      <Modal abierto={modalAbierto} titulo="Nueva venta" onCerrar={() => setModalAbierto(false)}>
+      <Modal
+        abierto={modalAbierto}
+        titulo="Nueva venta"
+        descripcion="Factura desde un pedido cerrado o registra una venta directa."
+        onCerrar={cerrarCrear}
+        tamano="xl"
+      >
         <form
-          onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
+          onSubmit={crearForm.handleSubmit(alEnviar)}
           className="flex flex-col gap-4"
+          noValidate
         >
           {crearMutation.isError && (
             <Alert
@@ -329,48 +435,176 @@ export function Ventas() {
             />
           )}
 
-          <div>
-            <label className={labelClass}>Pedido a facturar</label>
-            <Controller
-              control={crearForm.control}
-              name="pedidoId"
-              rules={{ required: true }}
-              render={({ field }) => (
-                <Combobox
-                  opciones={opcionesPedidos}
-                  valor={field.value}
-                  onCambiar={field.onChange}
-                  placeholder="Buscar mesa…"
-                  vacio="No hay pedidos cerrados pendientes de facturar"
-                />
-              )}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <TarjetaOpcion
+              activo={modo === 'pedido'}
+              icono={ClipboardList}
+              titulo="Desde un pedido"
+              descripcion="Factura el consumo de una mesa o pedido cerrado"
+              onClick={() => elegirModo('pedido')}
+            />
+            <TarjetaOpcion
+              activo={modo === 'directa'}
+              icono={ShoppingCart}
+              titulo="Venta directa"
+              descripcion="Agrega productos sin depender de un pedido"
+              onClick={() => elegirModo('directa')}
             />
           </div>
 
-          <div>
-            <label className={labelClass}>Comprobante</label>
-            <select
-              {...crearForm.register('tipoComprobanteId', { required: true })}
-              className={inputClass}
-            >
-              <option value="">Seleccionar…</option>
-              {tiposComprobanteFacturables.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+          {modo === 'pedido' ? (
+            <>
+              <Controller
+                control={crearForm.control}
+                name="pedidoId"
+                rules={{ required: modo === 'pedido' ? 'Selecciona el pedido a facturar' : false }}
+                render={({ field, fieldState }) => (
+                  <FormField
+                    id="venta-pedido"
+                    label="Pedido a facturar"
+                    ayuda="Solo aparecen los pedidos cerrados que aún no tienen comprobante."
+                    error={fieldState.error?.message}
+                  >
+                    <Combobox
+                      id="venta-pedido"
+                      opciones={opcionesPedidos}
+                      valor={field.value}
+                      onCambiar={field.onChange}
+                      placeholder="Buscar mesa o pedido…"
+                      vacio="No hay pedidos cerrados pendientes de facturar"
+                    />
+                  </FormField>
+                )}
+              />
+
+              {pedidoSeleccionado && (
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-zinc-900">
+                      {nombreMesa(pedidoSeleccionado.mesa)}
+                    </span>
+                    <span className="font-semibold text-zinc-900">
+                      {formatearPrecio(pedidoSeleccionado.total)}
+                    </span>
+                  </div>
+                  <ul className="mt-2 space-y-1 border-t border-zinc-200 pt-2 text-xs text-zinc-500">
+                    {pedidoSeleccionado.detalles.map((detalle) => (
+                      <li key={detalle.id} className="flex justify-between gap-2">
+                        <span className="min-w-0 truncate">
+                          {detalle.cantidad}× {detalle.producto.nombre}
+                        </span>
+                        <span className="shrink-0">{formatearPrecio(detalle.subtotal)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_100px_auto]">
+                <FormField id="venta-producto" label="Producto">
+                  <Combobox
+                    id="venta-producto"
+                    opciones={opcionesProductos}
+                    valor={productoStaging}
+                    onCambiar={setProductoStaging}
+                    placeholder="Buscar producto…"
+                    vacio="No se encontraron productos"
+                  />
+                </FormField>
+                <Input
+                  label="Cantidad"
+                  type="number"
+                  min="1"
+                  value={cantidadStaging}
+                  onChange={(evento) => setCantidadStaging(Number(evento.target.value))}
+                />
+                <Button
+                  type="button"
+                  icono={<Plus className="h-4 w-4" />}
+                  onClick={agregarLinea}
+                  disabled={!productoStaging}
+                >
+                  Agregar
+                </Button>
+              </div>
+
+              {carrito.fields.length === 0 ? (
+                <EmptyState icono={ShoppingCart} titulo="Aún no agregaste productos" />
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-zinc-200">
+                  <ul className="divide-y divide-zinc-100">
+                    {carrito.fields.map((linea, indice) => {
+                      const producto = productoDe(linea.productoId);
+                      return (
+                        <li key={linea.id} className="flex items-center gap-3 px-3 py-2.5">
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                            {producto?.nombre ?? 'Producto'}
+                          </span>
+                          <input
+                            type="number"
+                            min="1"
+                            value={linea.cantidad}
+                            onChange={(evento) =>
+                              cambiarCantidadLinea(indice, Number(evento.target.value))
+                            }
+                            aria-label={`Cantidad de ${producto?.nombre ?? 'producto'}`}
+                            className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-center text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
+                          />
+                          <span className="w-24 shrink-0 text-right text-sm text-zinc-500">
+                            {producto && formatearPrecio(producto.precio)}
+                          </span>
+                          <span className="w-24 shrink-0 text-right text-sm font-semibold text-zinc-900">
+                            {producto && formatearPrecio(producto.precio * linea.cantidad)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => carrito.remove(indice)}
+                            aria-label={`Quitar ${producto?.nombre ?? 'producto'}`}
+                            className="shrink-0 text-zinc-400 hover:text-red-600"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="flex justify-end border-t border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-900">
+                    Total estimado&nbsp;{formatearPrecio(totalDirecta)}
+                  </div>
+                </div>
+              )}
+
+              {errorCarrito && <p className="text-xs font-medium text-red-600">{errorCarrito}</p>}
+            </div>
+          )}
+
+          <Select
+            label="Comprobante"
+            error={crearForm.formState.errors.tipoComprobanteId?.message}
+            {...crearForm.register('tipoComprobanteId', {
+              required: 'Selecciona el tipo de comprobante',
+            })}
+          >
+            <option value="">Seleccionar…</option>
+            {tiposComprobanteFacturables.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nombre}
+              </option>
+            ))}
+          </Select>
 
           <Controller
             control={crearForm.control}
             name="clienteId"
-            rules={{ required: esFactura }}
-            render={({ field }) => (
+            rules={{ required: esFactura ? 'Una factura requiere un cliente con RUC' : false }}
+            render={({ field, fieldState }) => (
               <BuscadorCliente
                 clienteId={field.value}
                 onCambiar={field.onChange}
                 requerido={esFactura}
+                error={fieldState.error?.message}
                 ayuda={
                   esFactura ? 'Una factura requiere un cliente con RUC registrado.' : undefined
                 }
@@ -378,42 +612,44 @@ export function Ventas() {
             )}
           />
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Forma de pago</label>
-              <select {...crearForm.register('formaPago')} className={inputClass}>
-                <option value="contado">Contado</option>
-                <option value="credito">Crédito</option>
-              </select>
-            </div>
-            <div>
-              <label className={labelClass}>
-                Medio de pago {formaPago === 'contado' && <span className="text-red-500">*</span>}
-              </label>
-              <Controller
-                control={crearForm.control}
-                name="medioPagoId"
-                rules={{ required: formaPago === 'contado' }}
-                render={({ field }) => (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select label="Forma de pago" {...crearForm.register('formaPago')}>
+              <option value="contado">Contado</option>
+              <option value="credito">Crédito</option>
+            </Select>
+
+            <Controller
+              control={crearForm.control}
+              name="medioPagoId"
+              rules={{
+                required:
+                  formaPago === 'contado' ? 'Indica con qué se pagó (efectivo, tarjeta…)' : false,
+              }}
+              render={({ field, fieldState }) => (
+                <FormField
+                  id="venta-medio-pago"
+                  label={formaPago === 'contado' ? 'Medio de pago *' : 'Medio de pago'}
+                  error={fieldState.error?.message}
+                >
                   <Combobox
+                    id="venta-medio-pago"
                     opciones={opcionesMediosPago}
                     valor={field.value}
                     onCambiar={field.onChange}
                     placeholder="Seleccionar…"
                     vacio="No hay medios de pago"
                   />
-                )}
-              />
-            </div>
+                </FormField>
+              )}
+            />
           </div>
 
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
-          >
-            Registrar venta
-          </Button>
+          <FormActions
+            enviar="Registrar venta"
+            enviandoTexto="Registrando…"
+            onCancelar={cerrarCrear}
+            enviando={crearForm.formState.isSubmitting || crearMutation.isPending}
+          />
         </form>
       </Modal>
 

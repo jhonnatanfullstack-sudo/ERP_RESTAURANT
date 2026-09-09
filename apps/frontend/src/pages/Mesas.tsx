@@ -52,7 +52,7 @@ export function Mesas() {
     tono: 'exito' | 'neutral' | 'peligro';
   } {
     const tienePedidoAbierto = (pedidosQuery.data ?? []).some(
-      (p) => p.mesa.id === mesaId && p.estado === 'abierto',
+      (p) => p.mesa?.id === mesaId && p.estado === 'abierto',
     );
     if (tienePedidoAbierto) return { etiqueta: 'Ocupada', tono: 'peligro' };
 

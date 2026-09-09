@@ -1,8 +1,16 @@
 import { api } from './api';
 import type { ApiSuccess, EstadoVenta, FormaPago, Venta } from '../types/api';
 
+export interface LineaVentaInput {
+  productoId: string;
+  cantidad: number;
+}
+
 export interface CrearVentaInput {
-  pedidoId: string;
+  /** Venta a partir de un pedido cerrado. Excluyente con `detalles` — ver `venta.dto.ts`. */
+  pedidoId?: string;
+  /** Venta directa: lista de productos, sin pedido de origen. Excluyente con `pedidoId`. */
+  detalles?: LineaVentaInput[];
   tipoComprobanteId: string;
   clienteId?: string;
   formaPago?: FormaPago;
