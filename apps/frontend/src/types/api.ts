@@ -42,6 +42,16 @@ export interface Empresa {
   logo: string | null;
 }
 
+/** Vista pública de la empresa (GET /api/empresas/publico, sin autenticación) — solo lo
+ * que un cliente externo puede ver en la carta digital. `null` si aún no se configuró
+ * ninguna empresa activa. */
+export interface EmpresaPublica {
+  nombre: string;
+  direccion: string | null;
+  telefono: string | null;
+  logo: string | null;
+}
+
 export interface Personal {
   id: string;
   empresa: Empresa;

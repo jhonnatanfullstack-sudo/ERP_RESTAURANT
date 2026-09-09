@@ -2,6 +2,20 @@ import type { NextFunction, Request, Response } from 'express';
 import { sendSuccess } from '../../utils/api-response';
 import { getIdParam } from '../../utils/request-params';
 import * as empresaService from './empresa.service';
+import { empresaPublica } from './empresa.mapper';
+
+export async function obtenerPublica(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const empresa = await empresaService.obtenerEmpresaPublica();
+    sendSuccess(res, empresa ? empresaPublica(empresa) : null);
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function listar(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {

@@ -42,6 +42,15 @@ React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, conf
   - El panel de vista previa del pedido gana una sección "Cliente" (nombre, tipo+número de documento, dirección con icono `MapPin`, o "Sin cliente asociado" si no tiene) — para eso `Ventas.tsx` ahora también consulta `['clientes']` (mismo `queryKey` que usa `BuscadorCliente` internamente, así que comparten caché de TanStack Query y no se duplica la petición) y cruza `pedidoSeleccionado.cliente.id` contra esa lista, porque `Pedido.cliente` solo trae `id/nombres/apellidos/razonSocial` (no documento ni dirección) — se prefirió este cruce en el cliente antes que ampliar la relación en el backend, para no tocar `pedido.service.ts` por una necesidad puramente de presentación.
   - El combo "Pedido a facturar" también gana el nombre del cliente en la descripción de cada opción (`"Sin cliente"` si no tiene) para poder identificar el pedido correcto sin tener que abrirlo primero.
 
+- **Rediseño de la carta pública (2026-09-09, pedido del usuario: "mejora el diseño, agrega animaciones y más cositas que el cliente pueda hacer, como un enlace a wsp"):** `/carta` pasa de una lista de tarjetas simple a una página tipo landing, con branding real y una forma de "pedir" sin tocar el backend de Pedidos.
+  - **Branding real:** `PublicLayout.tsx` y `Carta.tsx` ya no muestran el genérico "Restaurant ERP" — consultan `GET /api/empresas/publico` (nuevo, ver `api.md`) y usan el nombre comercial, logo, dirección y teléfono reales en el header (sticky, `bg-white` sólido — se probó con `backdrop-blur` + fondo translúcido primero, pero el hero de abajo se transparentaba y ensuciaba el texto del header al hacer scroll) y en un pie de página nuevo. El `<img>` del logo cae a un ícono `ChefHat` por defecto si la URL no carga (`onError` con estado, no solo ocultar la imagen — se detectó con el dato de prueba real de Empresa, un logo con una URL inválida, que dejaba un hueco en blanco).
+  - **Hero + buscador + categorías animadas:** sección de portada con degradado de marca y dos círculos decorativos con `animar-flotar` (nueva animación en `index.css`, con guard de `prefers-reduced-motion` como todas las demás del proyecto); debajo, una barra con buscador de texto (filtra por nombre/descripción) y las píldoras de categoría ya existentes, ahora con scroll horizontal sin barra visible en móvil.
+  - **`components/public/`** (carpeta nueva, paralela a `components/ui/` pero para la vista pública, que tiene su propio lenguaje visual): `ProductoCarta.tsx` (tarjeta con imagen con zoom, entrada escalonada vía `retraso` + `.animar-entrada` ya existente, y el control de cantidad de abajo) y `BandejaPedidoFlotante.tsx` (botón flotante con contador + panel deslizable desde la derecha, `.animar-bandeja` nueva en `index.css`).
+  - **"Mi pedido" y envío por WhatsApp — la pieza central del pedido del usuario:** `hooks/useBandejaPedido.ts` guarda en `localStorage` (por navegador, nunca llega al backend) qué productos y cuántas unidades eligió el cliente. **Deliberadamente no crea ningún `Pedido` real del sistema** — no hay mesa ni mesero ni cocina detrás de una visita anónima a `/carta`, y wire-ar eso habría significado diseñar un flujo de pedidos públicos completo (autenticación de cliente, validaciones, etc.), fuera del alcance de "mejora el diseño... y cositas que el cliente pueda hacer" y de lo ya diferido para el portal de clientes (ver `decisiones-tecnicas.md`, sección del portal). En su lugar, `utils/whatsapp.ts` arma un mensaje de texto con el detalle y el total, y `BandejaPedidoFlotante` lo abre como enlace `wa.me` al número de la empresa — el restaurante confirma el pedido por ese mismo chat, igual que ya hacen hoy sin este sistema.
+  - `utils/whatsapp.ts: numeroWhatsApp()` normaliza el teléfono guardado en Empresa (dato real de prueba: `"908713198"`, sin código de país) anteponiendo `51` cuando detecta un celular peruano de 9 dígitos — `wa.me` exige el número completo con código de país, sin `+` ni espacios.
+  - El header también tiene un botón "Escríbenos por WhatsApp" (oculto en móvil, `hidden sm:flex`, para no competir con el logo) y el hero uno más grande para consultas generales, ambos ocultos por completo si la empresa no tiene teléfono configurado — nunca se muestra un botón de WhatsApp roto.
+  - Estado de carga: `CuadriculaCargando` (tarjetas fantasma con `animate-pulse`) reemplaza el `<Spinner/>` genérico que traía la versión anterior — más apropiado para una página pensada para clientes, no para el staff.
+
 ## Estructura
 
 ```
@@ -52,15 +61,19 @@ src/
                   Combobox, ConfirmDialog, EmptyState, StatCard, KpiCard, Panel — primitivas reutilizables
   components/charts/ Gráficos SVG propios (sin librería): GraficoArea, GraficoBarras, GraficoDona,
                   GraficoRanking, AnilloProgreso, Sparkline, TooltipGrafico, paleta.ts
-  layouts/         AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header simple+Outlet)
+  components/public/ Solo para /carta: ProductoCarta (tarjeta con control de cantidad),
+                  BandejaPedidoFlotante (botón + panel de "Mi pedido")
+  layouts/         AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header con branding real
+                   de Empresa + Outlet + pie de página con contacto)
   pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa, Categorias, Marcas, Productos, Salones, Mesas, Clientes, Reservas, Pedidos, PedidoDetalle, Cocina, Ventas
-  pages/public/    Carta (datos reales desde FASE 9: GET /api/productos/publico)
+  pages/public/    Carta (datos reales: GET /api/productos/publico, GET /api/empresas/publico)
   routes/          AppRoutes.tsx (árbol de rutas), ProtectedRoute.tsx (guard de auth)
   context/         AuthContext.tsx — sesión, login/logout, tienePermiso(codigo)
   services/        api.ts (instancia Axios + interceptores) y un *.service.ts por módulo
   types/api.ts     Tipos compartidos de las respuestas de la API
   hooks/           useAnchoElemento (ancho real vía ResizeObserver), animacion.ts
-                   (useContadorAnimado, useMovimientoReducido)
+                   (useContadorAnimado, useMovimientoReducido), useBandejaPedido (carta pública)
+  utils/whatsapp.ts  numeroWhatsApp(), enlaceWhatsApp(), mensajePedido() — solo para /carta
 ```
 
 ## Rutas actuales
@@ -85,7 +98,7 @@ src/
 | `/ventas`           | Admin   | Ventas (filtro por estado, registrar venta desde un pedido cerrado, anular)        | Sí                    |
 | `/cambiar-password` | Admin   | Cambiar contraseña propia                                                          | Sí                    |
 | `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`)                             | No                    |
-| `/carta`            | Público | Carta (datos reales: productos activos por categoría)                              | No                    |
+| `/carta`            | Público | Carta (hero + buscador + categorías, "Mi pedido" con envío por WhatsApp)           | No                    |
 
 `ProtectedRoute` redirige a `/login` si no hay sesión (tras intentar un refresh silencioso vía cookie httpOnly). Cada página oculta sus acciones de creación/edición si el usuario no tiene el permiso correspondiente (`tienePermiso('xxx.crear')`), aunque la protección real está en el backend.
 

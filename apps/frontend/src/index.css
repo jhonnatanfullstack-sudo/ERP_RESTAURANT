@@ -123,6 +123,37 @@ body {
   animation: entrar-abajo 0.4s ease-out both;
 }
 
+/* --- Carta pública --- */
+
+@keyframes deslizar-desde-derecha {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes flotar-suave {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+/* Panel de "Mi pedido" (carta pública): entra desde el borde derecho. */
+.animar-bandeja {
+  animation: deslizar-desde-derecha 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Acento decorativo del hero de la carta pública. */
+.animar-flotar {
+  animation: flotar-suave 4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animar-trazo,
   .animar-area,
@@ -130,6 +161,8 @@ body {
   .animar-barra-h,
   .animar-anillo,
   .animar-entrada,
+  .animar-bandeja,
+  .animar-flotar,
   .animate-fade-in,
   .animate-scale-in {
     animation: none;

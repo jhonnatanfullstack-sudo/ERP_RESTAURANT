@@ -6,6 +6,11 @@ import * as empresaController from './empresa.controller';
 
 export const empresaRouter = Router();
 
+// Sin autenticación: datos de contacto para la carta pública (nombre, dirección, teléfono,
+// logo). Debe registrarse antes de empresaRouter.use(requireAuth) — mismo patrón que
+// GET /api/productos/publico.
+empresaRouter.get('/publico', empresaController.obtenerPublica);
+
 empresaRouter.use(requireAuth);
 
 empresaRouter.get('/', requirePermission('empresa.ver'), empresaController.listar);
