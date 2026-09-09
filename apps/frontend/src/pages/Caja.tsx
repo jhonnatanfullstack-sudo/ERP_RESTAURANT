@@ -5,6 +5,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Banknote,
+  CreditCard,
   Eye,
   Lock,
   Plus,
@@ -24,6 +25,9 @@ import { FormActions } from '../components/ui/FormActions';
 import { TarjetaOpcion } from '../components/ui/TarjetaOpcion';
 import { EmptyState } from '../components/ui/EmptyState';
 import { KpiCard } from '../components/ui/KpiCard';
+import { Panel } from '../components/ui/Panel';
+import { GraficoDona } from '../components/charts/GraficoDona';
+import { segmentosMedioPago } from '../utils/metricas';
 import {
   formatearFechaHora,
   formatearHora,
@@ -36,7 +40,7 @@ import type {
   CerrarCajaInput,
   RegistrarMovimientoInput,
 } from '../services/caja.service';
-import type { Caja as SesionCaja, EstadoCaja, TipoMovimientoCaja } from '../types/api';
+import type { Caja as SesionCaja, EstadoCaja, TipoMovimientoCaja, Venta } from '../types/api';
 
 /** Código del medio de pago "Efectivo" (ver catálogo de Ventas) — el único que mueve el
  * efectivo físico de la caja. Mismo criterio que usa el backend al cerrar (caja.service.ts),
@@ -54,6 +58,20 @@ const ETIQUETA_TIPO_MOVIMIENTO: Record<TipoMovimientoCaja, string> = {
   ingreso: 'Ingreso',
   egreso: 'Egreso',
 };
+
+/** Ventas emitidas dentro del período de una sesión de caja (abierta o ya cerrada) — base
+ * tanto para el estimado de efectivo como para el desglose por medio de pago (`segmentosMedioPago`,
+ * ya usado por el Dashboard) que muestra cuánto entró en Yape, Plin, tarjeta o al crédito, no
+ * solo en efectivo. */
+function ventasEnPeriodo(ventas: Venta[], desde: string, hasta: string | null): Venta[] {
+  const inicio = new Date(desde).getTime();
+  const fin = hasta ? new Date(hasta).getTime() : Date.now();
+  return ventas.filter((v) => {
+    if (v.estado !== 'emitida') return false;
+    const momento = new Date(v.creadoEn).getTime();
+    return momento >= inicio && momento <= fin;
+  });
+}
 
 function badgeDiferencia(diferencia: number | null) {
   if (diferencia === null) return <span className="text-zinc-400">—</span>;
@@ -326,7 +344,19 @@ function CerrarCajaModal({
   );
 }
 
-function CajaDetalleModal({ caja, onCerrar }: { caja: SesionCaja | null; onCerrar: () => void }) {
+function CajaDetalleModal({
+  caja,
+  ventas,
+  onCerrar,
+}: {
+  caja: SesionCaja | null;
+  ventas: Venta[];
+  onCerrar: () => void;
+}) {
+  const segmentosPago = caja
+    ? segmentosMedioPago(ventasEnPeriodo(ventas, caja.creadoEn, caja.fechaCierre))
+    : [];
+
   return (
     <Modal
       abierto={caja !== null}
@@ -386,6 +416,19 @@ function CajaDetalleModal({ caja, onCerrar }: { caja: SesionCaja | null; onCerra
               </div>
             )}
           </div>
+
+          {segmentosPago.length > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-semibold text-zinc-900">Ventas por medio de pago</p>
+              <GraficoDona
+                segmentos={segmentosPago}
+                formatearValor={formatearPrecio}
+                etiquetaCentro="Vendido en la sesión"
+                tamano={140}
+                grosor={14}
+              />
+            </div>
+          )}
 
           <div>
             <p className="mb-2 text-sm font-semibold text-zinc-900">
@@ -447,16 +490,16 @@ export function Caja() {
 
   const cajaActual = cajaActualQuery.data ?? null;
 
-  const efectivoVentasTurno = cajaActual
-    ? (ventasQuery.data ?? [])
-        .filter(
-          (v) =>
-            v.estado === 'emitida' &&
-            v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO &&
-            new Date(v.creadoEn) >= new Date(cajaActual.creadoEn),
-        )
-        .reduce((suma, v) => suma + v.total, 0)
-    : 0;
+  // Ventas emitidas desde que se abrió la sesión — base tanto del efectivo esperado (solo lo
+  // mueve `efectivo`) como del desglose por medio de pago de abajo (Yape, Plin, tarjeta,
+  // crédito…), que sí muestra todo, no solo lo que afecta el cajón físico.
+  const ventasSesion = cajaActual
+    ? ventasEnPeriodo(ventasQuery.data ?? [], cajaActual.creadoEn, null)
+    : [];
+  const efectivoVentasTurno = ventasSesion
+    .filter((v) => v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO)
+    .reduce((suma, v) => suma + v.total, 0);
+  const segmentosPagoSesion = segmentosMedioPago(ventasSesion);
   const ingresosManuales =
     cajaActual?.movimientos
       .filter((m) => m.tipo === 'ingreso')
@@ -580,6 +623,28 @@ export function Caja() {
               icono={ArrowUpCircle}
               tono="ambar"
             />
+          </div>
+
+          <div className="animar-entrada" style={{ animationDelay: '110ms' }}>
+            <Panel
+              titulo="Ventas por medio de pago"
+              descripcion="Efectivo, tarjeta, Yape, Plin y ventas al crédito de esta sesión"
+              icono={CreditCard}
+            >
+              {segmentosPagoSesion.length === 0 ? (
+                <EmptyState
+                  icono={CreditCard}
+                  titulo="Aún no hay ventas en esta sesión"
+                  descripcion="Aparecerán aquí apenas se emita el primer comprobante."
+                />
+              ) : (
+                <GraficoDona
+                  segmentos={segmentosPagoSesion}
+                  formatearValor={formatearPrecio}
+                  etiquetaCentro="Vendido en la sesión"
+                />
+              )}
+            </Panel>
           </div>
 
           <div className="animar-entrada" style={{ animationDelay: '140ms' }}>
@@ -710,7 +775,11 @@ export function Caja() {
           />
         </>
       )}
-      <CajaDetalleModal caja={cajaViendo} onCerrar={() => setCajaViendo(null)} />
+      <CajaDetalleModal
+        caja={cajaViendo}
+        ventas={ventasQuery.data ?? []}
+        onCerrar={() => setCajaViendo(null)}
+      />
     </div>
   );
 }
