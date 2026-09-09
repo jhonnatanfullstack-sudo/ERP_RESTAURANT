@@ -36,13 +36,20 @@ export async function reemplazarReceta(
     throw new HttpError(400, 'La receta no puede repetir el mismo insumo en dos líneas');
   }
 
-  const insumos = await insumoRepository.findBy(idsInsumos.map((id) => ({ id })));
-  if (insumos.length !== idsInsumos.length) {
+  // `insumoRepository.findBy([])` con un arreglo vacío de condiciones no filtra nada — devuelve
+  // todos los insumos, no ninguno — así que hay que cortar antes de consultar cuando la receta
+  // se está vaciando (0 líneas), o `insumos.length !== idsInsumos.length` dispararía un falso
+  // "no existen" al comparar "todos los insumos" contra "0 ids".
+  const insumoPorId = new Map(
+    idsInsumos.length > 0
+      ? (await insumoRepository.findBy(idsInsumos.map((id) => ({ id })))).map((i) => [i.id, i])
+      : [],
+  );
+  if (insumoPorId.size !== idsInsumos.length) {
     throw new HttpError(400, 'Uno o más insumos indicados no existen', [
       'lineas[].insumoId inválido',
     ]);
   }
-  const insumoPorId = new Map(insumos.map((i) => [i.id, i]));
 
   await recetaInsumoRepository.delete({ producto: { id: productoId } });
 

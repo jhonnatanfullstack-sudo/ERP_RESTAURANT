@@ -9,6 +9,8 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
+import { Checkbox } from '../components/ui/Checkbox';
+import { Badge } from '../components/ui/Badge';
 import type { ActualizarEmpresaInput } from '../services/empresa.service';
 import type { Empresa as EmpresaType } from '../types/api';
 
@@ -51,6 +53,15 @@ export function Empresa() {
           { encabezado: 'RUC', render: (e) => e.ruc },
           { encabezado: 'Razón social', render: (e) => e.razonSocial },
           { encabezado: 'Nombre comercial', render: (e) => e.nombreComercial ?? '—' },
+          {
+            encabezado: 'IGV',
+            render: (e) =>
+              e.acogidoRegimenMypeRestaurantes ? (
+                <Badge tono="exito">MYPE 10.5%</Badge>
+              ) : (
+                <Badge tono="neutral">General 18%</Badge>
+              ),
+          },
           {
             encabezado: '',
             render: (e) =>
@@ -129,6 +140,13 @@ export function Empresa() {
                 />
               </div>
             </div>
+
+            <Checkbox
+              label="Acogida al régimen MYPE de restaurantes (IGV 10.5%)"
+              ayuda="Solo si el negocio ya se acogió ante SUNAT (Formulario Virtual 621) al régimen especial de MYPE de restaurantes/hoteles — no es automático. Sin marcar, las ventas usan la tasa general de 18%."
+              defaultChecked={empresaEditando.acogidoRegimenMypeRestaurantes}
+              {...register('acogidoRegimenMypeRestaurantes')}
+            />
 
             <Button
               type="submit"

@@ -155,7 +155,7 @@ function VentaDetalleModal({ venta, onCerrar }: { venta: Venta | null; onCerrar:
               <span>{formatearPrecio(venta.subtotal)}</span>
             </div>
             <div className="flex justify-between text-zinc-600">
-              <span>IGV (18%)</span>
+              <span>IGV</span>
               <span>{formatearPrecio(venta.igv)}</span>
             </div>
             <div className="flex justify-between border-t border-zinc-200 pt-1.5 text-base font-bold text-zinc-900">

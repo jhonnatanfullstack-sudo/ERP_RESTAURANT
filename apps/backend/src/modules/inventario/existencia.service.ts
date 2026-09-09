@@ -77,6 +77,20 @@ export async function listarStockConsolidado(): Promise<ItemStock[]> {
   }));
 }
 
+/** Último costo de compra conocido de cada insumo — el `costoUnitario` de su movimiento de
+ * entrada más reciente (cualquier almacén), usado para estimar el costo de una receta. Un
+ * insumo que nunca se compró (o se compró sin registrar costo) no aparece en el mapa. */
+export async function obtenerUltimosCostosInsumos(): Promise<Map<string, number>> {
+  const filas: Array<{ insumo_id: string; costo_unitario: string }> =
+    await existenciaRepository.query(`
+    SELECT DISTINCT ON (insumo_id) insumo_id, costo_unitario
+    FROM existencias
+    WHERE insumo_id IS NOT NULL AND costo_unitario IS NOT NULL
+    ORDER BY insumo_id, creado_en DESC
+  `);
+  return new Map(filas.map((fila) => [fila.insumo_id, Number(fila.costo_unitario)]));
+}
+
 export async function calcularStock(
   almacenId: string,
   item: { insumoId: string } | { productoId: string },

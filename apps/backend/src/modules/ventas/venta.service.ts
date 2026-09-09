@@ -3,6 +3,7 @@ import { pedidoRepository } from '../pedidos/pedido.repository';
 import { EstadoPedido } from '../pedidos/pedido.entity';
 import { clienteRepository } from '../clientes/cliente.repository';
 import { productoRepository } from '../productos/producto.repository';
+import { empresaRepository } from '../empresa/empresa.repository';
 import {
   tipoComprobanteRepository,
   tipoOperacionRepository,
@@ -31,8 +32,25 @@ const RELACIONES = {
   detalles: { producto: true, tipoAfectacionIgv: true },
 } as const;
 
-/** Tasa de IGV vigente en Perú (16% IGV + 2% IPM). Cambiar aquí si SUNAT modifica la tasa. */
-const TASA_IGV = 0.18;
+/** Tasa general de IGV vigente en Perú (16% IGV + 2% IPM). Cambiar aquí si SUNAT modifica la tasa. */
+const TASA_IGV_GENERAL = 0.18;
+
+/** Tasa especial para MYPE de restaurantes/hoteles/alojamiento turístico (8% IGV + 2.5% IPM,
+ * 2026) — no es automática: solo aplica a la empresa que se acogió explícitamente ante SUNAT
+ * (Ley N° 31940/32219/32387, Formulario Virtual 621), reflejado en
+ * `Empresa.acogidoRegimenMypeRestaurantes`. Verificado en orientacion.sunat.gob.pe, 2026-09-09. */
+const TASA_IGV_MYPE_RESTAURANTES = 0.105;
+
+/** La tasa de IGV depende de si la empresa se acogió al régimen especial — nunca es un valor
+ * fijo del sistema. Se resuelve contra la empresa activa más antigua, mismo criterio de
+ * "sistema de un solo local" que ya usan `obtenerEmpresaPublica`/`obtenerAlmacenPorDefecto`. */
+async function resolverTasaIgv(): Promise<number> {
+  const empresa = await empresaRepository.findOne({
+    where: { activo: true },
+    order: { creadoEn: 'ASC' },
+  });
+  return empresa?.acogidoRegimenMypeRestaurantes ? TASA_IGV_MYPE_RESTAURANTES : TASA_IGV_GENERAL;
+}
 
 const CODIGO_BOLETA = '03';
 const CODIGO_FACTURA = '01';
@@ -168,18 +186,19 @@ interface LineasResueltas {
 function calcularLinea(
   producto: Producto,
   subtotalLinea: number,
+  tasaIgv: number,
 ): { tipoAfectacionIgv: TipoAfectacionIgv; valorVenta: number; igv: number } {
   const tipoAfectacionIgv = producto.tipoAfectacionIgv;
   const esGravado = tipoAfectacionIgv.codigo === CODIGO_AFECTACION_GRAVADO;
   const valorVenta = esGravado
-    ? Math.round((subtotalLinea / (1 + TASA_IGV)) * 100) / 100
+    ? Math.round((subtotalLinea / (1 + tasaIgv)) * 100) / 100
     : subtotalLinea;
   const igv = esGravado ? Math.round((subtotalLinea - valorVenta) * 100) / 100 : 0;
   return { tipoAfectacionIgv, valorVenta, igv };
 }
 
 /** Venta a partir de un pedido cerrado: copia (snapshot) cada línea del pedido tal cual. */
-function construirDesdePedido(pedido: Pedido): LineasResueltas {
+function construirDesdePedido(pedido: Pedido, tasaIgv: number): LineasResueltas {
   let subtotal = 0;
   let igv = 0;
   const detalles = pedido.detalles.map((detallePedido) => {
@@ -187,7 +206,7 @@ function construirDesdePedido(pedido: Pedido): LineasResueltas {
       tipoAfectacionIgv,
       valorVenta,
       igv: igvLinea,
-    } = calcularLinea(detallePedido.producto, detallePedido.subtotal);
+    } = calcularLinea(detallePedido.producto, detallePedido.subtotal, tasaIgv);
     subtotal += valorVenta;
     igv += igvLinea;
     return detalleVentaRepository.create({
@@ -215,7 +234,10 @@ function construirDesdePedido(pedido: Pedido): LineasResueltas {
  * snapshot de precio), solo que aquí el snapshot queda directamente en `detalle_ventas`
  * porque nunca existió un `DetallePedido` intermedio.
  */
-async function construirDirectas(lineas: LineaVentaDto[]): Promise<LineasResueltas> {
+async function construirDirectas(
+  lineas: LineaVentaDto[],
+  tasaIgv: number,
+): Promise<LineasResueltas> {
   let subtotal = 0;
   let igv = 0;
   let total = 0;
@@ -236,7 +258,11 @@ async function construirDirectas(lineas: LineaVentaDto[]): Promise<LineasResuelt
     }
 
     const subtotalLinea = Math.round(producto.precio * linea.cantidad * 100) / 100;
-    const { tipoAfectacionIgv, valorVenta, igv: igvLinea } = calcularLinea(producto, subtotalLinea);
+    const {
+      tipoAfectacionIgv,
+      valorVenta,
+      igv: igvLinea,
+    } = calcularLinea(producto, subtotalLinea, tasaIgv);
 
     subtotal += valorVenta;
     igv += igvLinea;
@@ -266,6 +292,7 @@ async function construirDirectas(lineas: LineaVentaDto[]): Promise<LineasResuelt
 export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
   let pedido: Pedido | null = null;
   let lineas: LineasResueltas;
+  const tasaIgv = await resolverTasaIgv();
 
   if (dto.pedidoId) {
     pedido = await pedidoRepository.findOne({
@@ -285,10 +312,10 @@ export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
     if (pedido.detalles.length === 0) {
       throw new HttpError(400, 'El pedido no tiene productos');
     }
-    lineas = construirDesdePedido(pedido);
+    lineas = construirDesdePedido(pedido, tasaIgv);
   } else {
     // El schema exige `detalles` cuando no hay pedidoId (ver crearVentaSchema.refine).
-    lineas = await construirDirectas(dto.detalles!);
+    lineas = await construirDirectas(dto.detalles!, tasaIgv);
   }
 
   const tipoComprobante = await resolverTipoComprobante(dto.tipoComprobanteId);

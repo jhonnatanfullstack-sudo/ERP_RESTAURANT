@@ -16,6 +16,7 @@ import { Select } from '../components/ui/Select';
 import { Checkbox } from '../components/ui/Checkbox';
 import { FormActions } from '../components/ui/FormActions';
 import { mensajeError } from '../utils/errores';
+import { formatearPrecio } from '../utils/formato';
 import type { ActualizarInsumoInput, CrearInsumoInput } from '../services/insumos.service';
 import type { Insumo } from '../types/api';
 
@@ -30,6 +31,10 @@ export function Insumos() {
   const unidadesQuery = useQuery({
     queryKey: ['unidades-medida'],
     queryFn: catalogosService.listarUnidadesMedida,
+  });
+  const tiposAfectacionIgvQuery = useQuery({
+    queryKey: ['tipos-afectacion-igv'],
+    queryFn: catalogosService.listarTiposAfectacionIgv,
   });
 
   const crearForm = useForm<CrearInsumoInput>();
@@ -93,6 +98,11 @@ export function Insumos() {
           { encabezado: 'Nombre', render: (i) => i.nombre },
           { encabezado: 'Descripción', render: (i) => i.descripcion ?? '—' },
           { encabezado: 'Unidad', render: (i) => i.unidadMedida.nombre },
+          { encabezado: 'IGV', render: (i) => i.tipoAfectacionIgv.nombre },
+          {
+            encabezado: 'Último costo',
+            render: (i) => (i.ultimoCosto != null ? formatearPrecio(i.ultimoCosto) : '—'),
+          },
           {
             encabezado: 'Estado',
             render: (i) => (
@@ -114,6 +124,7 @@ export function Insumos() {
                         nombre: i.nombre,
                         descripcion: i.descripcion ?? '',
                         unidadMedidaId: i.unidadMedida.id,
+                        tipoAfectacionIgvId: i.tipoAfectacionIgv.id,
                         activo: i.activo,
                       });
                     }}
@@ -170,18 +181,36 @@ export function Insumos() {
             {...crearForm.register('nombre', { required: 'El nombre es obligatorio' })}
           />
 
-          <Select
-            label="Unidad de medida"
-            error={crearForm.formState.errors.unidadMedidaId?.message}
-            {...crearForm.register('unidadMedidaId', { required: 'Selecciona una unidad' })}
-          >
-            <option value="">Seleccionar…</option>
-            {unidadesQuery.data?.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.nombre}
-              </option>
-            ))}
-          </Select>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Select
+              label="Unidad de medida"
+              error={crearForm.formState.errors.unidadMedidaId?.message}
+              {...crearForm.register('unidadMedidaId', { required: 'Selecciona una unidad' })}
+            >
+              <option value="">Seleccionar…</option>
+              {unidadesQuery.data?.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nombre}
+                </option>
+              ))}
+            </Select>
+
+            <Select
+              label="Afectación del IGV"
+              ayuda="Ej. verduras/frutas frescas suelen ser exoneradas."
+              error={crearForm.formState.errors.tipoAfectacionIgvId?.message}
+              {...crearForm.register('tipoAfectacionIgvId', {
+                required: 'Selecciona la afectación del IGV',
+              })}
+            >
+              <option value="">Seleccionar…</option>
+              {tiposAfectacionIgvQuery.data?.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
+                </option>
+              ))}
+            </Select>
+          </div>
 
           <Input
             label="Descripción"
@@ -219,17 +248,33 @@ export function Insumos() {
               {...editarForm.register('nombre', { required: 'El nombre es obligatorio' })}
             />
 
-            <Select
-              label="Unidad de medida"
-              error={editarForm.formState.errors.unidadMedidaId?.message}
-              {...editarForm.register('unidadMedidaId', { required: 'Selecciona una unidad' })}
-            >
-              {unidadesQuery.data?.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.nombre}
-                </option>
-              ))}
-            </Select>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Select
+                label="Unidad de medida"
+                error={editarForm.formState.errors.unidadMedidaId?.message}
+                {...editarForm.register('unidadMedidaId', { required: 'Selecciona una unidad' })}
+              >
+                {unidadesQuery.data?.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nombre}
+                  </option>
+                ))}
+              </Select>
+
+              <Select
+                label="Afectación del IGV"
+                error={editarForm.formState.errors.tipoAfectacionIgvId?.message}
+                {...editarForm.register('tipoAfectacionIgvId', {
+                  required: 'Selecciona la afectación del IGV',
+                })}
+              >
+                {tiposAfectacionIgvQuery.data?.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </Select>
+            </div>
 
             <Input
               label="Descripción"

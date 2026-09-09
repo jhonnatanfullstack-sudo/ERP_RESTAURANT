@@ -5,12 +5,14 @@ export interface CrearInsumoInput {
   nombre: string;
   descripcion?: string | null;
   unidadMedidaId: string;
+  tipoAfectacionIgvId: string;
 }
 
 export interface ActualizarInsumoInput {
   nombre?: string;
   descripcion?: string | null;
   unidadMedidaId?: string;
+  tipoAfectacionIgvId?: string;
   activo?: boolean;
 }
 

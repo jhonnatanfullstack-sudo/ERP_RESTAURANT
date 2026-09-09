@@ -40,6 +40,9 @@ export interface Empresa {
   activo: boolean;
   ubigeo: string | null;
   logo: string | null;
+  /** Acogida al régimen especial de IGV para MYPE de restaurantes/hoteles (10.5% en vez del
+   * 18% general) — no es automático, requiere acogimiento explícito ante SUNAT. */
+  acogidoRegimenMypeRestaurantes: boolean;
 }
 
 /** Vista pública de la empresa (GET /api/empresas/publico, sin autenticación) — solo lo
@@ -132,12 +135,16 @@ export interface Insumo {
   nombre: string;
   descripcion: string | null;
   unidadMedida: UnidadMedida;
+  tipoAfectacionIgv: TipoAfectacionIgv;
   activo: boolean;
+  /** Costo unitario de compra más reciente (cualquier almacén) — `null` si nunca se compró.
+   * Solo lo devuelve `GET /api/insumos` (listado), no viene en cada relación anidada. */
+  ultimoCosto?: number | null;
 }
 
 export interface RecetaInsumo {
   id: string;
-  insumo: Insumo;
+  insumo: Insumo & { ultimoCosto: number | null };
   cantidad: number;
 }
 
