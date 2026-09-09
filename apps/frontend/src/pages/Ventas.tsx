@@ -1,10 +1,20 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { ClipboardList, Eye, Plus, Receipt, ShoppingCart, Trash2, XCircle } from 'lucide-react';
+import {
+  ClipboardList,
+  Eye,
+  MapPin,
+  Plus,
+  Receipt,
+  ShoppingCart,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import * as ventasService from '../services/ventas.service';
 import * as pedidosService from '../services/pedidos.service';
 import * as productosService from '../services/productos.service';
+import * as clientesService from '../services/clientes.service';
 import * as catalogosService from '../services/catalogos.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
@@ -182,6 +192,13 @@ export function Ventas() {
     queryKey: ['productos'],
     queryFn: productosService.listarProductos,
   });
+  // Mismo queryKey que usa internamente BuscadorCliente: comparten caché, no se duplica la
+  // llamada. Se necesita aquí para mostrar los datos completos del cliente del pedido elegido
+  // (documento, dirección) en la vista previa — `pedido.cliente` solo trae nombre/id.
+  const clientesQuery = useQuery({
+    queryKey: ['clientes'],
+    queryFn: clientesService.listarClientes,
+  });
   const tiposComprobanteQuery = useQuery({
     queryKey: ['tipos-comprobante'],
     queryFn: catalogosService.listarTiposComprobante,
@@ -204,7 +221,7 @@ export function Ventas() {
   const opcionesPedidos: OpcionCombobox[] = pedidosFacturables.map((p) => ({
     valor: p.id,
     etiqueta: nombreMesa(p.mesa),
-    descripcion: `${formatearPrecio(p.total)} · ${formatearFechaHora(p.creadoEn)}`,
+    descripcion: `${p.cliente ? nombreCliente(p.cliente) : 'Sin cliente'} · ${formatearPrecio(p.total)} · ${formatearFechaHora(p.creadoEn)}`,
   }));
 
   const opcionesMediosPago: OpcionCombobox[] = (mediosPagoQuery.data ?? []).map((m) => ({
@@ -231,6 +248,20 @@ export function Ventas() {
     tiposComprobanteFacturables.find((t) => t.id === tipoComprobanteId)?.codigo === CODIGO_FACTURA;
 
   const pedidoSeleccionado = pedidosFacturables.find((p) => p.id === pedidoIdSeleccionado);
+  // `pedido.cliente` solo trae id/nombre; el registro completo (documento, dirección) se
+  // busca en la lista de clientes ya cargada, para mostrarlo en la vista previa.
+  const clienteDelPedido = pedidoSeleccionado?.cliente
+    ? clientesQuery.data?.find((c) => c.id === pedidoSeleccionado.cliente!.id)
+    : undefined;
+
+  // Al elegir (o cambiar) el pedido a facturar, se jala también su cliente hacia el campo
+  // "Cliente" del formulario — antes había que volver a buscarlo a mano aunque el pedido ya
+  // lo tuviera registrado. Si el pedido no tiene cliente, se limpia (no debe quedar el de un
+  // pedido elegido previamente).
+  useEffect(() => {
+    crearForm.setValue('clienteId', pedidoSeleccionado?.cliente?.id ?? undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al cambiar de pedido, no en cada render
+  }, [pedidoIdSeleccionado]);
 
   function productoDe(productoId: string) {
     return productosActivos.find((p) => p.id === productoId);
@@ -487,6 +518,33 @@ export function Ventas() {
                       {formatearPrecio(pedidoSeleccionado.total)}
                     </span>
                   </div>
+
+                  <div className="mt-2 border-t border-zinc-200 pt-2 text-xs">
+                    <p className="text-zinc-400">Cliente</p>
+                    {pedidoSeleccionado.cliente ? (
+                      <>
+                        <p className="font-medium text-zinc-700">
+                          {nombreCliente(pedidoSeleccionado.cliente)}
+                        </p>
+                        <p className="mt-0.5 text-zinc-500">
+                          {clienteDelPedido?.tipoDocumentoIdentidad
+                            ? `${clienteDelPedido.tipoDocumentoIdentidad.nombre}: ${clienteDelPedido.numeroDocumento}`
+                            : 'Sin documento registrado'}
+                        </p>
+                        {clienteDelPedido?.direccion && (
+                          <p className="mt-0.5 flex items-center gap-1 text-zinc-500">
+                            <MapPin className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{clienteDelPedido.direccion}</span>
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="mt-0.5 text-zinc-500">
+                        Sin cliente asociado — selecciona uno abajo si el comprobante lo necesita.
+                      </p>
+                    )}
+                  </div>
+
                   <ul className="mt-2 space-y-1 border-t border-zinc-200 pt-2 text-xs text-zinc-500">
                     {pedidoSeleccionado.detalles.map((detalle) => (
                       <li key={detalle.id} className="flex justify-between gap-2">
