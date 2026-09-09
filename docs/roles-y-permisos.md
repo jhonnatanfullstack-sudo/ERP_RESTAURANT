@@ -26,6 +26,11 @@ El catálogo de permisos es controlado por el código (sembrado en migraciones),
 | `cocina.ver` / `.editar` / `.eliminar`                | Cola de comandas de cocina (`.editar` = avanzar estado; `.eliminar` = cancelar una comanda pendiente; no hay `.crear`, ver nota abajo)                                     |
 | `ventas.ver` / `.crear` / `.anular`                   | Comprobantes de venta (`.crear` = registrar una venta desde un pedido cerrado; `.anular` en vez de `.eliminar` — así lo nombra el ejemplo de la sección 10 de `CLAUDE.md`) |
 | `caja.ver` / `.abrir` / `.cerrar`                     | Sesiones de caja (así los nombra el ejemplo de la sección 10 de `CLAUDE.md`; no hay `.crear`/`.editar`/`.eliminar`). Registrar un movimiento manual (ingreso/egreso) dentro de una caja abierta reutiliza `.abrir` — no se inventó un cuarto código no predefinido, ver `decisiones-tecnicas.md` |
+| `almacenes.ver` / `.crear` / `.editar` / `.eliminar`  | Gestión de almacenes (`.eliminar` bloqueado si tiene movimientos en `existencias`)                                                                                                                                                                                                                |
+| `insumos.ver` / `.crear` / `.editar` / `.eliminar`    | Gestión de insumos (`.eliminar` = desactivar, igual que Usuarios/Personal/Clientes)                                                                                                                                                                                                               |
+| `inventario.ver` / `.ajustar`                         | Stock y kardex de movimientos (así los nombra el ejemplo de la sección 10 de `CLAUDE.md`). `.ajustar` cubre registrar compras y ajustes manuales — el consumo de cocina y las ventas se registran solos y no necesitan un permiso propio, ninguna persona los dispara directamente               |
+
+**Recetas no tiene permisos propios**: `GET`/`PUT /api/recetas/:productoId` reutilizan `productos.ver`/`productos.editar` — una receta es parte de la definición de un producto, no un recurso independiente.
 
 Se amplía este catálogo (con una nueva migración) a medida que se implementen los módulos correspondientes, siguiendo los ejemplos ya listados en la sección 10 de `CLAUDE.md`.
 
@@ -43,6 +48,9 @@ Se amplía este catálogo (con una nueva migración) a medida que se implementen
 - **Ventas**: igual patrón — ciclo de vida en `estado`, `DELETE /api/ventas/:id` pone `estado = 'anulada'` (nunca borrado real: un comprobante emitido preserva su número correlativo por normativa, no se borra ni se reutiliza su número). Una venta `anulada` no se puede volver a anular.
 - **Empresa** no tiene endpoint de eliminar — una empresa no se borra desde la UI.
 - **Caja** no tiene endpoint de eliminar — el ciclo de vida vive en `estado` (`abierta`/`cerrada`), y una sesión cerrada nunca se reabre ni se borra (es el registro del arqueo del turno).
+- **Insumos** tiene columna `activo`: mismo patrón de borrado lógico que Usuarios/Personal/Clientes — un insumo ya puede tener movimientos en `existencias` o estar en la receta de un producto.
+- **Almacenes**: mismo patrón que Categorías/Marcas/Salones — borrado real, bloqueado con 409 si tiene movimientos en `existencias` (FK `ON DELETE RESTRICT`).
+- **Existencias** no tiene endpoint de eliminar en absoluto: un kardex es un libro de movimientos, nunca se borra una fila (corregir un error se hace con un movimiento `ajuste_entrada`/`ajuste_salida` nuevo, no editando el histórico).
 
 ## Rol de arranque
 

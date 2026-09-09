@@ -1,0 +1,270 @@
+import { HttpError } from '../../utils/http-error';
+import { empresaRepository } from '../empresa/empresa.repository';
+import { almacenRepository } from '../almacenes/almacen.repository';
+import { insumoRepository } from '../insumos/insumo.repository';
+import { productoRepository } from '../productos/producto.repository';
+import { TipoProducto } from '../productos/producto.entity';
+import { usuarioRepository } from '../usuarios/usuario.repository';
+import { obtenerRecetaDeProducto } from '../recetas/receta.service';
+import { existenciaRepository } from './existencia.repository';
+import { esMovimientoDeEntrada, Existencia, TipoMovimientoExistencia } from './existencia.entity';
+import type { RegistrarMovimientoExistenciaDto } from './existencia.dto';
+import type { Comanda } from '../cocina/comanda.entity';
+import type { Pedido } from '../pedidos/pedido.entity';
+import type { Venta } from '../ventas/venta.entity';
+import type { LineaVentaDto } from '../ventas/venta.dto';
+
+const RELACIONES_MOVIMIENTO = {
+  almacen: true,
+  insumo: { unidadMedida: true },
+  producto: true,
+  usuario: { personal: true },
+} as const;
+
+function ordenarPorFecha(existencias: Existencia[]): Existencia[] {
+  return [...existencias].sort((a, b) => b.creadoEn.getTime() - a.creadoEn.getTime());
+}
+
+export async function listarMovimientos(filtros: {
+  almacenId?: string;
+  insumoId?: string;
+  productoId?: string;
+}): Promise<Existencia[]> {
+  const movimientos = await existenciaRepository.find({
+    where: {
+      ...(filtros.almacenId ? { almacen: { id: filtros.almacenId } } : {}),
+      ...(filtros.insumoId ? { insumo: { id: filtros.insumoId } } : {}),
+      ...(filtros.productoId ? { producto: { id: filtros.productoId } } : {}),
+    },
+    relations: RELACIONES_MOVIMIENTO,
+    order: { creadoEn: 'DESC' },
+  });
+  return ordenarPorFecha(movimientos);
+}
+
+interface ItemStock {
+  almacenId: string;
+  insumoId: string | null;
+  productoId: string | null;
+  stock: number;
+}
+
+/**
+ * Saldo actual de cada ítem (insumo o producto mercadería) por almacén — suma con signo de
+ * todos sus movimientos. Se calcula agregando en SQL en vez de traer todo el historial a
+ * memoria: un kardex real puede acumular miles de filas por ítem.
+ */
+export async function listarStockConsolidado(): Promise<ItemStock[]> {
+  const filas: Array<{
+    almacen_id: string;
+    insumo_id: string | null;
+    producto_id: string | null;
+    stock: string;
+  }> = await existenciaRepository.query(`
+    SELECT
+      almacen_id,
+      insumo_id,
+      producto_id,
+      SUM(CASE WHEN tipo IN ('inicial', 'compra', 'ajuste_entrada') THEN cantidad ELSE -cantidad END) AS stock
+    FROM existencias
+    GROUP BY almacen_id, insumo_id, producto_id
+  `);
+  return filas.map((fila) => ({
+    almacenId: fila.almacen_id,
+    insumoId: fila.insumo_id,
+    productoId: fila.producto_id,
+    stock: Number(fila.stock),
+  }));
+}
+
+export async function calcularStock(
+  almacenId: string,
+  item: { insumoId: string } | { productoId: string },
+): Promise<number> {
+  const resultado: Array<{ stock: string | null }> = await existenciaRepository.query(
+    `SELECT SUM(CASE WHEN tipo IN ('inicial', 'compra', 'ajuste_entrada') THEN cantidad ELSE -cantidad END) AS stock
+     FROM existencias
+     WHERE almacen_id = $1 AND ${'insumoId' in item ? 'insumo_id' : 'producto_id'} = $2`,
+    [almacenId, 'insumoId' in item ? item.insumoId : item.productoId],
+  );
+  return Number(resultado[0]?.stock ?? 0);
+}
+
+/** Almacén donde se registran los movimientos automáticos (consumo de cocina, venta directa)
+ * cuando nadie elige uno a mano: el principal de la primera empresa activa (sistema de un
+ * solo local, ver CLAUDE.md sección 1). `null` si todavía no se configuró ningún almacén
+ * principal — en ese caso los movimientos automáticos simplemente no se registran (Inventario
+ * es un módulo nuevo; Pedidos/Cocina/Ventas deben seguir funcionando igual para quien no lo
+ * haya configurado todavía, mismo criterio de degradación que `obtenerEmpresaPublica`). */
+async function obtenerAlmacenPorDefecto() {
+  const empresa = await empresaRepository.findOne({
+    where: { activo: true },
+    order: { creadoEn: 'ASC' },
+  });
+  if (!empresa) return null;
+  return almacenRepository.findOne({
+    where: { empresa: { id: empresa.id }, esPrincipal: true, activo: true },
+  });
+}
+
+export async function registrarMovimientoManual(
+  usuarioId: string,
+  dto: RegistrarMovimientoExistenciaDto,
+): Promise<Existencia> {
+  const almacen = await almacenRepository.findOneBy({ id: dto.almacenId });
+  if (!almacen) {
+    throw new HttpError(400, 'El almacén indicado no existe', ['almacenId inválido']);
+  }
+
+  let insumo = null;
+  let producto = null;
+  if (dto.insumoId) {
+    insumo = await insumoRepository.findOneBy({ id: dto.insumoId });
+    if (!insumo) throw new HttpError(400, 'El insumo indicado no existe', ['insumoId inválido']);
+  } else if (dto.productoId) {
+    producto = await productoRepository.findOneBy({ id: dto.productoId });
+    if (!producto) {
+      throw new HttpError(400, 'El producto indicado no existe', ['productoId inválido']);
+    }
+    if (producto.tipo !== TipoProducto.MERCADERIA) {
+      throw new HttpError(400, 'Solo un producto tipo "mercadería" puede tener stock propio');
+    }
+  }
+
+  const usuario = await usuarioRepository.findOneBy({ id: usuarioId });
+  if (!usuario) {
+    throw new HttpError(401, 'Usuario no encontrado');
+  }
+
+  const movimiento = existenciaRepository.create({
+    almacen,
+    insumo,
+    producto,
+    tipo: dto.tipo as TipoMovimientoExistencia,
+    cantidad: dto.cantidad,
+    costoUnitario: esMovimientoDeEntrada(dto.tipo as TipoMovimientoExistencia)
+      ? (dto.costoUnitario ?? null)
+      : null,
+    usuario,
+    observacion: dto.observacion ?? null,
+  });
+  const guardado = await existenciaRepository.save(movimiento);
+  return existenciaRepository.findOneOrFail({
+    where: { id: guardado.id },
+    relations: RELACIONES_MOVIMIENTO,
+  });
+}
+
+/**
+ * Consumo real al preparar un platillo: se dispara cuando `comanda.service.ts` marca una
+ * comanda como `entregado`. Para cada línea de la comanda, si el producto es `servicio`
+ * descuenta cada insumo de su receta (cantidad de la receta × cantidad vendida); si es
+ * `mercadería` (ej. una bebida que igual pasó por cocina) descuenta su propio stock. Sin
+ * almacén principal configurado, no hace nada — no bloquea el flujo de cocina.
+ */
+export async function registrarConsumoComanda(comanda: Comanda): Promise<void> {
+  const almacen = await obtenerAlmacenPorDefecto();
+  if (!almacen) return;
+
+  for (const detalle of comanda.detalles) {
+    if (detalle.producto.tipo === TipoProducto.SERVICIO) {
+      const receta = await obtenerRecetaDeProducto(detalle.producto.id);
+      for (const linea of receta) {
+        const movimiento = existenciaRepository.create({
+          almacen,
+          insumo: linea.insumo,
+          producto: null,
+          tipo: TipoMovimientoExistencia.CONSUMO_COCINA,
+          cantidad: linea.cantidad * detalle.cantidad,
+          comanda,
+        });
+        await existenciaRepository.save(movimiento);
+      }
+    } else {
+      const movimiento = existenciaRepository.create({
+        almacen,
+        insumo: null,
+        producto: detalle.producto,
+        tipo: TipoMovimientoExistencia.CONSUMO_COCINA,
+        cantidad: detalle.cantidad,
+        comanda,
+      });
+      await existenciaRepository.save(movimiento);
+    }
+  }
+}
+
+/**
+ * Consumo al emitir una venta: cubre lo que `registrarConsumoComanda` no pudo anticipar —
+ * líneas de una venta directa (sin pedido) y líneas de un pedido que nunca se enviaron a
+ * cocina. Las líneas que sí pasaron por cocina no se vuelven a descontar aquí: solo se les
+ * enlaza el `venta_id` a su movimiento `consumo_cocina` ya existente, para trazabilidad.
+ */
+export async function registrarConsumoVenta(
+  venta: Venta,
+  pedido: Pedido | null,
+  lineasDirectas: LineaVentaDto[] | null,
+): Promise<void> {
+  const almacen = await obtenerAlmacenPorDefecto();
+  if (!almacen) return;
+
+  if (pedido) {
+    // Enlaza el consumo ya registrado al entregar la comanda (si lo hubo) con esta venta.
+    await existenciaRepository
+      .createQueryBuilder()
+      .update()
+      .set({ venta: { id: venta.id } })
+      .where('comanda_id IN (SELECT id FROM comandas WHERE pedido_id = :pedidoId)', {
+        pedidoId: pedido.id,
+      })
+      .andWhere('venta_id IS NULL')
+      .execute();
+
+    // Líneas que nunca se enviaron a cocina (comanda_id null): se descuentan recién ahora.
+    for (const detalle of pedido.detalles.filter((d) => !d.comanda)) {
+      await registrarSalidaVentaDirecta(almacen, detalle.producto.id, detalle.cantidad, venta);
+    }
+    return;
+  }
+
+  if (lineasDirectas) {
+    for (const linea of lineasDirectas) {
+      await registrarSalidaVentaDirecta(almacen, linea.productoId, linea.cantidad, venta);
+    }
+  }
+}
+
+async function registrarSalidaVentaDirecta(
+  almacen: NonNullable<Awaited<ReturnType<typeof obtenerAlmacenPorDefecto>>>,
+  productoId: string,
+  cantidadVendida: number,
+  venta: Venta,
+): Promise<void> {
+  const producto = await productoRepository.findOneBy({ id: productoId });
+  if (!producto) return;
+
+  if (producto.tipo === TipoProducto.SERVICIO) {
+    const receta = await obtenerRecetaDeProducto(productoId);
+    for (const linea of receta) {
+      const movimiento = existenciaRepository.create({
+        almacen,
+        insumo: linea.insumo,
+        producto: null,
+        tipo: TipoMovimientoExistencia.VENTA_DIRECTA,
+        cantidad: linea.cantidad * cantidadVendida,
+        venta,
+      });
+      await existenciaRepository.save(movimiento);
+    }
+  } else {
+    const movimiento = existenciaRepository.create({
+      almacen,
+      insumo: null,
+      producto,
+      tipo: TipoMovimientoExistencia.VENTA_DIRECTA,
+      cantidad: cantidadVendida,
+      venta,
+    });
+    await existenciaRepository.save(movimiento);
+  }
+}

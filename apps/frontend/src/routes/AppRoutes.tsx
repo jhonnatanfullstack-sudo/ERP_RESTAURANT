@@ -18,6 +18,9 @@ import { PedidoDetalle } from '../pages/PedidoDetalle';
 import { Cocina } from '../pages/Cocina';
 import { Ventas } from '../pages/Ventas';
 import { Caja } from '../pages/Caja';
+import { Insumos } from '../pages/Insumos';
+import { Almacenes } from '../pages/Almacenes';
+import { Inventario } from '../pages/Inventario';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
@@ -50,6 +53,9 @@ export function AppRoutes() {
           <Route path="/cocina" element={<Cocina />} />
           <Route path="/ventas" element={<Ventas />} />
           <Route path="/caja" element={<Caja />} />
+          <Route path="/insumos" element={<Insumos />} />
+          <Route path="/almacenes" element={<Almacenes />} />
+          <Route path="/inventario" element={<Inventario />} />
           <Route path="/empresa" element={<Empresa />} />
           <Route path="/cambiar-password" element={<CambiarPassword />} />
         </Route>

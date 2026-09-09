@@ -2,6 +2,7 @@ import { In } from 'typeorm';
 import { HttpError } from '../../utils/http-error';
 import { detallePedidoRepository, pedidoRepository } from '../pedidos/pedido.repository';
 import { EstadoPedido } from '../pedidos/pedido.entity';
+import { registrarConsumoComanda } from '../inventario/existencia.service';
 import { comandaRepository } from './comanda.repository';
 import { Comanda, EstadoComanda } from './comanda.entity';
 import type { ActualizarEstadoComandaDto, CrearComandaDto } from './comanda.dto';
@@ -97,6 +98,13 @@ export async function actualizarEstadoComanda(
   }
   comanda.estado = dto.estado;
   await comandaRepository.save(comanda);
+
+  // El consumo real de insumos ocurre aquí, no al facturar: es el momento en que el platillo
+  // físicamente se preparó y salió de cocina (ver existencia.service.ts).
+  if (dto.estado === EstadoComanda.ENTREGADO) {
+    await registrarConsumoComanda(comanda);
+  }
+
   return obtenerComanda(id);
 }
 

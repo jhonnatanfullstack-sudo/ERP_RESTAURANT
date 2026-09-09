@@ -12,6 +12,19 @@ import { Marca } from '../marcas/marca.entity';
 import { UnidadMedida } from '../catalogos/unidad-medida.entity';
 import { TipoAfectacionIgv } from '../catalogos/tipo-afectacion-igv.entity';
 
+/** Distinción contable/SUNAT entre bienes y servicios (misma idea que ya separan
+ * `tipos_afectacion_igv`/`tipos_operacion`), y la que decide si un producto tiene stock
+ * propio en `existencias` o si se prepara consumiendo insumos vía `RecetaInsumo`:
+ * - MERCADERIA: se vende tal cual (ej. una gaseosa embotellada) — tiene stock propio,
+ *   descontado directamente al venderse.
+ * - SERVICIO: se prepara (ej. un platillo) — no tiene stock propio; su venta descuenta el
+ *   stock de sus insumos según la receta (`modules/recetas`), no el suyo.
+ */
+export enum TipoProducto {
+  MERCADERIA = 'mercaderia',
+  SERVICIO = 'servicio',
+}
+
 @Entity('productos')
 export class Producto {
   @PrimaryGeneratedColumn('uuid')
@@ -32,6 +45,9 @@ export class Producto {
   @ManyToOne(() => TipoAfectacionIgv, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'tipo_afectacion_igv_id' })
   tipoAfectacionIgv!: TipoAfectacionIgv;
+
+  @Column({ type: 'enum', enum: TipoProducto, default: TipoProducto.SERVICIO })
+  tipo!: TipoProducto;
 
   @Column({ type: 'varchar', length: 150 })
   nombre!: string;

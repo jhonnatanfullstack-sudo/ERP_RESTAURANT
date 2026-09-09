@@ -111,17 +111,66 @@ export interface MedioPago {
   nombre: string;
 }
 
+export type TipoProducto = 'mercaderia' | 'servicio';
+
 export interface Producto {
   id: string;
   categoria: Pick<Categoria, 'id' | 'nombre'>;
   marca: Pick<Marca, 'id' | 'nombre'> | null;
   unidadMedida: UnidadMedida;
   tipoAfectacionIgv: TipoAfectacionIgv;
+  tipo: TipoProducto;
   nombre: string;
   descripcion: string | null;
   precio: number;
   imagenUrl: string | null;
   activo: boolean;
+}
+
+export interface Insumo {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  unidadMedida: UnidadMedida;
+  activo: boolean;
+}
+
+export interface RecetaInsumo {
+  id: string;
+  insumo: Insumo;
+  cantidad: number;
+}
+
+export interface Almacen {
+  id: string;
+  empresa: Pick<Empresa, 'id' | 'razonSocial'>;
+  nombre: string;
+  direccion: string | null;
+  esPrincipal: boolean;
+  activo: boolean;
+}
+
+export type TipoMovimientoExistencia =
+  'inicial' | 'compra' | 'ajuste_entrada' | 'ajuste_salida' | 'consumo_cocina' | 'venta_directa';
+
+export interface StockItem {
+  almacenId: string;
+  insumoId: string | null;
+  productoId: string | null;
+  stock: number;
+}
+
+export interface Existencia {
+  id: string;
+  almacen: Pick<Almacen, 'id' | 'nombre'>;
+  insumo: Pick<Insumo, 'id' | 'nombre' | 'unidadMedida'> | null;
+  producto: Pick<Producto, 'id' | 'nombre'> | null;
+  tipo: TipoMovimientoExistencia;
+  cantidad: number;
+  costoUnitario: number | null;
+  usuario: Pick<Usuario, 'id' | 'personal'> | null;
+  observacion: string | null;
+  creadoEn: string;
 }
 
 export interface Salon {

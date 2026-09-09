@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import {
+  Beef,
+  Boxes,
   Building2,
   ChefHat,
   ChevronDown,
@@ -70,6 +72,13 @@ const menu: SeccionMenu[] = [
         permiso: 'ventas.ver',
       },
       { tipo: 'enlace', etiqueta: 'Caja', ruta: '/caja', icono: Wallet, permiso: 'caja.ver' },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Inventario',
+        ruta: '/inventario',
+        icono: Boxes,
+        permiso: 'inventario.ver',
+      },
     ],
   },
   {
@@ -83,6 +92,15 @@ const menu: SeccionMenu[] = [
           { etiqueta: 'Categorías', ruta: '/categorias', permiso: 'categorias.ver' },
           { etiqueta: 'Marcas', ruta: '/marcas', permiso: 'marcas.ver' },
           { etiqueta: 'Productos', ruta: '/productos', permiso: 'productos.ver' },
+        ],
+      },
+      {
+        tipo: 'grupo',
+        etiqueta: 'Insumos',
+        icono: Beef,
+        hijos: [
+          { etiqueta: 'Insumos', ruta: '/insumos', permiso: 'insumos.ver' },
+          { etiqueta: 'Almacenes', ruta: '/almacenes', permiso: 'almacenes.ver' },
         ],
       },
       {

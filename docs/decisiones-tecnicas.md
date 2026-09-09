@@ -291,3 +291,34 @@ El usuario pidió explícitamente: "recordar que las formas de pago se utilizan 
 2. **Elegida:** registrar un movimiento reutiliza el permiso `caja.abrir`, interpretado como "operar una caja ya abierta" (quien puede abrir una sesión es, por definición, quien la opera durante el turno). `caja.cerrar` queda reservado específicamente para el arqueo final, una acción de mayor responsabilidad que sí puede tener un titular distinto (ej. un supervisor cierra lo que abrió un cajero).
 
 **Impacto:** si más adelante se pide un rol que registre movimientos sin poder abrir/cerrar caja, se puede introducir el cuarto permiso entonces con una migración nueva (aditiva, no rompe nada existente) — hoy esa necesidad no está pedida.
+
+## Inventario: kardex normalizado y momento del descuento de stock (FASE 16, 2026-09-09)
+
+**Problema:** el usuario pidió, en un solo mensaje, separar mercaderías de servicios, una tabla `existencias` con "todos los movimientos de un producto (stock compra, p_compra, stock ventas, precio venta, stock inicial, almacén de origen/destino, fecha de movimiento)", que el almacén pertenezca a una empresa, y que cada platillo descuente sus insumos al venderse. Antes de implementar, dos decisiones de diseño no venían resueltas por el mensaje y cambiaban sustancialmente el trabajo según la respuesta.
+
+### Decisión 1 — forma de la tabla `existencias`: columnas anchas vs. kardex normalizado
+
+**Opciones evaluadas:**
+
+1. Seguir literalmente la lista de campos del usuario como columnas de una sola fila por ítem (`stock_compra`, `stock_ventas`, `stock_inicial`...). Descartada: dos eventos independientes (una compra y una venta del mismo ítem) no pueden escribir la misma fila sin pisarse, y "todos los movimientos" ya implica una fila por movimiento, no una fila resumen — la lista de campos describe qué datos importan, no la forma de la tabla.
+2. **Elegida:** un kardex normalizado — `Existencia` es un movimiento por fila (`tipo`, `cantidad`, `costoUnitario`, `almacen`, `insumo` XOR `producto`, fecha), y el saldo de un ítem se calcula agregando (`SUM` con signo según `tipo`) en vez de guardarse. Es el diseño estándar de cualquier libro de inventario real (kardex), y traduce cada campo pedido a su equivalente normalizado: "stock compra/p_compra" → movimientos `tipo = compra` con su `costoUnitario`; "stock ventas/precio venta" → movimientos `tipo = venta_directa`/`consumo_cocina` (el precio de venta ya vive en `DetalleVenta`, no se duplicó); "stock inicial" → movimientos `tipo = inicial`; "almacén de origen o destino" → la FK `almacen` de cada movimiento (un solo almacén por fila porque cada movimiento es una entrada o una salida, nunca ambas a la vez — un traslado entre almacenes, si hiciera falta más adelante, sería dos movimientos, uno de salida y uno de entrada, no un campo "origen y destino" en la misma fila).
+
+**Impacto:** el saldo nunca puede desincronizarse de su historial (es una consulta sobre el historial, no un campo aparte que alguien podría olvidar actualizar), y agregar un nuevo tipo de movimiento (ej. una merma) no requiere una columna nueva.
+
+### Decisión 2 — cuándo se descuenta el stock de un platillo
+
+**Problema:** "por cada platillo se tiene que descontar sus insumos" no decía en qué momento del flujo (Pedido → Comanda/cocina → Venta) debía ocurrir — venta, cierre de pedido, y entrega en cocina son tres puntos de enganche válidos, con impacto muy distinto en qué módulos había que tocar. Se le preguntó directamente al usuario.
+
+**Respuesta del usuario:** el descuento debe ocurrir cuando la comanda pasa a `entregado` en cocina ("al preparar un platillo ya disminuye el stock de los insumos"), y ese mismo movimiento se enlaza después a la venta cuando se factura ("luego pasa a la venta"); para una venta directa (sin pedido, sin paso de cocina) el descuento ocurre en el mismo momento de la venta.
+
+**Implementación:** `comanda.service.ts: actualizarEstadoComanda`, al transicionar a `entregado`, llama a `existencia.service.ts: registrarConsumoComanda` — crea un movimiento `consumo_cocina` por cada insumo de la receta (cantidad de la receta × cantidad vendida) o, si el producto es `mercaderia`, uno por su propio stock. `venta.service.ts: crearVenta` llama a `registrarConsumoVenta`, que **no vuelve a descontar** las líneas que ya tienen un `consumo_cocina` (les enlaza el `venta_id` para trazabilidad) — solo crea un movimiento `venta_directa` para las líneas que nunca pasaron por cocina (venta directa sin pedido, o una línea de pedido cuya comanda se canceló). Esto es seguro porque un pedido no puede cerrarse mientras tenga una comanda activa (regla ya existente de FASE 13): al momento de facturar, toda línea enviada a cocina ya está `entregado` o su comanda quedó `cancelada` (y volvió a `comanda_id = null`).
+
+**Opción descartada:** descontar siempre al facturar (más simple de implementar, un solo punto de enganche). Se descartó porque el usuario pidió explícitamente el modelo de dos fases, y porque descontar al facturar no refleja el momento real en que el insumo se usa — el stock del sistema seguiría "disponible" mientras cocina ya lo consumió, dando una falsa sensación de existencias durante ese lapso.
+
+**Impacto:** `venta.service.ts` tuvo que ampliar la consulta del pedido para cargar también `detalles.comanda` (antes solo cargaba `detalles.producto`) — es el único dato que le permite distinguir "ya se consumió en cocina" de "nunca se envió a cocina".
+
+### Decisión 3 — alcance: qué queda para FASE 17/18
+
+**Elegida:** `POST /api/existencias/movimientos` con `tipo: compra` es un registro manual sin proveedor asociado (FASE 17, Proveedores y Compras, sigue sin implementar); la receta guarda cantidad e insumo pero no calcula costo ni margen por platillo (FASE 18, Recetas y costos, sigue sin implementar). No se bloquea una venta por falta de stock — no fue pedido, y bloquear ventas reales por un módulo nuevo que muchos restaurantes todavía no configuran habría sido una regresión sorpresa para quien no usa Inventario; el stock simplemente puede quedar en negativo, visible en `/inventario`.
+
+**Impacto:** ninguno de los dos módulos futuros necesita rediseñar lo ya construido — `Existencia.costoUnitario` y `RecetaInsumo` ya quedan en la forma que esas fases van a necesitar.

@@ -9,6 +9,8 @@ import {
 } from '../catalogos/catalogos.repository';
 import { productoRepository } from './producto.repository';
 import { UPLOADS_DIR } from '../../config/uploads';
+import { TipoProducto } from './producto.entity';
+import { reemplazarReceta } from '../recetas/receta.service';
 import type { ActualizarProductoDto, CrearProductoDto } from './producto.dto';
 import type { Producto } from './producto.entity';
 
@@ -81,16 +83,25 @@ export async function crearProducto(dto: CrearProductoDto): Promise<Producto> {
   const marca = await resolverMarca(dto.marcaId);
   const unidadMedida = await resolverUnidadMedida(dto.unidadMedidaId);
   const tipoAfectacionIgv = await resolverTipoAfectacionIgv(dto.tipoAfectacionIgvId);
+  const tipo = dto.tipo ?? TipoProducto.SERVICIO;
   const producto = productoRepository.create({
     categoria,
     marca,
     unidadMedida,
     tipoAfectacionIgv,
+    tipo,
     nombre: dto.nombre,
     descripcion: dto.descripcion ?? null,
     precio: dto.precio,
   });
   const guardado = await productoRepository.save(producto);
+
+  // La receta solo tiene sentido para un producto que se prepara — se ignora en silencio
+  // para `mercaderia` en vez de rechazar la creación por un campo que no aplicaba.
+  if (dto.receta && tipo === TipoProducto.SERVICIO) {
+    await reemplazarReceta(guardado.id, dto.receta);
+  }
+
   return obtenerProducto(guardado.id);
 }
 
@@ -112,12 +123,18 @@ export async function actualizarProducto(
   if (dto.tipoAfectacionIgvId) {
     producto.tipoAfectacionIgv = await resolverTipoAfectacionIgv(dto.tipoAfectacionIgvId);
   }
+  if (dto.tipo !== undefined) producto.tipo = dto.tipo;
   if (dto.nombre !== undefined) producto.nombre = dto.nombre;
   if (dto.descripcion !== undefined) producto.descripcion = dto.descripcion;
   if (dto.precio !== undefined) producto.precio = dto.precio;
   if (dto.activo !== undefined) producto.activo = dto.activo;
 
   await productoRepository.save(producto);
+
+  if (dto.receta && producto.tipo === TipoProducto.SERVICIO) {
+    await reemplazarReceta(id, dto.receta);
+  }
+
   return obtenerProducto(id);
 }
 

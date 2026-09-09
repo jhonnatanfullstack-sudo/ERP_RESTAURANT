@@ -17,6 +17,10 @@ import { pedidoRouter } from '../modules/pedidos/pedido.routes';
 import { comandaRouter } from '../modules/cocina/comanda.routes';
 import { ventaRouter } from '../modules/ventas/venta.routes';
 import { cajaRouter } from '../modules/caja/caja.routes';
+import { almacenRouter } from '../modules/almacenes/almacen.routes';
+import { insumoRouter } from '../modules/insumos/insumo.routes';
+import { recetaRouter } from '../modules/recetas/receta.routes';
+import { existenciaRouter } from '../modules/inventario/existencia.routes';
 
 export const apiRouter = Router();
 
@@ -38,3 +42,7 @@ apiRouter.use('/pedidos', pedidoRouter);
 apiRouter.use('/comandas', comandaRouter);
 apiRouter.use('/ventas', ventaRouter);
 apiRouter.use('/cajas', cajaRouter);
+apiRouter.use('/almacenes', almacenRouter);
+apiRouter.use('/insumos', insumoRouter);
+apiRouter.use('/recetas', recetaRouter);
+apiRouter.use('/existencias', existenciaRouter);

@@ -9,6 +9,7 @@ import {
   medioPagoRepository,
 } from '../catalogos/catalogos.repository';
 import { consultarTipoCambio } from '../catalogos/tipo-cambio.service';
+import { registrarConsumoVenta } from '../inventario/existencia.service';
 import { ventaRepository, detalleVentaRepository } from './venta.repository';
 import { EstadoVenta, FormaPago, Venta } from './venta.entity';
 import { DetalleVenta } from './detalle-venta.entity';
@@ -269,7 +270,7 @@ export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
   if (dto.pedidoId) {
     pedido = await pedidoRepository.findOne({
       where: { id: dto.pedidoId },
-      relations: { detalles: { producto: { tipoAfectacionIgv: true } } },
+      relations: { detalles: { producto: { tipoAfectacionIgv: true }, comanda: true } },
     });
     if (!pedido) {
       throw new HttpError(400, 'El pedido indicado no existe', ['pedidoId inválido']);
@@ -321,6 +322,10 @@ export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
     detalle.venta = guardada;
   });
   await detalleVentaRepository.save(lineas.detalles);
+
+  // Descuenta insumos/mercadería que no se hayan consumido ya al entregar la comanda (venta
+  // directa, o líneas de un pedido que nunca pasaron por cocina) — ver existencia.service.ts.
+  await registrarConsumoVenta(guardada, pedido, dto.pedidoId ? null : (dto.detalles ?? null));
 
   return obtenerVenta(guardada.id);
 }
