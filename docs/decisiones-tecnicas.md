@@ -186,3 +186,41 @@ El usuario pidió explícitamente: "recordar que las formas de pago se utilizan 
 - **Emisión electrónica real a SUNAT:** la sección 1 de `CLAUDE.md` ya lista "Facturación electrónica SUNAT" como ampliación futura, no de esta fase. **Decisión confirmada del usuario: dejarla para más adelante** — `Venta` deja todo lo necesario listo (serie, correlativo, desglose de IGV, tipo de comprobante) para que una integración futura con un PSE/OSE solo tenga que generar y enviar el XML/UBL a partir de estos datos, sin tener que rediseñar el modelo.
 - **Cálculo de IGV:** el precio de `Producto` ya se maneja en todo el sistema (Carta pública, Pedidos) como el precio final que paga el cliente, es decir, **con IGV incluido**. Se decidió mantener esa misma convención en Ventas en vez de introducir un "precio sin IGV" separado — evita tener que migrar todos los productos existentes o cambiar cómo se ingresa el precio en el formulario ya construido. `Producto.tipoAfectacionIgv` (nuevo, obligatorio, default `Gravado` vía backfill) determina si a una línea se le extrae IGV (18%: 16% + 2% IPM) o no.
 - **Por qué `Venta` no vive dentro de `modules/pedidos/`:** aunque nace de un pedido cerrado, una venta es un concepto contable con su propio ciclo de vida (emitida/anulada) y sus propias reglas (comprobante, RUC, correlativo) que no tienen nada que ver con la operación de mesa — matiene la separación de responsabilidades ya usada entre Pedidos/Cocina (dos módulos que se relacionan pero no se fusionan).
+
+## Cliente con razón social (persona jurídica) y buscador por documento en Pedidos/Ventas (2026-09-08)
+
+**Problema:** el usuario pidió que en Pedidos y Ventas exista un apartado de búsqueda de cliente por DNI/RUC (con auto-registro desde RENIEC/SUNAT si no existe, y botón para el formulario manual), y observó que un cliente con RUC `20` (empresa) no tiene nombres/apellidos como persona natural, sino una razón social — pero `clientes.nombres` era `NOT NULL` y el formulario de Clientes solo pedía nombres/apellidos, sin importar el tipo de documento.
+
+**Opciones consideradas:**
+
+1. Mantener `nombres` obligatorio y, para RUC 20, meter la razón social dentro de `nombres` (como un solo campo). Simple, pero mezcla dos conceptos distintos y hace que el nombre de la columna mienta sobre su contenido.
+2. Agregar `razonSocial` nullable, volver `nombres` nullable, y validar en el service que exactamente uno de los dos esté presente según si el documento es RUC persona jurídica (empieza en `20`) o no.
+
+**Decisión: opción 2.** Se agregó `clientes.razon_social` (nullable) y se quitó el `NOT NULL` de `clientes.nombres` (migraciones `ClienteRazonSocial`). La regla ("RUC 20 ⇒ solo razón social; cualquier otro documento ⇒ solo nombres/apellidos") se centraliza en `cliente.service.ts` (`esPersonaJuridica` + `validarNombreORazonSocial`), reutilizando el mismo patrón ya existente de `resolverDocumento` (recalcular con el documento final tanto al crear como al editar). La misma regla se replica en el frontend (`utils/documento.ts: esRucPersonaJuridica`) solo para mostrar el campo correcto en el formulario — la validación real vive en el backend.
+
+**Impacto:**
+
+- `consulta-documento.service.ts` (RENIEC/SUNAT) ahora también decide, por el mismo prefijo de RUC, si el nombre que devuelve SUNAT va a `nombres` o a `razonSocial` — SUNAT no separa apellidos para persona natural con RUC (a diferencia de RENIEC con DNI), así que ese caso siempre llega como nombre completo en un solo campo.
+- Nuevo componente compartido `CamposIdentidadCliente` (nombres+apellidos o razón social según el documento) evita duplicar esta lógica de UI entre `Clientes.tsx` y el nuevo `ClienteCrearModal`.
+- Nuevo componente `BuscadorCliente` reemplaza el combo simple de cliente en Pedidos y Ventas (no en Reservas — el usuario pidió explícitamente solo esos dos módulos): busca en los clientes ya cargados, si no existe consulta RENIEC/SUNAT y ofrece registrar automáticamente, y siempre deja disponible el botón "+ Nuevo cliente" para el registro manual completo vía `ClienteCrearModal`.
+- No se pudo probar en vivo el caso RUC `10` (persona natural con negocio) contra el proveedor real porque los números de prueba usados no existen en el registro de SUNAT (`"ruc no valido"`); se verificó en cambio con un RUC `20` real (`20131312955`) y por revisión de código que la rama `10`/`15`/`17` es el `else` simétrico de la misma condición ya verificada.
+
+## Tipo de cambio SUNAT por fecha de emisión, no bloqueante (2026-09-08)
+
+**Problema:** el usuario pidió que la venta consulte el tipo de cambio por la fecha de emisión y lo registre en la base de datos. El sistema solo cobra en soles (no hay operaciones en moneda extranjera), por lo que este dato es puramente de referencia contable, no funcional para el cobro.
+
+**Decisión:** se agregó `catalogos/tipo-cambio.service.ts` (`consultarTipoCambio(fecha)`), que consulta el mismo proveedor ya usado para RENIEC/SUNAT (Decolecta, `GET /v1/tipo-cambio/sunat?date=YYYY-MM-DD`) y se llama desde `venta.service.ts` al crear la venta, guardando el "precio venta" en la nueva columna nullable `ventas.tipo_cambio numeric(10,3)` (3 decimales, la misma precisión que usa SUNAT). **La función retorna `null` ante cualquier falla** (sin token, proveedor caído, timeout) en vez de lanzar excepción — una venta en soles nunca debe bloquearse por un dato de referencia externo que no es necesario para completarla. Este es el mismo criterio de "graceful degradation" que ya usa `consultarDocumento` para RENIEC/SUNAT.
+
+**Impacto:** ningún otro flujo depende de este valor; es solo informativo y se muestra en el modal de detalle de la venta en el frontend cuando está disponible.
+
+## Fix: `Modal` como portal a `document.body` (2026-09-08)
+
+**Problema (bug real, encontrado por verificación E2E):** `BuscadorCliente` se usa como campo dentro del `<form>` de "Nuevo pedido"/"Nueva venta", y su botón "+ Nuevo cliente" abre `ClienteCrearModal`, que renderiza su propio `<form>`. Como `components/ui/Modal.tsx` renderizaba su contenido inline (sin portal), el `<form>` del modal quedaba **anidado dentro del `<form>` padre en el DOM real** — HTML inválido que el navegador resuelve haciendo un submit nativo (GET con los campos como query string) en vez de dejar que React lo intercepte, perdiendo el estado del formulario padre (mesa seleccionada, etc.) y sin crear el cliente.
+
+**Decisión (parte 1 — DOM):** cambiar `Modal` para que renderice con `createPortal(..., document.body)` en vez de inline — el mismo patrón que usan Radix/MUI para sus diálogos. El modal sigue siendo hijo en el árbol de React (conserva contexto, estado, eventos), pero su DOM real queda fuera del árbol del formulario que lo contiene, eliminando el anidamiento de `<form>` en el HTML sin tener que rediseñar `BuscadorCliente`/`ClienteCrearModal` ni ningún otro de los 14 usos existentes de `Modal`.
+
+**Segundo bug descubierto por la re-verificación E2E:** el portal resuelve el HTML inválido, pero React hace _bubbling_ de eventos sintéticos por el **árbol de React, no por el DOM** (comportamiento documentado de `createPortal`). El `submit` del formulario del modal seguía burbujeando hasta el `onSubmit` del formulario padre (ej. "Nuevo pedido"), disparándolo silenciosamente en el mismo instante — creaba un pedido/venta fantasma vacío junto al cliente real, sin ningún indicio visual.
+
+**Decisión (parte 2 — evento):** agregar `onSubmit={(e) => e.stopPropagation()}` en el `<div>` contenedor del portal en `Modal.tsx`. Al estar entre el `<form>` interno del modal y el resto del árbol de React (donde vive el formulario padre), corta el bubbling ahí para los 14 usos de `Modal` a la vez, sin tocar cada modal individualmente.
+
+**Impacto:** corrige ambos problemas para todos los modales existentes y futuros por igual; no requiere cambios en ningún call site. Verificado en navegador real (Playwright): el `<form>` del modal ya no es descendiente del `<form>` padre en el DOM, y el submit del modal ya no dispara el `onSubmit` del formulario padre.

@@ -30,7 +30,8 @@ React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, conf
 
 ```
 src/
-  components/     Sidebar, Navbar (shell del layout admin)
+  components/     Sidebar, Navbar (shell del layout admin), CampoBusquedaDocumento,
+                  CamposIdentidadCliente, ClienteCrearModal, BuscadorCliente
   components/ui/  Table, Modal, Alert, Spinner — primitivas reutilizables por todas las páginas
   layouts/         AdminLayout (Sidebar+Navbar+Outlet), PublicLayout (header simple+Outlet)
   pages/           Dashboard, Login, CambiarPassword, Usuarios, Personal, Roles, Empresa, Categorias, Marcas, Productos, Salones, Mesas, Clientes, Reservas, Pedidos, PedidoDetalle, Cocina, Ventas
@@ -69,6 +70,17 @@ src/
 `ProtectedRoute` redirige a `/login` si no hay sesión (tras intentar un refresh silencioso vía cookie httpOnly). Cada página oculta sus acciones de creación/edición si el usuario no tiene el permiso correspondiente (`tienePermiso('xxx.crear')`), aunque la protección real está en el backend.
 
 La separación pública/admin en una sola app sigue la decisión documentada en `decisiones-tecnicas.md` (carta pública para clientes).
+
+## Componentes de cliente reutilizables (2026-09-08)
+
+- **`CamposIdentidadCliente<T>`**: componente genérico sobre `react-hook-form` (`Control<T>`, `Path<T>`) que renderiza "Razón social" o "Nombres + Apellidos" según `esRucPersonaJuridica` (`utils/documento.ts`). Usado por `Clientes.tsx` (crear y editar) y por `ClienteCrearModal`, evitando triplicar esta lógica condicional.
+- **`ClienteCrearModal`**: el formulario completo de "nuevo cliente" (tipo de documento + `CampoBusquedaDocumento` + `CamposIdentidadCliente` + teléfono/email/dirección), extraído de `Clientes.tsx` para que también lo use `BuscadorCliente` como fallback de registro manual.
+- **`BuscadorCliente`**: reemplaza el combo simple de cliente en los formularios de "Nuevo pedido" (`Pedidos.tsx`) y "Nueva venta" (`Ventas.tsx`). Flujo: busca el documento entre los clientes ya cargados (`['clientes']`, TanStack Query) → si no existe, consulta RENIEC/SUNAT y muestra una tarjeta de confirmación "Registrar y usar este cliente" con los datos devueltos → si tampoco hay resultado ahí, o el usuario prefiere completarlo a mano, el botón "+ Nuevo cliente" abre `ClienteCrearModal`. No se tocó Reservas (el usuario pidió el buscador solo para Pedidos y Ventas); esa página conserva su `Combobox` de selección de cliente existente.
+- **`utils/formato.ts: nombreCliente(cliente)`**: helper único para mostrar el nombre de un cliente en cualquier tabla/combo/mensaje — razón social si la tiene, si no "nombres apellidos", evitando repetir la concatenación condicional en cada página (`Reservas.tsx`, `PedidoDetalle.tsx`, `Pedidos.tsx`, `Ventas.tsx`).
+
+## Ventas: comprobante, totales y tipo de cambio visibles (FASE 14, 2026-09-08)
+
+La tabla de `/ventas` expone columnas separadas de Comprobante (serie-correlativo clicable, ej. `B001-000001`), Fecha de emisión, Mesa, Cliente, Subtotal, IGV, Total y Estado. Al hacer clic en el comprobante (o en "Ver") se abre `VentaDetalleModal` (componente local de `Ventas.tsx`): un recibo con cabecera (comprobante, fecha, cliente, mesa), el detalle por línea, y el bloque de totales (Subtotal / IGV / Total) más el tipo de cambio de la fecha de emisión cuando la consulta a SUNAT lo pudo obtener (ver `decisiones-tecnicas.md`).
 
 ## Autenticación en el frontend
 

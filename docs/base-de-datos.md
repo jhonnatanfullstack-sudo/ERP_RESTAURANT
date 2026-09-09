@@ -8,33 +8,33 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 
 **Orden de dependencia (de raíz a hoja):** `empresas` → `personal` → `usuarios` → `refresh_tokens`, con los catálogos SUNAT (`tipos_documento_identidad`, `tipos_comprobante`) y el RBAC (`roles`, `permisos`, `roles_permisos`) como soporte.
 
-| Tabla                       | Descripción                                                                                      | PK                       |
-| --------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------ |
-| `empresas`                  | Entidad legal/tributaria raíz del sistema (RUC, razón social)                                    | `id` uuid                |
-| `tipos_documento_identidad` | Catálogo SUNAT N° 06 (DNI, RUC, CE, Pasaporte, etc.)                                             | `id` uuid                |
-| `tipos_comprobante`         | Catálogo SUNAT N° 01 (Factura, Boleta, N. Crédito, etc.)                                         | `id` uuid                |
-| `personal`                  | Personas físicas vinculadas a una empresa (staff), identificadas por un tipo+número de documento | `id` uuid                |
-| `usuarios`                  | Cuenta de acceso al sistema, 1:1 con un registro de `personal`                                   | `id` uuid                |
-| `roles`                     | Roles asignables a usuarios (ej. Administrador, Cajero)                                          | `id` uuid                |
-| `permisos`                  | Permisos específicos (ej. `usuarios.crear`)                                                      | `id` uuid                |
-| `roles_permisos`            | Relación N:M entre `roles` y `permisos`                                                          | (`rol_id`, `permiso_id`) |
-| `refresh_tokens`            | Tokens de refresco de sesión, por usuario                                                        | `id` uuid                |
-| `categorias`                | Categorías de la carta (FASE 8)                                                                  | `id` uuid                |
-| `marcas`                    | Marcas de producto (ej. una gaseosa embotellada); opcional en `productos`                        | `id` uuid                |
-| `unidades_medida`           | Catálogo SUNAT N° 03 (Unidad, Kilogramo, Gramo, Litro, etc.)                                     | `id` uuid                |
-| `productos`                 | Productos/platillos de la carta, con foto, marca opcional y unidad de medida (FASE 9)            | `id` uuid                |
-| `salones`                   | Ambientes del local donde se ubican las mesas (FASE 10)                                          | `id` uuid                |
-| `mesas`                     | Mesas físicas, pertenecen a un salón (FASE 10)                                                   | `id` uuid                |
-| `clientes`                  | Clientes del restaurante, sin relación a `personal`/`empresas` (FASE 11)                         | `id` uuid                |
-| `reservas`                  | Reservas de mesa por cliente, con estado y control de solapamiento (FASE 11.5)                   | `id` uuid                |
-| `pedidos`                   | Pedido de una mesa (cabecera), con estado y total denormalizado (FASE 12)                        | `id` uuid                |
-| `detalle_pedidos`           | Líneas de producto de un pedido, con snapshot de precio (FASE 12)                                | `id` uuid                |
-| `comandas`                  | Ticket de cocina: grupo de líneas de un pedido enviadas a preparar juntas (FASE 13)              | `id` uuid                |
-| `tipos_afectacion_igv`      | Catálogo SUNAT N° 07 (Gravado/Exonerado/Inafecto) (FASE 14)                                      | `id` uuid                |
-| `tipos_operacion`           | Catálogo SUNAT N° 17 (Venta interna, exportación...) (FASE 14)                                   | `id` uuid                |
-| `medios_pago`               | Catálogo propio (Efectivo, Tarjeta, Yape, Plin...) (FASE 14)                                     | `id` uuid                |
-| `ventas`                    | Comprobante (Boleta/Factura) emitido a partir de un pedido cerrado (FASE 14)                     | `id` uuid                |
-| `detalle_ventas`            | Líneas de una venta, snapshot de precio/afectación IGV del detalle de pedido de origen (FASE 14) | `id` uuid                |
+| Tabla                       | Descripción                                                                                               | PK                       |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `empresas`                  | Entidad legal/tributaria raíz del sistema (RUC, razón social)                                             | `id` uuid                |
+| `tipos_documento_identidad` | Catálogo SUNAT N° 06 (DNI, RUC, CE, Pasaporte, etc.)                                                      | `id` uuid                |
+| `tipos_comprobante`         | Catálogo SUNAT N° 01 (Factura, Boleta, N. Crédito, etc.)                                                  | `id` uuid                |
+| `personal`                  | Personas físicas vinculadas a una empresa (staff), identificadas por un tipo+número de documento          | `id` uuid                |
+| `usuarios`                  | Cuenta de acceso al sistema, 1:1 con un registro de `personal`                                            | `id` uuid                |
+| `roles`                     | Roles asignables a usuarios (ej. Administrador, Cajero)                                                   | `id` uuid                |
+| `permisos`                  | Permisos específicos (ej. `usuarios.crear`)                                                               | `id` uuid                |
+| `roles_permisos`            | Relación N:M entre `roles` y `permisos`                                                                   | (`rol_id`, `permiso_id`) |
+| `refresh_tokens`            | Tokens de refresco de sesión, por usuario                                                                 | `id` uuid                |
+| `categorias`                | Categorías de la carta (FASE 8)                                                                           | `id` uuid                |
+| `marcas`                    | Marcas de producto (ej. una gaseosa embotellada); opcional en `productos`                                 | `id` uuid                |
+| `unidades_medida`           | Catálogo SUNAT N° 03 (Unidad, Kilogramo, Gramo, Litro, etc.)                                              | `id` uuid                |
+| `productos`                 | Productos/platillos de la carta, con foto, marca opcional y unidad de medida (FASE 9)                     | `id` uuid                |
+| `salones`                   | Ambientes del local donde se ubican las mesas (FASE 10)                                                   | `id` uuid                |
+| `mesas`                     | Mesas físicas, pertenecen a un salón (FASE 10)                                                            | `id` uuid                |
+| `clientes`                  | Clientes del restaurante, sin relación a `personal`/`empresas` (FASE 11; `razon_social` desde 2026-09-08) | `id` uuid                |
+| `reservas`                  | Reservas de mesa por cliente, con estado y control de solapamiento (FASE 11.5)                            | `id` uuid                |
+| `pedidos`                   | Pedido de una mesa (cabecera), con estado y total denormalizado (FASE 12)                                 | `id` uuid                |
+| `detalle_pedidos`           | Líneas de producto de un pedido, con snapshot de precio (FASE 12)                                         | `id` uuid                |
+| `comandas`                  | Ticket de cocina: grupo de líneas de un pedido enviadas a preparar juntas (FASE 13)                       | `id` uuid                |
+| `tipos_afectacion_igv`      | Catálogo SUNAT N° 07 (Gravado/Exonerado/Inafecto) (FASE 14)                                               | `id` uuid                |
+| `tipos_operacion`           | Catálogo SUNAT N° 17 (Venta interna, exportación...) (FASE 14)                                            | `id` uuid                |
+| `medios_pago`               | Catálogo propio (Efectivo, Tarjeta, Yape, Plin...) (FASE 14)                                              | `id` uuid                |
+| `ventas`                    | Comprobante (Boleta/Factura) emitido a partir de un pedido cerrado (FASE 14)                              | `id` uuid                |
+| `detalle_ventas`            | Líneas de una venta, snapshot de precio/afectación IGV del detalle de pedido de origen (FASE 14)          | `id` uuid                |
 
 **Relaciones:**
 
@@ -77,6 +77,8 @@ PostgreSQL 18 (Docker, ver `docker-compose.yml`). Conexión gestionada por TypeO
 **Índices:** únicos en `usuarios.email`, `usuarios.personal_id`, `roles.nombre`, `permisos.codigo`, `refresh_tokens.token_hash`, `empresas.ruc`, `tipos_documento_identidad.codigo`, `tipos_comprobante.codigo`, `clientes.email` (nullable, permite múltiples `NULL`), y compuesto único en `personal(tipo_documento_identidad_id, numero_documento)` y `clientes(tipo_documento_identidad_id, numero_documento)` (también nullable en ambas columnas: múltiples clientes sin documento no chocan entre sí); de rendimiento en `roles_permisos(rol_id)` y `roles_permisos(permiso_id)`.
 
 **Nota sobre `clientes`:** a diferencia de `personal`, no tiene FK a `empresas` (no pertenece a una empresa, es un cliente externo) y su `tipo_documento_identidad_id` es **nullable** (no toda venta a un cliente requiere documento). Cuando se proporciona un documento, sí queda acoplado al mismo Catálogo SUNAT 06 que usa `personal` (decisión del usuario, 2026-09-07: "todo está acoplado de acuerdo a SUNAT") — reutiliza la misma validación de formato y el mismo botón de búsqueda RENIEC/SUNAT.
+
+**`razon_social` (2026-09-08):** `clientes.nombres` pasó a **nullable** y se agregó `clientes.razon_social` (nullable). Son mutuamente excluyentes: un cliente con RUC de persona jurídica (empieza en "20") se identifica por razón social, no por nombres/apellidos — SUNAT no le asocia esos campos. Cualquier otro cliente (DNI, RUC "10"/"15"/"17" de persona natural, CE, Pasaporte, o sin documento) sigue usando nombres/apellidos como antes. La regla se aplica en `cliente.service.ts` (`validarNombreORazonSocial`), no a nivel de constraint de BD.
 
 Este esquema es exclusivamente para el RBAC del personal interno. El login de clientes (portal público) será un dominio de identidad separado — ver `decisiones-tecnicas.md`.
 
@@ -136,5 +138,8 @@ Migraciones aplicadas (en orden):
 23. `ProductoTipoAfectacionIgv` — agrega `productos.tipo_afectacion_igv_id`: mismo patrón nullable→backfill (`10` Gravado)→`NOT NULL`+FK que `ProductoUnidadMedida`.
 24. `VentasTabla` — crea `ventas` (enum `ventas_forma_pago_enum`: `contado`/`credito`; enum `ventas_estado_enum`: `emitida`/`anulada`; índices únicos `(pedido_id)` y `(tipo_comprobante_id, serie, numero)`) y `detalle_ventas`, con FKs a `pedidos`/`clientes`/`tipos_comprobante`/`tipos_operacion`/`medios_pago`/`productos`/`tipos_afectacion_igv` (FASE 14).
 25. `SeedPermisosVentas` — permisos del módulo (FASE 14).
+26. `CamposEmpresa` — agrega `empresas.ubigeo` y `empresas.logo` (cambio en curso en paralelo, no documentado en detalle aquí; ver el módulo Empresa cuando se cierre esa fase de trabajo).
+27. `ClienteRazonSocial` — `clientes.nombres` pasa a nullable y se agrega `clientes.razon_social` (ver nota de `razon_social` arriba).
+28. `VentaTipoCambio` — agrega `ventas.tipo_cambio` (nullable), tipo de cambio USD/PEN de SUNAT en la fecha de emisión (ver `api.md`).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.
