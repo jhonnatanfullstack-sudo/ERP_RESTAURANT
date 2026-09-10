@@ -31,6 +31,9 @@ import { Almacen } from '../modules/almacenes/almacen.entity';
 import { Insumo } from '../modules/insumos/insumo.entity';
 import { RecetaInsumo } from '../modules/recetas/receta-insumo.entity';
 import { Existencia } from '../modules/inventario/existencia.entity';
+import { Proveedor } from '../modules/proveedores/proveedor.entity';
+import { Compra } from '../modules/compras/compra.entity';
+import { DetalleCompra } from '../modules/compras/detalle-compra.entity';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -72,6 +75,9 @@ export const AppDataSource = new DataSource({
     Insumo,
     RecetaInsumo,
     Existencia,
+    Proveedor,
+    Compra,
+    DetalleCompra,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
 });

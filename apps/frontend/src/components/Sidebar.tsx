@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import {
-  Beef,
   Boxes,
   Building2,
+  CalendarCheck,
+  ChartColumn,
   ChefHat,
   ChevronDown,
   ChevronsLeft,
@@ -15,6 +16,7 @@ import {
   LayoutDashboard,
   Receipt,
   ShieldCheck,
+  Truck,
   UtensilsCrossed,
   Wallet,
   X,
@@ -74,10 +76,36 @@ const menu: SeccionMenu[] = [
       { tipo: 'enlace', etiqueta: 'Caja', ruta: '/caja', icono: Wallet, permiso: 'caja.ver' },
       {
         tipo: 'enlace',
-        etiqueta: 'Inventario',
-        ruta: '/inventario',
+        etiqueta: 'Reservas',
+        ruta: '/reservas',
+        icono: CalendarCheck,
+        permiso: 'reservas.ver',
+      },
+    ],
+  },
+  {
+    // Un grupo nunca se llama igual que uno de sus hijos: "Almacén > Almacenes/Insumos" deja
+    // claro que el grupo es el área y los hijos las pantallas concretas.
+    etiqueta: 'Almacén',
+    items: [
+      {
+        tipo: 'grupo',
+        etiqueta: 'Existencias',
         icono: Boxes,
-        permiso: 'inventario.ver',
+        hijos: [
+          { etiqueta: 'Stock y kardex', ruta: '/inventario', permiso: 'inventario.ver' },
+          { etiqueta: 'Insumos', ruta: '/insumos', permiso: 'insumos.ver' },
+          { etiqueta: 'Almacenes', ruta: '/almacenes', permiso: 'almacenes.ver' },
+        ],
+      },
+      {
+        tipo: 'grupo',
+        etiqueta: 'Abastecimiento',
+        icono: Truck,
+        hijos: [
+          { etiqueta: 'Compras', ruta: '/compras', permiso: 'compras.ver' },
+          { etiqueta: 'Proveedores', ruta: '/proveedores', permiso: 'proveedores.ver' },
+        ],
       },
     ],
   },
@@ -89,18 +117,9 @@ const menu: SeccionMenu[] = [
         etiqueta: 'Carta',
         icono: UtensilsCrossed,
         hijos: [
+          { etiqueta: 'Productos', ruta: '/productos', permiso: 'productos.ver' },
           { etiqueta: 'Categorías', ruta: '/categorias', permiso: 'categorias.ver' },
           { etiqueta: 'Marcas', ruta: '/marcas', permiso: 'marcas.ver' },
-          { etiqueta: 'Productos', ruta: '/productos', permiso: 'productos.ver' },
-        ],
-      },
-      {
-        tipo: 'grupo',
-        etiqueta: 'Insumos',
-        icono: Beef,
-        hijos: [
-          { etiqueta: 'Insumos', ruta: '/insumos', permiso: 'insumos.ver' },
-          { etiqueta: 'Almacenes', ruta: '/almacenes', permiso: 'almacenes.ver' },
         ],
       },
       {
@@ -113,13 +132,23 @@ const menu: SeccionMenu[] = [
         ],
       },
       {
-        tipo: 'grupo',
+        tipo: 'enlace',
         etiqueta: 'Clientes',
+        ruta: '/clientes',
         icono: Contact,
-        hijos: [
-          { etiqueta: 'Clientes', ruta: '/clientes', permiso: 'clientes.ver' },
-          { etiqueta: 'Reservas', ruta: '/reservas', permiso: 'reservas.ver' },
-        ],
+        permiso: 'clientes.ver',
+      },
+    ],
+  },
+  {
+    etiqueta: 'Análisis',
+    items: [
+      {
+        tipo: 'enlace',
+        etiqueta: 'Reportes',
+        ruta: '/reportes',
+        icono: ChartColumn,
+        permiso: 'reportes.ver',
       },
     ],
   },
@@ -137,10 +166,11 @@ const menu: SeccionMenu[] = [
         ],
       },
       {
-        tipo: 'grupo',
+        tipo: 'enlace',
         etiqueta: 'Empresa',
+        ruta: '/empresa',
         icono: Building2,
-        hijos: [{ etiqueta: 'Configuración', ruta: '/empresa', permiso: 'empresa.ver' }],
+        permiso: 'empresa.ver',
       },
     ],
   },
@@ -288,7 +318,7 @@ export function Sidebar({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 shrink-0 flex-col bg-zinc-900 transition-transform duration-200 ease-in-out md:relative md:inset-auto md:z-auto md:translate-x-0 md:transition-[width] ${
+        className={`no-imprimir fixed inset-y-0 left-0 z-40 flex h-screen w-64 shrink-0 flex-col bg-zinc-900 transition-transform duration-200 ease-in-out md:relative md:inset-auto md:z-auto md:translate-x-0 md:transition-[width] ${
           abiertoMovil ? 'translate-x-0' : '-translate-x-full'
         } ${colapsado ? 'md:w-20' : 'md:w-64'}`}
       >

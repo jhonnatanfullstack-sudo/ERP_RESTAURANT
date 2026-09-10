@@ -1,22 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Search, UserPlus, X } from 'lucide-react';
 import * as clientesService from '../services/clientes.service';
 import * as catalogosService from '../services/catalogos.service';
 import { Button } from './ui/Button';
+import { claseCampo, claseLabel } from './ui/campos';
 import { ClienteCrearModal } from './ClienteCrearModal';
 import { nombreCliente } from '../utils/formato';
+import { mensajeError } from '../utils/errores';
+import { NUMERO_DOCUMENTO_VARIOS } from '../utils/documento';
 import type { DatosDocumento } from '../types/api';
 
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
+const claseBotonCampo =
+  'flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-zinc-300 px-3 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50';
 
 interface BuscadorClienteProps {
   clienteId: string | undefined;
@@ -24,16 +20,26 @@ interface BuscadorClienteProps {
   requerido?: boolean;
   /** Texto de ayuda extra bajo el campo (ej. "Una factura requiere RUC"). */
   ayuda?: string;
+  /** Mensaje de validación del formulario que lo contiene. */
+  error?: string;
 }
 
 /**
  * Búsqueda de cliente por DNI/RUC: si ya existe, lo selecciona directamente; si no, consulta
  * RENIEC/SUNAT y ofrece registrarlo automáticamente con esos datos; siempre hay un botón
- * "+ Nuevo cliente" para el registro manual. Reemplaza el combo simple de cliente en los
- * formularios de Pedidos y Ventas — no duplicar esta lógica de búsqueda en otro lugar.
+ * "+ Nuevo cliente" para el registro manual. Al abrir un formulario nuevo preselecciona
+ * "Clientes Varios" (ver `NUMERO_DOCUMENTO_VARIOS`). Reemplaza el combo simple de cliente en
+ * los formularios de Pedidos y Ventas — no duplicar esta lógica de búsqueda en otro lugar.
  */
-export function BuscadorCliente({ clienteId, onCambiar, requerido, ayuda }: BuscadorClienteProps) {
+export function BuscadorCliente({
+  clienteId,
+  onCambiar,
+  requerido,
+  ayuda,
+  error,
+}: BuscadorClienteProps) {
   const queryClient = useQueryClient();
+  const idNumero = useId();
   const [tipoBusqueda, setTipoBusqueda] = useState<'dni' | 'ruc'>('dni');
   const [numero, setNumero] = useState('');
   const [buscando, setBuscando] = useState(false);
@@ -76,6 +82,25 @@ export function BuscadorCliente({ clienteId, onCambiar, requerido, ayuda }: Busc
 
   const clienteSeleccionado = clientesQuery.data?.find((c) => c.id === clienteId);
 
+  // Al abrir un formulario nuevo (sin cliente aún elegido), preselecciona "Clientes Varios"
+  // para no obligar a buscar/registrar a alguien en la venta/pedido más común (público en
+  // general). Solo ocurre una vez: si el operador lo quita a propósito, no se vuelve a forzar.
+  const yaPreseleccionado = useRef(clienteId !== undefined);
+  useEffect(() => {
+    if (yaPreseleccionado.current) return;
+    if (clienteId !== undefined) {
+      yaPreseleccionado.current = true;
+      return;
+    }
+    const clienteVarios = clientesQuery.data?.find(
+      (c) => c.numeroDocumento === NUMERO_DOCUMENTO_VARIOS,
+    );
+    if (clienteVarios) {
+      yaPreseleccionado.current = true;
+      onCambiar(clienteVarios.id);
+    }
+  }, [clientesQuery.data, clienteId, onCambiar]);
+
   async function buscar() {
     if (!numero.trim()) return;
     setErrorBusqueda(null);
@@ -100,12 +125,12 @@ export function BuscadorCliente({ clienteId, onCambiar, requerido, ayuda }: Busc
     }
   }
 
+  const etiqueta = <>Cliente {requerido && <span className="text-red-500">*</span>}</>;
+
   if (clienteSeleccionado) {
     return (
       <div>
-        <label className={labelClass}>
-          Cliente {requerido && <span className="text-red-500">*</span>}
-        </label>
+        <p className={claseLabel}>{etiqueta}</p>
         <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-zinc-900">
@@ -121,32 +146,36 @@ export function BuscadorCliente({ clienteId, onCambiar, requerido, ayuda }: Busc
           <button
             type="button"
             onClick={() => onCambiar(undefined)}
-            title="Cambiar cliente"
-            className="flex shrink-0 items-center justify-center rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700"
+            title="Quitar cliente"
+            aria-label="Quitar cliente"
+            className="flex shrink-0 items-center justify-center rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        {ayuda && <p className="mt-1 text-xs text-zinc-500">{ayuda}</p>}
+        {ayuda && <p className="mt-1.5 text-xs text-zinc-500">{ayuda}</p>}
       </div>
     );
   }
 
   return (
     <div>
-      <label className={labelClass}>
-        Cliente {requerido && <span className="text-red-500">*</span>}
+      <label htmlFor={idNumero} className={claseLabel}>
+        {etiqueta}
       </label>
-      <div className="flex gap-2">
+
+      <div className="flex flex-wrap gap-2">
         <select
           value={tipoBusqueda}
           onChange={(e) => setTipoBusqueda(e.target.value as 'dni' | 'ruc')}
-          className={`${inputClass} w-24 shrink-0`}
+          aria-label="Tipo de documento a buscar"
+          className={`${claseCampo(!!error)} w-20 shrink-0`}
         >
           <option value="dni">DNI</option>
           <option value="ruc">RUC</option>
         </select>
         <input
+          id={idNumero}
           value={numero}
           onChange={(e) => {
             setNumero(e.target.value);
@@ -161,26 +190,29 @@ export function BuscadorCliente({ clienteId, onCambiar, requerido, ayuda }: Busc
           }}
           maxLength={tipoBusqueda === 'dni' ? 8 : 11}
           placeholder={tipoBusqueda === 'dni' ? '8 dígitos' : '11 dígitos'}
-          className={inputClass}
+          aria-invalid={error ? true : undefined}
+          className={`${claseCampo(!!error)} min-w-32 flex-1`}
         />
         <button
           type="button"
           onClick={() => void buscar()}
           disabled={buscando || !numero.trim()}
-          title="Buscar"
-          className="flex shrink-0 items-center justify-center rounded-lg border border-zinc-300 px-3 text-zinc-500 hover:bg-zinc-50 disabled:opacity-50"
+          className={claseBotonCampo}
         >
           {buscando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          Buscar
         </button>
         <button
           type="button"
           onClick={() => setModalNuevoAbierto(true)}
-          title="Nuevo cliente"
-          className="flex shrink-0 items-center justify-center rounded-lg border border-zinc-300 px-3 text-zinc-500 hover:bg-zinc-50"
+          className={claseBotonCampo}
         >
           <UserPlus className="h-4 w-4" />
+          Nuevo
         </button>
       </div>
+
+      {error && <p className="mt-1.5 text-xs font-medium text-red-600">{error}</p>}
 
       {errorBusqueda && (
         <p className="mt-1.5 text-xs text-red-600">
@@ -197,7 +229,7 @@ export function BuscadorCliente({ clienteId, onCambiar, requerido, ayuda }: Busc
       )}
 
       {encontradoApi && (
-        <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-zinc-900">
               {encontradoApi.razonSocial ??
@@ -212,7 +244,7 @@ export function BuscadorCliente({ clienteId, onCambiar, requerido, ayuda }: Busc
             type="button"
             className="shrink-0"
             onClick={() => registrarMutation.mutate()}
-            disabled={registrarMutation.isPending}
+            cargando={registrarMutation.isPending}
           >
             {registrarMutation.isPending ? 'Registrando…' : 'Registrar y usar'}
           </Button>
@@ -223,7 +255,7 @@ export function BuscadorCliente({ clienteId, onCambiar, requerido, ayuda }: Busc
           {mensajeError(registrarMutation.error, 'No se pudo registrar el cliente')}
         </p>
       )}
-      {ayuda && <p className="mt-1 text-xs text-zinc-500">{ayuda}</p>}
+      {ayuda && !error && <p className="mt-1.5 text-xs text-zinc-500">{ayuda}</p>}
 
       <ClienteCrearModal
         abierto={modalNuevoAbierto}

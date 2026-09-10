@@ -123,6 +123,48 @@ body {
   animation: entrar-abajo 0.4s ease-out both;
 }
 
+/* --- Carta pública: sistema de tokens ---
+   Misma paleta que el panel administrativo (zinc + naranja 600) para que cliente y staff
+   vean un solo producto. Se mantiene como variables y no como clases sueltas para poder
+   cambiarla en un solo sitio; por ahora es siempre clara, sin variante oscura. */
+
+[data-tema='carta'] {
+  --carta-fondo: #fafafa;
+  --carta-superficie: #ffffff;
+  --carta-elevado: #f4f4f5;
+  --carta-borde: #e4e4e7;
+  --carta-texto: #18181b;
+  --carta-suave: #71717a;
+  --carta-acento: #ea580c;
+  --carta-acento-tenue: #fff7ed;
+  --carta-acento-contraste: #ffffff;
+}
+
+/* Progreso de lectura sin escuchar el evento `scroll` desde JS (que re-renderiza en cada
+   cuadro): lo resuelve el compositor con una animación ligada al scroll del documento.
+   Donde no esté soportado, la barra simplemente no se muestra. */
+@keyframes crecer-progreso {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.barra-progreso {
+  display: none;
+}
+
+@supports (animation-timeline: scroll()) {
+  .barra-progreso {
+    display: block;
+    transform-origin: left;
+    animation: crecer-progreso linear both;
+    animation-timeline: scroll(root block);
+  }
+}
+
 /* --- Carta pública --- */
 
 @keyframes deslizar-desde-derecha {
@@ -224,6 +266,247 @@ body {
   animation: mosaico-respirar 18s ease-in-out infinite;
 }
 
+@keyframes dibujar-linea {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Subrayado del título de categoría: se dibuja cuando la sección entra en pantalla, para
+   marcar dónde empieza cada bloque del menú. */
+.animar-linea {
+  transform-origin: left;
+  animation: dibujar-linea 0.7s 0.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pulso-agregado {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Confirmación de que el plato entró al pedido: la tarjeta "responde" al clic. */
+.animar-agregado {
+  animation: pulso-agregado 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes tira-mover {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* Tira de fotos del hero: el contenido está duplicado una vez, así que -50% completa un
+   ciclo exacto y el salto no se ve. Se pausa al pasar el mouse (ver TiraFotos.tsx). */
+.animar-tira {
+  animation: tira-mover var(--duracion-tira, 40s) linear infinite;
+}
+
+.animar-tira:hover {
+  animation-play-state: paused;
+}
+
+@keyframes entrar-palabra {
+  from {
+    opacity: 0;
+    transform: translateY(0.5em) rotate(2deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+/* Palabra que cambia sola en el titular del hero. */
+.animar-palabra {
+  animation: entrar-palabra 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes desplazar-parallax {
+  from {
+    transform: translateY(-6%) scale(1.12);
+  }
+  to {
+    transform: translateY(6%) scale(1.12);
+  }
+}
+
+/* Parallax real ligado al scroll, resuelto por el compositor: la foto se desplaza dentro de
+   su marco mientras la sección cruza la pantalla. Sin soporte, la foto queda quieta y
+   correctamente encuadrada (por eso el `scale` vive también en el estado inicial). */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .animar-parallax {
+      animation: desplazar-parallax linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+  }
+}
+
+@keyframes revelar-arriba {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Entrada escalonada del hero y de las secciones al revelarse. El retraso lo pone cada
+   elemento con `animationDelay`, así una sola clase sirve para toda la secuencia. */
+.animar-revelar {
+  animation: revelar-arriba 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes resplandor-suave {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.08);
+  }
+}
+
+/* Halo detrás de la foto del hero: da profundidad sin recurrir a un degradado a sangre. */
+.animar-resplandor {
+  animation: resplandor-suave 7s ease-in-out infinite;
+}
+
+@keyframes barrido-brillo {
+  from {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  to {
+    transform: translateX(220%) skewX(-18deg);
+  }
+}
+
+/* Destello diagonal que cruza la tarjeta al pasar el mouse (ver ProductoCarta.tsx). */
+.animar-brillo {
+  animation: barrido-brillo 0.9s ease-out;
+}
+
+@keyframes entrar-3d {
+  from {
+    opacity: 0;
+    transform: perspective(900px) rotateX(12deg) translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: perspective(900px) rotateX(0deg) translateY(0);
+  }
+}
+
+/* Entrada de las tarjetas de la carta: caen desde atrás girando sobre su eje horizontal. */
+.animar-entrada-3d {
+  animation: entrar-3d 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes orbitar {
+  from {
+    transform: rotate(0deg) translateX(var(--radio-orbita, 130px)) rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg) translateX(var(--radio-orbita, 130px)) rotate(-360deg);
+  }
+}
+
+/* Fotos que giran alrededor del título del hero — el plato "contrarrota" para no marearse. */
+.animar-orbita {
+  animation: orbitar var(--duracion-orbita, 26s) linear infinite;
+}
+
+@keyframes gradiente-mover {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* Degradado del hero que respira lentamente en vez de quedarse estático. */
+.animar-gradiente {
+  background-size: 220% 220%;
+  animation: gradiente-mover 14s ease-in-out infinite;
+}
+
+@keyframes latir-suave {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.12);
+  }
+}
+
+/* Halo detrás de la foto del platillo destacado. */
+.animar-latido {
+  animation: latir-suave 3.2s ease-in-out infinite;
+}
+
+/* --- Impresión / "Guardar como PDF" (ver utils/exportar.ts: imprimir) --- */
+
+@media print {
+  /* Chrome recorta los fondos por defecto: sin esto, las barras y donas salen en blanco. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Menú, barra superior y controles no aportan nada en papel. */
+  .no-imprimir {
+    display: none !important;
+  }
+
+  /* El layout admin es una columna con scroll propio: en papel debe fluir libre para poder
+     paginar, si no solo se imprime la primera pantalla. */
+  html,
+  body,
+  #root,
+  #root > div,
+  main {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  main {
+    padding: 0 !important;
+  }
+
+  /* Un panel partido a la mitad entre dos hojas es ilegible. */
+  .evitar-corte {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animar-trazo,
   .animar-area,
@@ -231,12 +514,24 @@ body {
   .animar-barra-h,
   .animar-anillo,
   .animar-entrada,
+  .animar-entrada-3d,
   .animar-bandeja,
   .cinta-desplazar,
   .animar-vapor,
   .animar-flotar,
   .animar-rebote,
   .animar-mosaico,
+  .animar-brillo,
+  .animar-linea,
+  .animar-agregado,
+  .animar-tira,
+  .animar-palabra,
+  .animar-revelar,
+  .animar-resplandor,
+  .animar-orbita,
+  .animar-gradiente,
+  .animar-latido,
+  .barra-progreso,
   .animate-fade-in,
   .animate-scale-in {
     animation: none;

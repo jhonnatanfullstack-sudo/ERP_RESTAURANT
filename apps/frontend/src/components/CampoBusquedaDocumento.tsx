@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import {
+  useFormState,
   useWatch,
   type Control,
   type FieldValues,
@@ -9,17 +10,10 @@ import {
 } from 'react-hook-form';
 import { Loader2, Search } from 'lucide-react';
 import { CODIGOS_CONSULTABLES, FORMATOS_DOCUMENTO } from '../utils/documento';
+import { FormField } from './ui/FormField';
+import { claseCampo, descripcionDe } from './ui/campos';
+import { mensajeError } from '../utils/errores';
 import type { DatosDocumento, TipoDocumentoIdentidad } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
 
 interface CampoBusquedaDocumentoProps<T extends FieldValues> {
   control: Control<T>;
@@ -54,9 +48,15 @@ export function CampoBusquedaDocumento<T extends FieldValues>({
   const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
 
   const tipoSeleccionadoId = useWatch({ control, name: campoTipo });
+  const { errors } = useFormState({ control, name: campoNumero });
   const codigo = tipos?.find((t) => t.id === tipoSeleccionadoId)?.codigo;
   const formato = codigo ? FORMATOS_DOCUMENTO[codigo] : undefined;
   const tipoConsulta = codigo ? CODIGOS_CONSULTABLES[codigo] : undefined;
+
+  const errorValidacion = (errors as Record<string, { message?: string } | undefined>)[campoNumero]
+    ?.message;
+  const error = errorValidacion ?? errorBusqueda ?? undefined;
+  const idCampo = `documento-${campoNumero}`;
 
   async function buscar() {
     if (!tipoConsulta) return;
@@ -76,16 +76,18 @@ export function CampoBusquedaDocumento<T extends FieldValues>({
   }
 
   return (
-    <div>
-      <label className={labelClass}>N° de documento</label>
+    <FormField id={idCampo} label="N° de documento" ayuda={formato?.ayuda} error={error}>
       <div className="flex gap-2">
         <input
           {...register(campoNumero, {
-            required: requerido,
+            required: requerido ? 'El número de documento es obligatorio' : false,
             pattern: formato ? { value: formato.patron, message: formato.ayuda } : undefined,
           })}
+          id={idCampo}
           maxLength={formato?.maxLength}
-          className={inputClass}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={descripcionDe(idCampo, formato?.ayuda, error)}
+          className={claseCampo(!!error)}
         />
         {tipoConsulta && (
           <button
@@ -93,7 +95,8 @@ export function CampoBusquedaDocumento<T extends FieldValues>({
             onClick={() => void buscar()}
             disabled={buscando}
             title="Buscar en RENIEC/SUNAT"
-            className="flex shrink-0 items-center justify-center rounded-lg border border-zinc-300 px-3 text-zinc-500 hover:bg-zinc-50 disabled:opacity-50"
+            aria-label="Buscar en RENIEC/SUNAT"
+            className="flex shrink-0 items-center justify-center rounded-lg border border-zinc-300 px-3 text-zinc-500 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {buscando ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -103,8 +106,6 @@ export function CampoBusquedaDocumento<T extends FieldValues>({
           </button>
         )}
       </div>
-      {formato && <p className="mt-1 text-xs text-zinc-500">{formato.ayuda}</p>}
-      {errorBusqueda && <p className="mt-1 text-xs text-red-600">{errorBusqueda}</p>}
-    </div>
+    </FormField>
   );
 }

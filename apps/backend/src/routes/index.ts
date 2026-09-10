@@ -20,7 +20,10 @@ import { cajaRouter } from '../modules/caja/caja.routes';
 import { almacenRouter } from '../modules/almacenes/almacen.routes';
 import { insumoRouter } from '../modules/insumos/insumo.routes';
 import { recetaRouter } from '../modules/recetas/receta.routes';
+import { reporteRouter } from '../modules/reportes/reporte.routes';
 import { existenciaRouter } from '../modules/inventario/existencia.routes';
+import { proveedorRouter } from '../modules/proveedores/proveedor.routes';
+import { compraRouter } from '../modules/compras/compra.routes';
 
 export const apiRouter = Router();
 
@@ -45,4 +48,7 @@ apiRouter.use('/cajas', cajaRouter);
 apiRouter.use('/almacenes', almacenRouter);
 apiRouter.use('/insumos', insumoRouter);
 apiRouter.use('/recetas', recetaRouter);
+apiRouter.use('/reportes', reporteRouter);
 apiRouter.use('/existencias', existenciaRouter);
+apiRouter.use('/proveedores', proveedorRouter);
+apiRouter.use('/compras', compraRouter);

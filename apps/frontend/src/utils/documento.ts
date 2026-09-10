@@ -21,6 +21,12 @@ export const FORMATOS_DOCUMENTO: Record<
 /** Códigos del catálogo SUNAT 06 que apis.net.pe puede consultar (DNI/RUC). */
 export const CODIGOS_CONSULTABLES: Record<string, 'dni' | 'ruc'> = { '1': 'dni', '6': 'ruc' };
 
+/** DNI reservado del proveedor/cliente genérico "Varios" (ver migración
+ * `SeedProveedorClienteVarios`) — no corresponde a una persona real. `BuscadorProveedor` y
+ * `BuscadorCliente` lo usan para encontrar ese registro y preseleccionarlo automáticamente
+ * en Compras/Ventas/Pedidos, sin depender de su UUID (que varía por entorno). */
+export const NUMERO_DOCUMENTO_VARIOS = '99999999';
+
 const CODIGO_RUC = '6';
 const PREFIJO_RUC_PERSONA_JURIDICA = '20';
 

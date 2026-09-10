@@ -3,15 +3,13 @@ import { useForm } from 'react-hook-form';
 import * as authService from '../services/auth.service';
 import { Alert } from '../components/ui/Alert';
 import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { mensajeError } from '../utils/errores';
 
 interface FormValues {
   passwordActual: string;
   passwordNuevo: string;
 }
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
 export function CambiarPassword() {
   const { register, handleSubmit, reset, formState } = useForm<FormValues>();
@@ -26,10 +24,7 @@ export function CambiarPassword() {
       setExito(true);
       reset();
     } catch (err) {
-      const mensaje =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        'No se pudo actualizar la contraseña';
-      setError(mensaje);
+      setError(mensajeError(err, 'No se pudo actualizar la contraseña'));
     }
   }
 
@@ -42,32 +37,37 @@ export function CambiarPassword() {
 
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="flex max-w-sm flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
+        className="flex max-w-md flex-col gap-4 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
+        noValidate
       >
         {error && <Alert tipo="error" mensaje={error} />}
         {exito && <Alert tipo="exito" mensaje="Contraseña actualizada correctamente" />}
 
-        <div>
-          <label className={labelClass}>Contraseña actual</label>
-          <input
-            type="password"
-            {...register('passwordActual', { required: true })}
-            className={inputClass}
-          />
-        </div>
+        <Input
+          label="Contraseña actual"
+          type="password"
+          autoComplete="current-password"
+          error={formState.errors.passwordActual?.message}
+          {...register('passwordActual', { required: 'Ingresa tu contraseña actual' })}
+        />
 
-        <div>
-          <label className={labelClass}>Contraseña nueva</label>
-          <input
-            type="password"
-            {...register('passwordNuevo', { required: true, minLength: 8 })}
-            className={inputClass}
-          />
-        </div>
+        <Input
+          label="Contraseña nueva"
+          type="password"
+          autoComplete="new-password"
+          ayuda="Mínimo 8 caracteres."
+          error={formState.errors.passwordNuevo?.message}
+          {...register('passwordNuevo', {
+            required: 'Ingresa la contraseña nueva',
+            minLength: { value: 8, message: 'La contraseña debe tener al menos 8 caracteres' },
+          })}
+        />
 
-        <Button type="submit" disabled={formState.isSubmitting} className="mt-2 w-full">
-          Actualizar contraseña
-        </Button>
+        <div className="mt-2 border-t border-zinc-100 pt-4">
+          <Button type="submit" cargando={formState.isSubmitting} className="w-full sm:w-auto">
+            {formState.isSubmitting ? 'Actualizando…' : 'Actualizar contraseña'}
+          </Button>
+        </div>
       </form>
     </div>
   );

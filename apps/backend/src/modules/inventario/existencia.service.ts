@@ -1,3 +1,4 @@
+import type { EntityManager } from 'typeorm';
 import { HttpError } from '../../utils/http-error';
 import { empresaRepository } from '../empresa/empresa.repository';
 import { almacenRepository } from '../almacenes/almacen.repository';
@@ -13,6 +14,10 @@ import type { Comanda } from '../cocina/comanda.entity';
 import type { Pedido } from '../pedidos/pedido.entity';
 import type { Venta } from '../ventas/venta.entity';
 import type { LineaVentaDto } from '../ventas/venta.dto';
+import type { Almacen } from '../almacenes/almacen.entity';
+import type { Compra } from '../compras/compra.entity';
+import type { DetalleCompra } from '../compras/detalle-compra.entity';
+import type { Usuario } from '../usuarios/usuario.entity';
 
 const RELACIONES_MOVIMIENTO = {
   almacen: true,
@@ -280,5 +285,66 @@ async function registrarSalidaVentaDirecta(
       venta,
     });
     await existenciaRepository.save(movimiento);
+  }
+}
+
+/** Da de alta el stock de una compra recién registrada: un movimiento `compra` por línea,
+ * enlazado a la `Compra` para trazabilidad (FASE 17). Reemplaza, para el caso con proveedor,
+ * el registro manual de `POST /api/existencias/movimientos` (que sigue existiendo para altas
+ * sin proveedor — ej. donación, traslado). `manager` permite ejecutarlo dentro de la misma
+ * transacción que `actualizarCompra` (reversa + nueva alta atómicas, ver `compra.service.ts`);
+ * sin él usa el repositorio normal, como al registrar una compra nueva. */
+export async function registrarEntradasCompra(
+  compra: Compra,
+  detalles: DetalleCompra[],
+  almacen: Almacen,
+  usuario: Usuario,
+  manager?: EntityManager,
+): Promise<void> {
+  const repositorio = manager ? manager.getRepository(Existencia) : existenciaRepository;
+  for (const detalle of detalles) {
+    const movimiento = repositorio.create({
+      almacen,
+      insumo: detalle.insumo,
+      producto: detalle.producto,
+      tipo: TipoMovimientoExistencia.COMPRA,
+      cantidad: detalle.cantidad,
+      costoUnitario: detalle.costoUnitario,
+      compra,
+      usuario,
+    });
+    await repositorio.save(movimiento);
+  }
+}
+
+/** Reversa el stock de una compra anulada (o de las líneas anteriores al editarla, ver
+ * `compra.service.ts: actualizarCompra`): un movimiento `anulacion_compra` por cada movimiento
+ * `compra` que esa compra generó — nunca se borran ni editan los originales (mismo criterio de
+ * "el kardex nunca se borra" que ya rige el resto de `existencias`). Se relee desde los
+ * movimientos ya guardados (no desde `detalles`) para no asumir que el almacén de cada línea
+ * siguió siendo el mismo. `manager` permite ejecutarlo dentro de una transacción, ver arriba. */
+export async function anularEntradasCompra(
+  compra: Compra,
+  usuario: Usuario,
+  manager?: EntityManager,
+  observacion = 'Reversa por anulación de compra',
+): Promise<void> {
+  const repositorio = manager ? manager.getRepository(Existencia) : existenciaRepository;
+  const originales = await repositorio.find({
+    where: { compra: { id: compra.id }, tipo: TipoMovimientoExistencia.COMPRA },
+    relations: { almacen: true, insumo: true, producto: true },
+  });
+  for (const original of originales) {
+    const reversa = repositorio.create({
+      almacen: original.almacen,
+      insumo: original.insumo,
+      producto: original.producto,
+      tipo: TipoMovimientoExistencia.ANULACION_COMPRA,
+      cantidad: original.cantidad,
+      compra,
+      usuario,
+      observacion,
+    });
+    await repositorio.save(reversa);
   }
 }

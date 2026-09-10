@@ -13,20 +13,14 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Input } from '../components/ui/Input';
+import { Select } from '../components/ui/Select';
+import { Checkbox } from '../components/ui/Checkbox';
+import { FormActions } from '../components/ui/FormActions';
+import { mensajeError } from '../utils/errores';
 import type { ActualizarMesaInput, CrearMesaInput } from '../services/mesas.service';
 import type { Mesa } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
 
 export function Mesas() {
   const { tienePermiso } = useAuth();
@@ -99,7 +93,16 @@ export function Mesas() {
     },
   });
 
-  if (mesasQuery.isLoading) return <Spinner />;
+  function cerrarCrear() {
+    setModalAbierto(false);
+    crearForm.reset();
+    crearMutation.reset();
+  }
+
+  function cerrarEditar() {
+    setMesaEditando(null);
+    editarMutation.reset();
+  }
 
   const mesas = mesasQuery.data ?? [];
   const mesasFiltradas =
@@ -208,12 +211,20 @@ export function Mesas() {
         filas={mesasFiltradas}
         claveFila={(m) => m.id}
         vacio="No hay mesas registradas"
+        cargando={mesasQuery.isLoading}
+        error={
+          mesasQuery.isError
+            ? mensajeError(mesasQuery.error, 'No se pudieron cargar las mesas')
+            : undefined
+        }
+        onReintentar={() => void mesasQuery.refetch()}
       />
 
-      <Modal abierto={modalAbierto} titulo="Nueva mesa" onCerrar={() => setModalAbierto(false)}>
+      <Modal abierto={modalAbierto} titulo="Nueva mesa" onCerrar={cerrarCrear}>
         <form
           onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
           className="flex flex-col gap-4"
+          noValidate
         >
           {crearMutation.isError && (
             <Alert
@@ -222,57 +233,56 @@ export function Mesas() {
             />
           )}
 
-          <div>
-            <label className={labelClass}>Salón</label>
-            <select {...crearForm.register('salonId', { required: true })} className={inputClass}>
-              <option value="">Seleccionar…</option>
-              {salonesQuery.data?.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Número</label>
-              <input
-                {...crearForm.register('numero', { required: true })}
-                className={inputClass}
-                placeholder="Ej. 1, A-05"
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Capacidad</label>
-              <input
-                type="number"
-                min="1"
-                {...crearForm.register('capacidad', { required: true, valueAsNumber: true })}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
+          <Select
+            label="Salón"
+            error={crearForm.formState.errors.salonId?.message}
+            {...crearForm.register('salonId', { required: 'Selecciona el salón' })}
           >
-            Crear mesa
-          </Button>
+            <option value="">Seleccionar…</option>
+            {salonesQuery.data?.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nombre}
+              </option>
+            ))}
+          </Select>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Número"
+              placeholder="Ej. 1, A-05"
+              ayuda="Único dentro del salón."
+              error={crearForm.formState.errors.numero?.message}
+              {...crearForm.register('numero', { required: 'El número es obligatorio' })}
+            />
+            <Input
+              label="Capacidad"
+              type="number"
+              min="1"
+              ayuda="Cantidad de personas."
+              error={crearForm.formState.errors.capacidad?.message}
+              {...crearForm.register('capacidad', {
+                required: 'La capacidad es obligatoria',
+                valueAsNumber: true,
+                min: { value: 1, message: 'La capacidad debe ser al menos 1' },
+              })}
+            />
+          </div>
+
+          <FormActions
+            enviar="Crear mesa"
+            enviandoTexto="Creando…"
+            onCancelar={cerrarCrear}
+            enviando={crearForm.formState.isSubmitting || crearMutation.isPending}
+          />
         </form>
       </Modal>
 
-      <Modal
-        abierto={mesaEditando !== null}
-        titulo="Editar mesa"
-        onCerrar={() => setMesaEditando(null)}
-      >
+      <Modal abierto={mesaEditando !== null} titulo="Editar mesa" onCerrar={cerrarEditar}>
         {mesaEditando && (
           <form
             onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
             className="flex flex-col gap-4"
+            noValidate
           >
             {editarMutation.isError && (
               <Alert
@@ -281,55 +291,50 @@ export function Mesas() {
               />
             )}
 
-            <div>
-              <label className={labelClass}>Salón</label>
-              <select
-                {...editarForm.register('salonId', { required: true })}
-                className={inputClass}
-              >
-                {salonesQuery.data?.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Número</label>
-                <input
-                  {...editarForm.register('numero', { required: true })}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Capacidad</label>
-                <input
-                  type="number"
-                  min="1"
-                  {...editarForm.register('capacidad', { required: true, valueAsNumber: true })}
-                  className={inputClass}
-                />
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2.5 text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                {...editarForm.register('activo')}
-                className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
-              />
-              Mesa activa
-            </label>
-
-            <Button
-              type="submit"
-              disabled={editarForm.formState.isSubmitting || editarMutation.isPending}
-              className="mt-2 w-full"
+            <Select
+              label="Salón"
+              error={editarForm.formState.errors.salonId?.message}
+              {...editarForm.register('salonId', { required: 'Selecciona el salón' })}
             >
-              Guardar cambios
-            </Button>
+              {salonesQuery.data?.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nombre}
+                </option>
+              ))}
+            </Select>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Número"
+                ayuda="Único dentro del salón."
+                error={editarForm.formState.errors.numero?.message}
+                {...editarForm.register('numero', { required: 'El número es obligatorio' })}
+              />
+              <Input
+                label="Capacidad"
+                type="number"
+                min="1"
+                ayuda="Cantidad de personas."
+                error={editarForm.formState.errors.capacidad?.message}
+                {...editarForm.register('capacidad', {
+                  required: 'La capacidad es obligatoria',
+                  valueAsNumber: true,
+                  min: { value: 1, message: 'La capacidad debe ser al menos 1' },
+                })}
+              />
+            </div>
+
+            <Checkbox
+              label="Mesa activa"
+              ayuda="Las mesas inactivas no admiten nuevos pedidos ni reservas."
+              {...editarForm.register('activo')}
+            />
+
+            <FormActions
+              enviar="Guardar cambios"
+              onCancelar={cerrarEditar}
+              enviando={editarForm.formState.isSubmitting || editarMutation.isPending}
+            />
           </form>
         )}
       </Modal>

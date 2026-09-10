@@ -38,6 +38,12 @@ export class Empresa {
   @UpdateDateColumn({ name: 'actualizado_en', type: 'timestamptz' })
   actualizadoEn!: Date;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  ubigeo!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  logo!: string | null;
+
   /** Si la empresa se acogió al régimen especial de IGV para MYPE de restaurantes/hoteles
    * (10.5% en vez del 18% general, Ley N° 31940/32219/32387) — no es automático, requiere
    * acogimiento explícito ante SUNAT (Formulario Virtual 621), así que es un dato que cada

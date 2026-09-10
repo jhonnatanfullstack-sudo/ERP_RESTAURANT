@@ -24,7 +24,7 @@ export function BotonSubir() {
       type="button"
       onClick={() => window.scrollTo({ top: 0, behavior: movimientoReducido ? 'auto' : 'smooth' })}
       aria-label="Volver arriba"
-      className="animate-scale-in fixed bottom-5 left-5 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-white text-zinc-600 shadow-lg ring-1 ring-zinc-200 transition-transform hover:-translate-y-0.5 hover:text-orange-600 sm:bottom-8 sm:left-8"
+      className="animate-scale-in fixed bottom-5 left-5 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-(--carta-superficie) text-(--carta-suave) shadow-lg ring-1 ring-(--carta-borde) transition-transform hover:-translate-y-0.5 hover:text-(--carta-acento) sm:bottom-8 sm:left-8"
     >
       <ArrowUp className="h-5 w-5" />
     </button>

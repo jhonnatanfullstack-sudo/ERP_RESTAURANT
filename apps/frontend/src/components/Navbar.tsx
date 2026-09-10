@@ -21,7 +21,7 @@ export function Navbar({ onAbrirMenuMovil }: NavbarProps) {
   const iniciales = inicialesPersonal(usuario.personal);
 
   return (
-    <header className="flex h-16 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 md:px-6">
+    <header className="no-imprimir flex h-16 items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 md:px-6">
       <button
         type="button"
         aria-label="Abrir menú"

@@ -1,61 +1,55 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { LayoutGrid, MessageCircle, Search, Sparkles, UtensilsCrossed, X } from 'lucide-react';
+import { AlertTriangle, MessageCircle, Search, UtensilsCrossed, X } from 'lucide-react';
 import * as productosService from '../../services/productos.service';
 import * as empresaService from '../../services/empresa.service';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { ProductoCarta } from '../../components/public/ProductoCarta';
-import { SeccionCategoriaCarta } from '../../components/public/SeccionCategoriaCarta';
+import { MenuInteractivo } from '../../components/public/MenuInteractivo';
 import { BandejaPedidoFlotante } from '../../components/public/BandejaPedidoFlotante';
 import { BotonSubir } from '../../components/public/BotonSubir';
-import { CarruselPlatillos } from '../../components/public/CarruselPlatillos';
-import { CintaAnimada } from '../../components/public/CintaAnimada';
+import { ModalPlatillo } from '../../components/public/ModalPlatillo';
+import { BarraProgresoLectura } from '../../components/public/BarraProgresoLectura';
+import { PalabraRotativa } from '../../components/public/PalabraRotativa';
+import { ComoPedir } from '../../components/public/ComoPedir';
+import { MapaUbicacion } from '../../components/public/MapaUbicacion';
 import { useBandejaPedido } from '../../hooks/useBandejaPedido';
-import { useEnVista } from '../../hooks/useEnVista';
-import { useDesplazamientoParalaje } from '../../hooks/useDesplazamientoParalaje';
 import { useMovimientoReducido } from '../../hooks/animacion';
 import { enlaceWhatsApp } from '../../utils/whatsapp';
 import { urlImagen } from '../../utils/formato';
+import type { GrupoCategoria } from '../../components/public/MenuInteractivo';
 import type { Producto } from '../../types/api';
 
-/** Máximo de platillos que muestra el carrusel — es una vitrina, no un listado completo. */
-const MAXIMO_EN_CARRUSEL = 10;
-/** Cuántas fotos rellenan el mosaico del hero — se repiten si hay menos platillos que esto. */
-const CANTIDAD_MOSAICO = 18;
-/** Compensa la barra pegajosa (header + buscador + categorías) al saltar a una sección. */
+/** Compensa la barra pegajosa (cabecera + buscador) al saltar a una categoría. */
 const DESPLAZAMIENTO_SALTO_MS = 60;
 
 // Referencia estable: `productosQuery.data ?? []` crearía un arreglo nuevo en cada render
 // mientras carga, invalidando innecesariamente los useMemo que dependen de `productos`.
 const SIN_PRODUCTOS: Producto[] = [];
 
-/** Grilla de tarjetas fantasma mientras carga la carta — más agradable que un spinner suelto
- * en una página pensada para clientes, no para el staff. */
-function CuadriculaCargando() {
+/** Esqueleto de la lista mientras carga: repite la forma real (nombre, filete, precio) para
+ * que la página no salte cuando llegan los datos. */
+function ListaCargando() {
   return (
-    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      {Array.from({ length: 6 }).map((_, indice) => (
-        <div
-          key={indice}
-          className="animate-pulse overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
-        >
-          <div className="aspect-4/3 bg-zinc-100" />
-          <div className="space-y-2.5 p-4">
-            <div className="h-4 w-2/3 rounded bg-zinc-100" />
-            <div className="h-3 w-full rounded bg-zinc-100" />
-            <div className="mt-3 h-9 w-full rounded-xl bg-zinc-100" />
+    <div className="animate-pulse">
+      <div className="h-3 w-32 rounded bg-(--carta-elevado)" />
+      <div className="mt-8 flex flex-col gap-8">
+        {Array.from({ length: 5 }).map((_, indice) => (
+          <div key={indice} className="flex items-center gap-4">
+            <div className="h-6 w-44 rounded bg-(--carta-elevado)" />
+            <div className="h-px flex-1 bg-(--carta-elevado)" />
+            <div className="h-6 w-16 rounded bg-(--carta-elevado)" />
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
 
 export function Carta() {
   const [busqueda, setBusqueda] = useState('');
+  const [platilloAbierto, setPlatilloAbierto] = useState<Producto | null>(null);
   const bandeja = useBandejaPedido();
   const movimientoReducido = useMovimientoReducido();
-  const paralaje = useDesplazamientoParalaje();
 
   const productosQuery = useQuery({
     queryKey: ['productos-publico'],
@@ -79,7 +73,7 @@ export function Carta() {
     return Array.from(vistas, ([id, nombre]) => ({ id, nombre }));
   }, [productos]);
 
-  const productosPorCategoria = useMemo(
+  const grupos = useMemo<GrupoCategoria[]>(
     () =>
       categorias.map((categoria) => ({
         categoria,
@@ -88,25 +82,25 @@ export function Carta() {
     [categorias, productos],
   );
 
-  const resultadosBusqueda = useMemo(() => {
+  // La búsqueda reusa la misma lista: un solo grupo con los resultados, para no mantener dos
+  // presentaciones distintas del mismo contenido.
+  const gruposBusqueda = useMemo<GrupoCategoria[]>(() => {
     const termino = busqueda.trim().toLowerCase();
-    if (!termino) return SIN_PRODUCTOS;
-    return productos.filter(
+    if (!termino) return [];
+    const encontrados = productos.filter(
       (producto) =>
         producto.nombre.toLowerCase().includes(termino) ||
         (producto.descripcion?.toLowerCase().includes(termino) ?? false),
     );
+    return encontrados.length === 0
+      ? []
+      : [{ categoria: { id: 'busqueda', nombre: `Resultados (${encontrados.length})` }, productos: encontrados }];
   }, [productos, busqueda]);
 
-  // --- Scrollspy: qué categoría resaltar en la barra según lo que esté a la vista, y qué
-  // secciones ya se revelaron alguna vez (para su animación de entrada). Un solo observer
-  // sirve para ambas cosas. Como las secciones recién se montan cuando `productos` termina
-  // de cargar, el efecto depende de `categorias` (que cambia justo en ese momento) — no de
-  // un `useRef` vacío que nunca dispararía un nuevo `useEffect` por sí solo.
+  // --- Scrollspy: qué categoría resaltar en la barra según lo que esté a la vista.
   const seccionesRef = useRef(new Map<string, HTMLElement>());
-  const inicioGridRef = useRef<HTMLDivElement>(null);
+  const inicioMenuRef = useRef<HTMLDivElement>(null);
   const [interseccion, setInterseccion] = useState<Record<string, boolean>>({});
-  const [reveladas, setReveladas] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (buscando || categorias.length === 0) return;
@@ -120,21 +114,8 @@ export function Carta() {
           });
           return nuevo;
         });
-        setReveladas((previo) => {
-          let cambio = false;
-          const nuevo = new Set(previo);
-          entradas.forEach((entrada) => {
-            if (!entrada.isIntersecting) return;
-            const id = (entrada.target as HTMLElement).dataset.categoriaId;
-            if (id && !nuevo.has(id)) {
-              nuevo.add(id);
-              cambio = true;
-            }
-          });
-          return cambio ? nuevo : previo;
-        });
       },
-      { rootMargin: '-170px 0px -65% 0px', threshold: 0 },
+      { rootMargin: '-160px 0px -60% 0px', threshold: 0 },
     );
 
     seccionesRef.current.forEach((elemento) => observer.observe(elemento));
@@ -150,171 +131,141 @@ export function Carta() {
     };
   }
 
+  function irA(elemento: HTMLElement | null | undefined) {
+    elemento?.scrollIntoView({
+      behavior: movimientoReducido ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  }
+
   function irACategoria(id: string | null) {
     if (busqueda) setBusqueda('');
-    // Si había una búsqueda activa, las secciones recién vuelven a montarse — se espera un
-    // instante a que el DOM las tenga antes de medir dónde saltar.
+    // Si había búsqueda activa, las secciones recién vuelven a montarse: se espera un instante
+    // a que el DOM las tenga antes de medir dónde saltar.
     window.setTimeout(() => {
-      const objetivo = id ? seccionesRef.current.get(id) : inicioGridRef.current;
-      objetivo?.scrollIntoView({
-        behavior: movimientoReducido ? 'auto' : 'smooth',
-        block: 'start',
-      });
+      irA(id ? seccionesRef.current.get(id) : inicioMenuRef.current);
     }, DESPLAZAMIENTO_SALTO_MS);
   }
 
   const enlaceWspGeneral = empresa?.telefono
     ? enlaceWhatsApp(
         empresa.telefono,
-        `¡Hola ${nombreRestaurante}! Quisiera hacer una consulta sobre la carta.`,
+        `Hola ${nombreRestaurante}, quisiera hacer una consulta sobre la carta.`,
       )
     : null;
 
-  const carrusel = productos.slice(0, MAXIMO_EN_CARRUSEL);
-  const { ref: refCarrusel, visible: carruselVisible } = useEnVista<HTMLDivElement>();
-
-  // Fotos reales de los platillos como fondo del hero — "imágenes de restaurante" genuinas,
-  // no stock. Se repiten si hay pocas: bajo el degradado semitransparente + backdrop-blur
-  // leen como una textura cálida, no como una foto repetida de forma obvia.
-  const fotosMosaico = useMemo(() => {
-    const urls = productos.map((p) => urlImagen(p.imagenUrl)).filter((url): url is string => !!url);
-    if (urls.length === 0) return [];
-    return Array.from({ length: CANTIDAD_MOSAICO }, (_, i) => urls[i % urls.length]);
+  const fotoHero = useMemo(() => {
+    const conFoto = productos.find((producto) => urlImagen(producto.imagenUrl) !== null);
+    return conFoto ? { url: urlImagen(conFoto.imagenUrl)!, nombre: conFoto.nombre } : null;
   }, [productos]);
+
+  const cantidadPlatilloAbierto = platilloAbierto
+    ? (bandeja.items.find((item) => item.productoId === platilloAbierto.id)?.cantidad ?? 0)
+    : 0;
+
+  const gruposVisibles = buscando ? gruposBusqueda : grupos;
 
   return (
     <div>
-      {/* Hero + vitrina de platillos */}
-      <section className="relative overflow-hidden pt-16 pb-20 text-white sm:pt-24 sm:pb-28">
-        {fotosMosaico.length > 0 && (
-          <div
-            aria-hidden="true"
-            className="animar-mosaico absolute -inset-x-4 -top-[15%] -bottom-[15%]"
-            style={{ transform: `translateY(${-paralaje}px)` }}
-          >
-            <div className="grid h-full grid-cols-3 gap-1 sm:grid-cols-6">
-              {fotosMosaico.map((url, indice) => (
-                <div key={indice} className="relative overflow-hidden">
-                  <img src={url} alt="" className="h-full w-full object-cover" />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 bg-gradient-to-br from-orange-700/95 via-orange-600/90 to-amber-500/90 backdrop-blur-[3px]"
-        />
+      <BarraProgresoLectura />
 
-        <div
-          aria-hidden="true"
-          className="animar-flotar pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl"
-        />
-        <div
-          aria-hidden="true"
-          className="animar-flotar pointer-events-none absolute -bottom-28 -left-16 h-72 w-72 rounded-full bg-black/10 blur-3xl"
-          style={{ animationDelay: '1.5s' }}
-        />
+      {/* Hero: el titular manda y la foto entra desde el borde de la pantalla, sin quedar
+          encajada en una tarjeta centrada. */}
+      <section className="relative overflow-hidden pt-16 pb-20 sm:pt-24 sm:pb-28">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-8">
+          <div>
+            <p
+              className="animar-revelar text-xs font-semibold tracking-[0.2em] text-(--carta-acento) uppercase"
+              style={{ animationDelay: '60ms' }}
+            >
+              Carta digital
+            </p>
+            <h1
+              // Tope en 6xl: a 7xl "Pide por WhatsApp." no entra en esta columna y el titular
+              // parte en tres líneas, cortando la frase por la mitad.
+              className="animar-revelar mt-6 text-[2.6rem] leading-[1.02] font-semibold tracking-tight sm:text-5xl lg:text-6xl"
+              style={{ animationDelay: '150ms' }}
+            >
+              Elige tu{' '}
+              <PalabraRotativa palabras={['almuerzo.', 'antojo.', 'cena.', 'menú.']} />
+              <br />
+              Pide por WhatsApp.
+            </h1>
+            <p
+              className="animar-revelar mt-6 max-w-sm text-base leading-relaxed text-(--carta-suave)"
+              style={{ animationDelay: '240ms' }}
+            >
+              Toda la carta con fotos y precios al día. Arma tu pedido y envíalo en un toque.
+            </p>
 
-        <div className="relative mx-auto max-w-3xl px-6 text-center">
-          <div className="relative inline-block">
-            {/* Vapor: el mismo guiño visual de "recién servido" que un plato humeante. */}
             <div
-              aria-hidden="true"
-              className="pointer-events-none absolute -top-3 left-1/2 flex -translate-x-1/2 gap-2.5"
+              className="animar-revelar mt-9 flex flex-wrap items-center gap-3"
+              style={{ animationDelay: '330ms' }}
             >
-              <span className="animar-vapor h-6 w-1 rounded-full bg-white/50 blur-[2px]" />
-              <span
-                className="animar-vapor h-8 w-1 rounded-full bg-white/50 blur-[2px]"
-                style={{ animationDelay: '0.7s' }}
-              />
-              <span
-                className="animar-vapor h-6 w-1 rounded-full bg-white/50 blur-[2px]"
-                style={{ animationDelay: '1.4s' }}
-              />
+              <button
+                type="button"
+                onClick={() => irA(inicioMenuRef.current)}
+                className="rounded-xl bg-(--carta-acento) px-7 py-4 text-sm font-semibold text-(--carta-acento-contraste) transition-transform hover:-translate-y-0.5 active:translate-y-0"
+              >
+                Ver la carta
+              </button>
+              {enlaceWspGeneral && (
+                <a
+                  href={enlaceWspGeneral}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-2 rounded-xl border border-(--carta-borde) px-7 py-4 text-sm font-semibold transition-colors hover:bg-(--carta-elevado)"
+                >
+                  <MessageCircle className="h-4 w-4" strokeWidth={2.25} />
+                  Escríbenos
+                </a>
+              )}
             </div>
-            <span className="animate-fade-in inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3.5 py-1.5 text-xs font-semibold tracking-wide uppercase backdrop-blur">
-              🍽️ Carta digital
-            </span>
           </div>
-          <h1 className="animate-fade-in mt-4 text-4xl font-bold tracking-tight sm:text-5xl">
-            Nuestra Carta
-          </h1>
-          <p className="animate-fade-in mx-auto mt-3 max-w-xl text-sm text-orange-50 sm:text-base">
-            Descubre nuestros platillos, arma tu pedido y envíanoslo directo por WhatsApp —
-            preparados con los mejores ingredientes.
-          </p>
 
-          {enlaceWspGeneral && (
-            <a
-              href={enlaceWspGeneral}
-              target="_blank"
-              rel="noreferrer"
-              className="animate-scale-in mt-7 inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-sm font-bold text-orange-700 shadow-lg shadow-black/10 transition-transform hover:scale-105 active:scale-95"
+          {fotoHero && (
+            <div
+              className="animar-revelar relative hidden lg:block"
+              style={{ animationDelay: '420ms' }}
             >
-              <MessageCircle className="h-4.5 w-4.5" strokeWidth={2.25} />
-              Escríbenos por WhatsApp
-            </a>
+              <div
+                aria-hidden="true"
+                className="animar-resplandor absolute -inset-6 rounded-full bg-(--carta-acento)/10 blur-3xl"
+              />
+              {/* `w-screen` more allá del contenedor: la foto sale por el borde derecho de la
+                  pantalla en vez de quedar centrada como una tarjeta. */}
+              <div className="relative overflow-hidden rounded-l-[3rem]">
+                <img
+                  src={fotoHero.url}
+                  alt={fotoHero.nombre}
+                  className="aspect-[4/5] w-full object-cover"
+                />
+              </div>
+            </div>
           )}
         </div>
-
-        {carrusel.length >= 2 && (
-          <div
-            ref={refCarrusel}
-            className={`relative mt-14 transition-all duration-700 sm:mt-16 ${
-              carruselVisible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'
-            }`}
-          >
-            <p className="flex items-center justify-center gap-1.5 text-xs font-semibold tracking-wide text-orange-100 uppercase">
-              <Sparkles className="h-3.5 w-3.5" />
-              Desliza para ver más
-            </p>
-            <div className="mt-4">
-              <CarruselPlatillos
-                productos={carrusel}
-                items={bandeja.items}
-                onAgregar={(productoId) => bandeja.agregar(productoId)}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Divisor de onda: cierra la zona de color hacia el fondo claro del resto de la página. */}
-        <svg
-          aria-hidden="true"
-          viewBox="0 0 1440 100"
-          preserveAspectRatio="none"
-          className="absolute -bottom-px left-0 h-12 w-full text-zinc-50 sm:h-20"
-        >
-          <path
-            fill="currentColor"
-            d="M0,40 C240,90 480,0 720,40 C960,80 1200,10 1440,40 L1440,100 L0,100 Z"
-          />
-        </svg>
       </section>
 
-      <CintaAnimada />
-
-      {/* Buscador + categorías: saltan a la sección correspondiente en vez de filtrar la
-          página (más parecido a cómo se navega un menú digital de restaurante). */}
+      {/* Barra: buscador y salto entre categorías. */}
       {productos.length > 0 && (
-        <div className="sticky top-[65px] z-20 border-b border-zinc-200 bg-zinc-50/90 backdrop-blur-md">
-          <div className="mx-auto max-w-6xl px-6 py-4">
-            <div className="relative mx-auto max-w-sm sm:mx-0">
-              <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+        <div className="sticky top-16 z-20 border-y border-(--carta-borde) bg-(--carta-fondo)/90 backdrop-blur-xl">
+          <div className="mx-auto flex max-w-6xl flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-center sm:px-8">
+            <div className="relative sm:w-72">
+              <Search className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-(--carta-suave)" />
               <input
                 type="search"
                 value={busqueda}
                 onChange={(evento) => setBusqueda(evento.target.value)}
-                placeholder="Buscar en la carta…"
-                className="w-full rounded-full border border-zinc-200 bg-white py-2.5 pr-9 pl-10 text-sm shadow-sm transition-colors focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
+                placeholder="Buscar un plato"
+                aria-label="Buscar en la carta"
+                className="w-full rounded-xl border border-(--carta-borde) bg-(--carta-superficie) py-2.5 pr-9 pl-10 text-sm transition-colors placeholder:text-(--carta-suave) focus:border-(--carta-acento) focus:outline-none"
               />
               {busqueda && (
                 <button
                   type="button"
                   onClick={() => setBusqueda('')}
                   aria-label="Limpiar búsqueda"
-                  className="absolute top-1/2 right-3 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                  className="absolute top-1/2 right-3 -translate-y-1/2 text-(--carta-suave) transition-colors hover:text-(--carta-texto)"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -322,48 +273,20 @@ export function Carta() {
             </div>
 
             {categorias.length > 1 && (
-              <div className="mt-3.5 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <button
-                  type="button"
-                  onClick={() => irACategoria(null)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
-                    !buscando && !categoriaEnVista
-                      ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/25'
-                      : 'bg-white text-zinc-600 ring-1 ring-inset ring-zinc-200 hover:bg-zinc-100'
-                  }`}
-                >
-                  <LayoutGrid className="h-3.5 w-3.5" strokeWidth={2.25} />
-                  Todas
-                </button>
+              <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-none sm:ml-auto [&::-webkit-scrollbar]:hidden">
                 {categorias.map((categoria) => {
-                  const foto = urlImagen(
-                    productos.find((p) => p.categoria.id === categoria.id)?.imagenUrl ?? null,
-                  );
                   const activa = !buscando && categoriaEnVista === categoria.id;
                   return (
                     <button
                       key={categoria.id}
                       type="button"
                       onClick={() => irACategoria(categoria.id)}
-                      className={`flex shrink-0 items-center gap-2 rounded-full py-1.5 pr-4 pl-1.5 text-sm font-medium transition-all ${
+                      className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
                         activa
-                          ? 'bg-orange-600 text-white shadow-sm shadow-orange-600/25'
-                          : 'bg-white text-zinc-600 ring-1 ring-inset ring-zinc-200 hover:bg-zinc-100'
+                          ? 'bg-(--carta-texto) text-(--carta-fondo)'
+                          : 'text-(--carta-suave) hover:bg-(--carta-elevado) hover:text-(--carta-texto)'
                       }`}
                     >
-                      <span
-                        className={`flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${
-                          activa ? 'ring-2 ring-white/60' : 'bg-zinc-100'
-                        }`}
-                      >
-                        {foto ? (
-                          <img src={foto} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <UtensilsCrossed
-                            className={`h-3 w-3 ${activa ? 'text-white' : 'text-zinc-400'}`}
-                          />
-                        )}
-                      </span>
                       {categoria.nombre}
                     </button>
                   );
@@ -374,70 +297,85 @@ export function Carta() {
         </div>
       )}
 
-      <div className="relative mx-auto max-w-6xl overflow-hidden px-6 py-10">
-        <UtensilsCrossed
-          aria-hidden="true"
-          strokeWidth={0.6}
-          className="pointer-events-none absolute -top-10 -right-16 h-64 w-64 text-zinc-900/[0.03]"
-        />
-
-        {productosQuery.isLoading ? (
-          <CuadriculaCargando />
+      <div
+        ref={inicioMenuRef}
+        className="mx-auto max-w-6xl scroll-mt-32 px-5 py-16 sm:px-8 sm:py-24"
+      >
+        {productosQuery.isError ? (
+          <div className="py-10">
+            <EmptyState
+              icono={AlertTriangle}
+              titulo="No pudimos cargar la carta"
+              descripcion="Vuelve a intentarlo en un momento o escríbenos por WhatsApp."
+            />
+            <div className="mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => void productosQuery.refetch()}
+                className="rounded-xl border border-(--carta-borde) px-5 py-2.5 text-sm font-semibold transition-colors hover:bg-(--carta-elevado)"
+              >
+                Reintentar
+              </button>
+            </div>
+          </div>
+        ) : productosQuery.isLoading ? (
+          <ListaCargando />
         ) : productos.length === 0 ? (
-          <div className="relative rounded-2xl border border-zinc-200 bg-white px-6 py-16 shadow-sm">
+          <div className="py-10">
             <EmptyState
               icono={UtensilsCrossed}
-              titulo="Estamos preparando nuestra carta digital"
-              descripcion="Muy pronto podrás ver todos nuestros productos y precios aquí."
+              titulo="Estamos preparando nuestra carta"
+              descripcion="Muy pronto verás aquí todos nuestros platos y precios."
             />
           </div>
-        ) : buscando ? (
-          resultadosBusqueda.length === 0 ? (
-            <div className="relative rounded-2xl border border-zinc-200 bg-white px-6 py-16 shadow-sm">
-              <EmptyState
-                icono={Search}
-                titulo="No encontramos productos con ese criterio"
-                descripcion="Prueba con otra palabra o revisa las categorías de abajo."
-              />
-            </div>
-          ) : (
-            <div className="relative grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {resultadosBusqueda.map((producto, indice) => {
-                const enBandeja = bandeja.items.find((item) => item.productoId === producto.id);
-                return (
-                  <ProductoCarta
-                    key={producto.id}
-                    producto={producto}
-                    cantidadEnBandeja={enBandeja?.cantidad ?? 0}
-                    onAgregar={() => bandeja.agregar(producto.id)}
-                    onQuitarUna={() =>
-                      bandeja.cambiarCantidad(producto.id, (enBandeja?.cantidad ?? 1) - 1)
-                    }
-                    retraso={Math.min(indice, 8) * 45}
-                  />
-                );
-              })}
-            </div>
-          )
-        ) : (
-          <div ref={inicioGridRef} className="relative flex flex-col gap-14 scroll-mt-[170px]">
-            {productosPorCategoria.map(({ categoria, productos: productosCategoria }) => (
-              <SeccionCategoriaCarta
-                key={categoria.id}
-                categoria={categoria}
-                productos={productosCategoria}
-                items={bandeja.items}
-                onAgregar={(id) => bandeja.agregar(id)}
-                onQuitarUna={(id, cantidadActual) =>
-                  bandeja.cambiarCantidad(id, cantidadActual - 1)
-                }
-                revelada={reveladas.has(categoria.id)}
-                registrarSeccion={registrarSeccion(categoria.id)}
-              />
-            ))}
+        ) : gruposVisibles.length === 0 ? (
+          <div className="py-10">
+            <EmptyState
+              icono={Search}
+              titulo={`Sin resultados para "${busqueda.trim()}"`}
+              descripcion="Prueba con otra palabra o elige una categoría de arriba."
+            />
           </div>
+        ) : (
+          <MenuInteractivo
+            grupos={gruposVisibles}
+            items={bandeja.items}
+            onAgregar={(id) => bandeja.agregar(id)}
+            onQuitarUna={(id, cantidadActual) => bandeja.cambiarCantidad(id, cantidadActual - 1)}
+            onVerDetalle={setPlatilloAbierto}
+            registrarSeccion={registrarSeccion}
+            pie={
+              enlaceWspGeneral ? (
+                <div className="rounded-2xl border border-(--carta-borde) bg-(--carta-superficie) p-7">
+                  <p className="text-lg font-semibold tracking-tight">
+                    ¿Dudas con algún plato?
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-(--carta-suave)">
+                    Escríbenos y te contamos qué lleva, cuánto demora o si podemos ajustarlo.
+                  </p>
+                  <a
+                    href={enlaceWspGeneral}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-5 inline-flex items-center gap-2 rounded-xl border border-(--carta-borde) px-5 py-3 text-sm font-semibold transition-colors hover:border-(--carta-acento) hover:text-(--carta-acento)"
+                  >
+                    <MessageCircle className="h-4 w-4" strokeWidth={2.25} />
+                    Escríbenos por WhatsApp
+                  </a>
+                </div>
+              ) : null
+            }
+          />
         )}
       </div>
+
+      <ComoPedir />
+
+      <MapaUbicacion
+        nombre={empresa?.nombre ?? 'Nuestro local'}
+        direccion={empresa?.direccion ?? null}
+        telefono={empresa?.telefono ?? null}
+      />
 
       <BotonSubir />
 
@@ -447,6 +385,19 @@ export function Carta() {
         onCambiarCantidad={bandeja.cambiarCantidad}
         onQuitar={bandeja.quitar}
         onVaciar={bandeja.vaciar}
+        nombreRestaurante={nombreRestaurante}
+        telefonoWhatsApp={empresa?.telefono ?? null}
+      />
+
+      <ModalPlatillo
+        producto={platilloAbierto}
+        cantidadEnBandeja={cantidadPlatilloAbierto}
+        onAgregar={() => platilloAbierto && bandeja.agregar(platilloAbierto.id)}
+        onQuitarUna={() =>
+          platilloAbierto &&
+          bandeja.cambiarCantidad(platilloAbierto.id, cantidadPlatilloAbierto - 1)
+        }
+        onCerrar={() => setPlatilloAbierto(null)}
         nombreRestaurante={nombreRestaurante}
         telefonoWhatsApp={empresa?.telefono ?? null}
       />

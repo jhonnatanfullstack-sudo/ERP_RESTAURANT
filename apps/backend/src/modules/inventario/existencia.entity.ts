@@ -12,6 +12,7 @@ import { Insumo } from '../insumos/insumo.entity';
 import { Producto } from '../productos/producto.entity';
 import { Comanda } from '../cocina/comanda.entity';
 import { Venta } from '../ventas/venta.entity';
+import { Compra } from '../compras/compra.entity';
 import { Usuario } from '../usuarios/usuario.entity';
 import { numericTransformer } from '../../utils/numeric-transformer';
 
@@ -26,7 +27,9 @@ import { numericTransformer } from '../../utils/numeric-transformer';
 export enum TipoMovimientoExistencia {
   /** Saldo inicial al registrar el ítem con stock existente en un almacén. */
   INICIAL = 'inicial',
-  /** Entrada por compra (a proveedor o registrada a mano, mientras no exista FASE 17). */
+  /** Entrada por compra a un proveedor (`FASE 17`) — la línea de una `Compra` registrada,
+   * o un movimiento manual de `POST /api/existencias/movimientos` para casos sin proveedor
+   * (ej. una donación, un traslado desde otra sucursal). */
   COMPRA = 'compra',
   /** Corrección manual positiva (ej. conteo físico encontró más de lo esperado). */
   AJUSTE_ENTRADA = 'ajuste_entrada',
@@ -42,6 +45,9 @@ export enum TipoMovimientoExistencia {
    * así que si `detalle.comanda` es `null` al facturar, es porque esa línea nunca pasó por
    * cocina, no porque siga pendiente). */
   VENTA_DIRECTA = 'venta_directa',
+  /** Salida por anular una compra ya registrada — reversa una entrada `compra` con una salida
+   * de la misma cantidad, nunca se borra el movimiento original (ver `compra.service.ts`). */
+  ANULACION_COMPRA = 'anulacion_compra',
 }
 
 const TIPOS_ENTRADA = [
@@ -101,6 +107,12 @@ export class Existencia {
   @ManyToOne(() => Venta, { nullable: true, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'venta_id' })
   venta!: Venta | null;
+
+  /** Compra que originó un movimiento `compra` (o su reversa `anulacion_compra`) —
+   * trazabilidad de a qué comprobante de proveedor correspondió el movimiento. */
+  @ManyToOne(() => Compra, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'compra_id' })
+  compra!: Compra | null;
 
   /** Quién registró el movimiento — solo para los manuales (`compra`/`ajuste_*`/`inicial`);
    * `null` en los automáticos (`consumo_cocina`/`venta_directa`), que no los dispara una

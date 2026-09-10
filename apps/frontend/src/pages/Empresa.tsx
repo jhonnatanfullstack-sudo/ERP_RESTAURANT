@@ -7,16 +7,13 @@ import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
-import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
+import { Input } from '../components/ui/Input';
 import { Checkbox } from '../components/ui/Checkbox';
 import { Badge } from '../components/ui/Badge';
+import { FormActions } from '../components/ui/FormActions';
+import { mensajeError } from '../utils/errores';
 import type { ActualizarEmpresaInput } from '../services/empresa.service';
 import type { Empresa as EmpresaType } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
 export function Empresa() {
   const { tienePermiso } = useAuth();
@@ -39,7 +36,10 @@ export function Empresa() {
     },
   });
 
-  if (empresasQuery.isLoading) return <Spinner />;
+  function cerrarEditar() {
+    setEmpresaEditando(null);
+    actualizarMutation.reset();
+  }
 
   return (
     <div>
@@ -53,6 +53,11 @@ export function Empresa() {
           { encabezado: 'RUC', render: (e) => e.ruc },
           { encabezado: 'Razón social', render: (e) => e.razonSocial },
           { encabezado: 'Nombre comercial', render: (e) => e.nombreComercial ?? '—' },
+          { encabezado: 'Dirección fiscal', render: (e) => e.direccionFiscal ?? '—' },
+          { encabezado: 'Teléfono', render: (e) => e.telefono ?? '—' },
+          { encabezado: 'Email', render: (e) => e.email ?? '—' },
+          { encabezado: 'Logo', render: (e) => e.logo ?? '—' },
+          { encabezado: 'Ubigeo', render: (e) => e.ubigeo ?? '—' },
           {
             encabezado: 'IGV',
             render: (e) =>
@@ -79,66 +84,83 @@ export function Empresa() {
         ]}
         filas={empresasQuery.data ?? []}
         claveFila={(e) => e.id}
+        cargando={empresasQuery.isLoading}
+        error={
+          empresasQuery.isError
+            ? mensajeError(empresasQuery.error, 'No se pudieron cargar los datos de la empresa')
+            : undefined
+        }
+        onReintentar={() => void empresasQuery.refetch()}
       />
 
-      <Modal
-        abierto={empresaEditando !== null}
-        titulo="Editar empresa"
-        onCerrar={() => setEmpresaEditando(null)}
-      >
+      <Modal abierto={empresaEditando !== null} titulo="Editar empresa" onCerrar={cerrarEditar}>
         {empresaEditando && (
           <form
             onSubmit={handleSubmit((values) => actualizarMutation.mutate(values))}
             className="flex flex-col gap-4"
+            noValidate
           >
             {actualizarMutation.isError && (
-              <Alert tipo="error" mensaje="No se pudo actualizar la empresa" />
+              <Alert
+                tipo="error"
+                mensaje={mensajeError(actualizarMutation.error, 'No se pudo actualizar la empresa')}
+              />
             )}
 
-            <div>
-              <label className={labelClass}>Razón social</label>
-              <input
-                defaultValue={empresaEditando.razonSocial}
-                {...register('razonSocial', { required: true })}
-                className={inputClass}
-              />
-            </div>
+            <Input
+              label="Razón social"
+              defaultValue={empresaEditando.razonSocial}
+              error={formState.errors.razonSocial?.message}
+              {...register('razonSocial', { required: 'La razón social es obligatoria' })}
+            />
 
-            <div>
-              <label className={labelClass}>Nombre comercial</label>
-              <input
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Nombre comercial"
+                ayuda="Opcional. El nombre con el que se conoce al local."
                 defaultValue={empresaEditando.nombreComercial ?? ''}
+                error={formState.errors.nombreComercial?.message}
                 {...register('nombreComercial')}
-                className={inputClass}
               />
-            </div>
-
-            <div>
-              <label className={labelClass}>Dirección fiscal</label>
-              <input
+              <Input
+                label="Dirección fiscal"
                 defaultValue={empresaEditando.direccionFiscal ?? ''}
+                error={formState.errors.direccionFiscal?.message}
                 {...register('direccionFiscal')}
-                className={inputClass}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Teléfono</label>
-                <input
-                  defaultValue={empresaEditando.telefono ?? ''}
-                  {...register('telefono')}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>Correo</label>
-                <input
-                  defaultValue={empresaEditando.email ?? ''}
-                  {...register('email')}
-                  className={inputClass}
-                />
-              </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Teléfono"
+                defaultValue={empresaEditando.telefono ?? ''}
+                error={formState.errors.telefono?.message}
+                {...register('telefono')}
+              />
+              <Input
+                label="Correo"
+                type="email"
+                defaultValue={empresaEditando.email ?? ''}
+                error={formState.errors.email?.message}
+                {...register('email')}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Ubigeo"
+                ayuda="Código INEI de 6 dígitos del distrito."
+                defaultValue={empresaEditando.ubigeo ?? ''}
+                error={formState.errors.ubigeo?.message}
+                {...register('ubigeo')}
+              />
+              <Input
+                label="Logo"
+                ayuda="Ruta o URL de la imagen del logo."
+                defaultValue={empresaEditando.logo ?? ''}
+                error={formState.errors.logo?.message}
+                {...register('logo')}
+              />
             </div>
 
             <Checkbox
@@ -148,13 +170,11 @@ export function Empresa() {
               {...register('acogidoRegimenMypeRestaurantes')}
             />
 
-            <Button
-              type="submit"
-              disabled={formState.isSubmitting || actualizarMutation.isPending}
-              className="mt-2 w-full"
-            >
-              Guardar cambios
-            </Button>
+            <FormActions
+              enviar="Guardar cambios"
+              onCancelar={cerrarEditar}
+              enviando={formState.isSubmitting || actualizarMutation.isPending}
+            />
           </form>
         )}
       </Modal>

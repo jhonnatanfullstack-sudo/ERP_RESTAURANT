@@ -21,6 +21,9 @@ import { Caja } from '../pages/Caja';
 import { Insumos } from '../pages/Insumos';
 import { Almacenes } from '../pages/Almacenes';
 import { Inventario } from '../pages/Inventario';
+import { Proveedores } from '../pages/Proveedores';
+import { Compras } from '../pages/Compras';
+import { Reportes } from '../pages/Reportes';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
@@ -56,6 +59,9 @@ export function AppRoutes() {
           <Route path="/insumos" element={<Insumos />} />
           <Route path="/almacenes" element={<Almacenes />} />
           <Route path="/inventario" element={<Inventario />} />
+          <Route path="/proveedores" element={<Proveedores />} />
+          <Route path="/compras" element={<Compras />} />
+          <Route path="/reportes" element={<Reportes />} />
           <Route path="/empresa" element={<Empresa />} />
           <Route path="/cambiar-password" element={<CambiarPassword />} />
         </Route>

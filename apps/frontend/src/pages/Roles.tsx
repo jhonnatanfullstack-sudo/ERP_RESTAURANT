@@ -1,7 +1,13 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { Pencil, ShieldPlus, Trash2 } from 'lucide-react';
+import {
+  useForm,
+  useWatch,
+  type FieldValues,
+  type Path,
+  type UseFormRegister,
+} from 'react-hook-form';
+import { Pencil, Search, ShieldPlus, Trash2 } from 'lucide-react';
 import * as rolesService from '../services/roles.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
@@ -9,23 +15,140 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Input } from '../components/ui/Input';
+import { FormActions } from '../components/ui/FormActions';
+import { claseCampo, claseLabel } from '../components/ui/campos';
+import { mensajeError } from '../utils/errores';
 import type { ActualizarRolInput, CrearRolInput } from '../services/roles.service';
-import type { Rol } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
+import type { Permiso, Rol } from '../types/api';
 
 interface EditarRolValues extends ActualizarRolInput {
   permisoIds: string[];
+}
+
+/** Agrupa por el módulo del código de permiso ("usuarios.crear" -> "usuarios"). */
+function agruparPorModulo(permisos: Permiso[]): [string, Permiso[]][] {
+  const grupos = new Map<string, Permiso[]>();
+  for (const permiso of permisos) {
+    const modulo = permiso.codigo.split('.')[0] ?? permiso.codigo;
+    const actuales = grupos.get(modulo) ?? [];
+    actuales.push(permiso);
+    grupos.set(modulo, actuales);
+  }
+  return [...grupos.entries()].sort(([a], [b]) => a.localeCompare(b));
+}
+
+interface SelectorPermisosProps<T extends FieldValues> {
+  permisos: Permiso[] | undefined;
+  register: UseFormRegister<T>;
+  campo: Path<T>;
+  seleccionados: string[];
+  onSeleccionar: (ids: string[]) => void;
+}
+
+/** Lista de permisos agrupada por módulo, con búsqueda y selección por grupo. Antes era una
+ * lista plana de códigos crudos, imposible de recorrer cuando hay decenas de permisos. */
+function SelectorPermisos<T extends FieldValues>({
+  permisos,
+  register,
+  campo,
+  seleccionados,
+  onSeleccionar,
+}: SelectorPermisosProps<T>) {
+  const [busqueda, setBusqueda] = useState('');
+
+  const grupos = useMemo(() => {
+    const termino = busqueda.trim().toLowerCase();
+    const filtrados = (permisos ?? []).filter(
+      (p) =>
+        !termino ||
+        p.codigo.toLowerCase().includes(termino) ||
+        p.descripcion?.toLowerCase().includes(termino),
+    );
+    return agruparPorModulo(filtrados);
+  }, [permisos, busqueda]);
+
+  function alternarGrupo(delGrupo: Permiso[], marcarTodos: boolean) {
+    const ids = delGrupo.map((p) => p.id);
+    onSeleccionar(
+      marcarTodos
+        ? [...new Set([...seleccionados, ...ids])]
+        : seleccionados.filter((id) => !ids.includes(id)),
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <span className={claseLabel}>Permisos</span>
+        <span className="text-xs text-zinc-500">{seleccionados.length} seleccionados</span>
+      </div>
+
+      <div className="relative mb-2">
+        <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+        <input
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Filtrar permisos…"
+          aria-label="Filtrar permisos"
+          className={`${claseCampo()} pl-9`}
+        />
+      </div>
+
+      <div className="max-h-64 overflow-y-auto rounded-lg border border-zinc-200">
+        {grupos.length === 0 && (
+          <p className="px-3 py-6 text-center text-sm text-zinc-400">
+            No hay permisos que coincidan
+          </p>
+        )}
+        {grupos.map(([modulo, delGrupo]) => {
+          const marcados = delGrupo.filter((p) => seleccionados.includes(p.id)).length;
+          const todos = marcados === delGrupo.length;
+          return (
+            <div key={modulo} className="border-b border-zinc-100 last:border-b-0">
+              <div className="flex items-center justify-between gap-2 bg-zinc-50 px-3 py-1.5">
+                <span className="text-xs font-semibold tracking-wide text-zinc-600 uppercase">
+                  {modulo}
+                  <span className="ml-1.5 font-normal text-zinc-400">
+                    {marcados}/{delGrupo.length}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => alternarGrupo(delGrupo, !todos)}
+                  className="text-xs font-medium text-orange-600 hover:text-orange-700"
+                >
+                  {todos ? 'Quitar todos' : 'Marcar todos'}
+                </button>
+              </div>
+              <div className="px-3 py-1.5">
+                {delGrupo.map((permiso) => (
+                  <label
+                    key={permiso.id}
+                    className="flex items-start gap-2.5 rounded-md px-1 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                  >
+                    <input
+                      type="checkbox"
+                      value={permiso.id}
+                      {...register(campo)}
+                      className="mt-0.5 h-4 w-4 shrink-0 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
+                    />
+                    <span>
+                      {permiso.codigo}
+                      {permiso.descripcion && (
+                        <span className="ml-1.5 text-xs text-zinc-400">{permiso.descripcion}</span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function Roles() {
@@ -40,6 +163,8 @@ export function Roles() {
 
   const crearForm = useForm<CrearRolInput>({ defaultValues: { permisoIds: [] } });
   const editarForm = useForm<EditarRolValues>();
+  const permisosCrear = useWatch({ control: crearForm.control, name: 'permisoIds' }) ?? [];
+  const permisosEditar = useWatch({ control: editarForm.control, name: 'permisoIds' }) ?? [];
 
   const crearMutation = useMutation({
     mutationFn: rolesService.crearRol,
@@ -70,7 +195,16 @@ export function Roles() {
     },
   });
 
-  if (rolesQuery.isLoading) return <Spinner />;
+  function cerrarCrear() {
+    setModalAbierto(false);
+    crearForm.reset();
+    crearMutation.reset();
+  }
+
+  function cerrarEditar() {
+    setRolEditando(null);
+    editarMutation.reset();
+  }
 
   return (
     <div>
@@ -132,12 +266,20 @@ export function Roles() {
         filas={rolesQuery.data ?? []}
         claveFila={(r) => r.id}
         vacio="No hay roles registrados"
+        cargando={rolesQuery.isLoading}
+        error={
+          rolesQuery.isError
+            ? mensajeError(rolesQuery.error, 'No se pudieron cargar los roles')
+            : undefined
+        }
+        onReintentar={() => void rolesQuery.refetch()}
       />
 
-      <Modal abierto={modalAbierto} titulo="Nuevo rol" onCerrar={() => setModalAbierto(false)}>
+      <Modal abierto={modalAbierto} titulo="Nuevo rol" onCerrar={cerrarCrear}>
         <form
           onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
           className="flex flex-col gap-4"
+          noValidate
         >
           {crearMutation.isError && (
             <Alert
@@ -146,55 +288,45 @@ export function Roles() {
             />
           )}
 
-          <div>
-            <label className={labelClass}>Nombre</label>
-            <input {...crearForm.register('nombre', { required: true })} className={inputClass} />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Nombre"
+              autoFocus
+              placeholder="Ej. Cajero"
+              error={crearForm.formState.errors.nombre?.message}
+              {...crearForm.register('nombre', { required: 'El nombre es obligatorio' })}
+            />
+            <Input
+              label="Descripción"
+              ayuda="Opcional."
+              error={crearForm.formState.errors.descripcion?.message}
+              {...crearForm.register('descripcion')}
+            />
           </div>
 
-          <div>
-            <label className={labelClass}>Descripción</label>
-            <input {...crearForm.register('descripcion')} className={inputClass} />
-          </div>
+          <SelectorPermisos
+            permisos={permisosQuery.data}
+            register={crearForm.register}
+            campo="permisoIds"
+            seleccionados={permisosCrear}
+            onSeleccionar={(ids) => crearForm.setValue('permisoIds', ids)}
+          />
 
-          <div>
-            <span className={labelClass}>Permisos</span>
-            <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200 p-3">
-              {permisosQuery.data?.map((permiso) => (
-                <label
-                  key={permiso.id}
-                  className="flex items-center gap-2.5 rounded-md px-1 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
-                >
-                  <input
-                    type="checkbox"
-                    value={permiso.id}
-                    {...crearForm.register('permisoIds')}
-                    className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
-                  />
-                  {permiso.codigo}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
-          >
-            Crear rol
-          </Button>
+          <FormActions
+            enviar="Crear rol"
+            enviandoTexto="Creando…"
+            onCancelar={cerrarCrear}
+            enviando={crearForm.formState.isSubmitting || crearMutation.isPending}
+          />
         </form>
       </Modal>
 
-      <Modal
-        abierto={rolEditando !== null}
-        titulo="Editar rol"
-        onCerrar={() => setRolEditando(null)}
-      >
+      <Modal abierto={rolEditando !== null} titulo="Editar rol" onCerrar={cerrarEditar}>
         {rolEditando && (
           <form
             onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
             className="flex flex-col gap-4"
+            noValidate
           >
             {editarMutation.isError && (
               <Alert
@@ -203,46 +335,33 @@ export function Roles() {
               />
             )}
 
-            <div>
-              <label className={labelClass}>Nombre</label>
-              <input
-                {...editarForm.register('nombre', { required: true })}
-                className={inputClass}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Nombre"
+                error={editarForm.formState.errors.nombre?.message}
+                {...editarForm.register('nombre', { required: 'El nombre es obligatorio' })}
+              />
+              <Input
+                label="Descripción"
+                ayuda="Opcional."
+                error={editarForm.formState.errors.descripcion?.message}
+                {...editarForm.register('descripcion')}
               />
             </div>
 
-            <div>
-              <label className={labelClass}>Descripción</label>
-              <input {...editarForm.register('descripcion')} className={inputClass} />
-            </div>
+            <SelectorPermisos
+              permisos={permisosQuery.data}
+              register={editarForm.register}
+              campo="permisoIds"
+              seleccionados={permisosEditar}
+              onSeleccionar={(ids) => editarForm.setValue('permisoIds', ids)}
+            />
 
-            <div>
-              <span className={labelClass}>Permisos</span>
-              <div className="max-h-48 overflow-y-auto rounded-lg border border-zinc-200 p-3">
-                {permisosQuery.data?.map((permiso) => (
-                  <label
-                    key={permiso.id}
-                    className="flex items-center gap-2.5 rounded-md px-1 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
-                  >
-                    <input
-                      type="checkbox"
-                      value={permiso.id}
-                      {...editarForm.register('permisoIds')}
-                      className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
-                    />
-                    {permiso.codigo}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={editarForm.formState.isSubmitting || editarMutation.isPending}
-              className="mt-2 w-full"
-            >
-              Guardar cambios
-            </Button>
+            <FormActions
+              enviar="Guardar cambios"
+              onCancelar={cerrarEditar}
+              enviando={editarForm.formState.isSubmitting || editarMutation.isPending}
+            />
           </form>
         )}
       </Modal>

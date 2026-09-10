@@ -6,3 +6,12 @@
 export function vacioANull(valor?: string | null): string | null | undefined {
   return valor === '' ? null : valor;
 }
+
+/**
+ * Igual que `vacioANull`, pero para campos verdaderamente opcionales (`.optional()` sin
+ * `.nullable()` en el schema zod, ej. un `tipoComprobanteId` o `fechaEmision` opcionales) —
+ * ahí la API espera que el campo se omita (`undefined`), no `null`.
+ */
+export function vacioAIndefinido(valor?: string): string | undefined {
+  return valor === '' ? undefined : valor;
+}

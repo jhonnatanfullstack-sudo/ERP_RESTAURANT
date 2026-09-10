@@ -158,7 +158,13 @@ export interface Almacen {
 }
 
 export type TipoMovimientoExistencia =
-  'inicial' | 'compra' | 'ajuste_entrada' | 'ajuste_salida' | 'consumo_cocina' | 'venta_directa';
+  | 'inicial'
+  | 'compra'
+  | 'ajuste_entrada'
+  | 'ajuste_salida'
+  | 'consumo_cocina'
+  | 'venta_directa'
+  | 'anulacion_compra';
 
 export interface StockItem {
   almacenId: string;
@@ -177,6 +183,56 @@ export interface Existencia {
   costoUnitario: number | null;
   usuario: Pick<Usuario, 'id' | 'personal'> | null;
   observacion: string | null;
+  creadoEn: string;
+}
+
+export interface Proveedor {
+  id: string;
+  nombres: string | null;
+  apellidos: string | null;
+  /** Solo para RUC de persona jurídica (empieza en "20"); mutuamente excluyente con nombres/apellidos. */
+  razonSocial: string | null;
+  tipoDocumentoIdentidad: TipoDocumentoIdentidad;
+  numeroDocumento: string;
+  telefono: string | null;
+  email: string | null;
+  direccion: string | null;
+  activo: boolean;
+}
+
+export type EstadoCompra = 'registrada' | 'anulada';
+
+export interface DetalleCompra {
+  id: string;
+  insumo: Pick<Insumo, 'id' | 'nombre' | 'unidadMedida'> | null;
+  producto: Pick<Producto, 'id' | 'nombre'> | null;
+  descripcionItem: string;
+  cantidad: number;
+  costoUnitario: number;
+  tipoAfectacionIgv: TipoAfectacionIgv;
+  valorCompra: number;
+  igv: number;
+  subtotal: number;
+}
+
+export interface Compra {
+  id: string;
+  proveedor: Pick<Proveedor, 'id' | 'nombres' | 'apellidos' | 'razonSocial' | 'numeroDocumento'>;
+  almacen: Pick<Almacen, 'id' | 'nombre'>;
+  tipoComprobante: TipoComprobante | null;
+  serie: string | null;
+  numero: string | null;
+  fechaEmision: string;
+  /** Si el `costoUnitario` de cada línea ya incluye IGV (lo usual) o no — cuando no, el IGV se
+   * suma aparte a cada línea. Se decide una sola vez por compra, no por línea. */
+  incluyeIgv: boolean;
+  subtotal: number;
+  igv: number;
+  total: number;
+  estado: EstadoCompra;
+  observacion: string | null;
+  usuario: Pick<Usuario, 'id' | 'personal'>;
+  detalles: DetalleCompra[];
   creadoEn: string;
 }
 
@@ -356,4 +412,63 @@ export interface UsuarioAutenticado {
     razonSocial: string | null;
   };
   rol: { id: string; nombre: string; permisos: string[] };
+}
+
+/** Un par etiqueta/valor de un reporte, tal cual lo devuelve el backend (sin `detalle`, que
+ * es cosa de la vista). */
+export interface PuntoReporte {
+  etiqueta: string;
+  valor: number;
+}
+
+export interface ResumenReporte {
+  ventasTotal: number;
+  ventasSubtotal: number;
+  ventasIgv: number;
+  numeroVentas: number;
+  ticketPromedio: number;
+  clientesAtendidos: number;
+  comprasTotal: number;
+  numeroCompras: number;
+  /** Ventas sin IGV menos compras sin IGV. No es utilidad contable (no descuenta planilla,
+   * alquiler ni servicios): es el margen bruto de mercadería del período. */
+  margenBruto: number;
+}
+
+export interface ProductoReporte {
+  nombre: string;
+  categoria: string;
+  cantidad: number;
+  total: number;
+}
+
+export interface ClienteReporte {
+  id: string;
+  nombre: string;
+  documento: string | null;
+  visitas: number;
+  total: number;
+  ticketPromedio: number;
+  ultimaVisita: string;
+}
+
+export interface ProveedorReporte {
+  nombre: string;
+  documento: string;
+  compras: number;
+  total: number;
+}
+
+export interface Reporte {
+  desde: string;
+  hasta: string;
+  resumen: ResumenReporte;
+  ventasPorDia: PuntoReporte[];
+  ventasPorHora: PuntoReporte[];
+  ventasPorCategoria: PuntoReporte[];
+  ventasPorMedioPago: PuntoReporte[];
+  ventasPorTipoComprobante: PuntoReporte[];
+  topProductos: ProductoReporte[];
+  clientes: ClienteReporte[];
+  proveedores: ProveedorReporte[];
 }

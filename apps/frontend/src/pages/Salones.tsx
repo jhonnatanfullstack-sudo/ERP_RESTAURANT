@@ -9,20 +9,13 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Input } from '../components/ui/Input';
+import { Checkbox } from '../components/ui/Checkbox';
+import { FormActions } from '../components/ui/FormActions';
+import { mensajeError } from '../utils/errores';
 import type { ActualizarSalonInput, CrearSalonInput } from '../services/salones.service';
 import type { Salon } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
 
 export function Salones() {
   const { tienePermiso } = useAuth();
@@ -62,7 +55,16 @@ export function Salones() {
     },
   });
 
-  if (salonesQuery.isLoading) return <Spinner />;
+  function cerrarCrear() {
+    setModalAbierto(false);
+    crearForm.reset();
+    crearMutation.reset();
+  }
+
+  function cerrarEditar() {
+    setSalonEditando(null);
+    editarMutation.reset();
+  }
 
   return (
     <div>
@@ -130,12 +132,20 @@ export function Salones() {
         filas={salonesQuery.data ?? []}
         claveFila={(s) => s.id}
         vacio="No hay salones registrados"
+        cargando={salonesQuery.isLoading}
+        error={
+          salonesQuery.isError
+            ? mensajeError(salonesQuery.error, 'No se pudieron cargar los salones')
+            : undefined
+        }
+        onReintentar={() => void salonesQuery.refetch()}
       />
 
-      <Modal abierto={modalAbierto} titulo="Nuevo salón" onCerrar={() => setModalAbierto(false)}>
+      <Modal abierto={modalAbierto} titulo="Nuevo salón" onCerrar={cerrarCrear}>
         <form
           onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
           className="flex flex-col gap-4"
+          noValidate
         >
           {crearMutation.isError && (
             <Alert
@@ -144,35 +154,36 @@ export function Salones() {
             />
           )}
 
-          <div>
-            <label className={labelClass}>Nombre</label>
-            <input {...crearForm.register('nombre', { required: true })} className={inputClass} />
-          </div>
+          <Input
+            label="Nombre"
+            autoFocus
+            ayuda="Ej. Primer piso, Terraza, Sala VIP."
+            error={crearForm.formState.errors.nombre?.message}
+            {...crearForm.register('nombre', { required: 'El nombre es obligatorio' })}
+          />
 
-          <div>
-            <label className={labelClass}>Descripción</label>
-            <input {...crearForm.register('descripcion')} className={inputClass} />
-          </div>
+          <Input
+            label="Descripción"
+            ayuda="Opcional."
+            error={crearForm.formState.errors.descripcion?.message}
+            {...crearForm.register('descripcion')}
+          />
 
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
-          >
-            Crear salón
-          </Button>
+          <FormActions
+            enviar="Crear salón"
+            enviandoTexto="Creando…"
+            onCancelar={cerrarCrear}
+            enviando={crearForm.formState.isSubmitting || crearMutation.isPending}
+          />
         </form>
       </Modal>
 
-      <Modal
-        abierto={salonEditando !== null}
-        titulo="Editar salón"
-        onCerrar={() => setSalonEditando(null)}
-      >
+      <Modal abierto={salonEditando !== null} titulo="Editar salón" onCerrar={cerrarEditar}>
         {salonEditando && (
           <form
             onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
             className="flex flex-col gap-4"
+            noValidate
           >
             {editarMutation.isError && (
               <Alert
@@ -181,35 +192,31 @@ export function Salones() {
               />
             )}
 
-            <div>
-              <label className={labelClass}>Nombre</label>
-              <input
-                {...editarForm.register('nombre', { required: true })}
-                className={inputClass}
-              />
-            </div>
+            <Input
+              label="Nombre"
+              ayuda="Ej. Primer piso, Terraza, Sala VIP."
+              error={editarForm.formState.errors.nombre?.message}
+              {...editarForm.register('nombre', { required: 'El nombre es obligatorio' })}
+            />
 
-            <div>
-              <label className={labelClass}>Descripción</label>
-              <input {...editarForm.register('descripcion')} className={inputClass} />
-            </div>
+            <Input
+              label="Descripción"
+              ayuda="Opcional."
+              error={editarForm.formState.errors.descripcion?.message}
+              {...editarForm.register('descripcion')}
+            />
 
-            <label className="flex items-center gap-2.5 text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                {...editarForm.register('activo')}
-                className="h-4 w-4 rounded border-zinc-300 text-orange-600 focus:ring-orange-500/40"
-              />
-              Salón activo
-            </label>
+            <Checkbox
+              label="Salón activo"
+              ayuda="Los salones inactivos no admiten nuevas mesas ni pedidos."
+              {...editarForm.register('activo')}
+            />
 
-            <Button
-              type="submit"
-              disabled={editarForm.formState.isSubmitting || editarMutation.isPending}
-              className="mt-2 w-full"
-            >
-              Guardar cambios
-            </Button>
+            <FormActions
+              enviar="Guardar cambios"
+              onCancelar={cerrarEditar}
+              enviando={editarForm.formState.isSubmitting || editarMutation.isPending}
+            />
           </form>
         )}
       </Modal>

@@ -40,6 +40,7 @@ const ETIQUETA_TIPO_MOVIMIENTO: Record<TipoMovimientoExistencia, string> = {
   ajuste_salida: 'Ajuste (salida)',
   consumo_cocina: 'Consumo en cocina',
   venta_directa: 'Venta',
+  anulacion_compra: 'Anulación de compra',
 };
 
 const TIPOS_ENTRADA: TipoMovimientoExistencia[] = ['inicial', 'compra', 'ajuste_entrada'];

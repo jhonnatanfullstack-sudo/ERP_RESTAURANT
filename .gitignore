@@ -26,6 +26,11 @@ Thumbs.db
 # Configuración local de Claude Code (no compartir)
 .claude/settings.local.json
 
+# Herramientas locales del entorno de desarrollo: no forman parte del ERP y pesan varios MB
+.claude/skills/
+.agents/
+skills-lock.json
+
 # Tests / cobertura
 coverage/
 

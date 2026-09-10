@@ -11,17 +11,16 @@ import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Spinner } from '../components/ui/Spinner';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
+import { Input } from '../components/ui/Input';
+import { FormField } from '../components/ui/FormField';
+import { FormActions } from '../components/ui/FormActions';
 import { aInputDatetimeLocal, formatearFechaHora, nombreCliente } from '../utils/formato';
+import { mensajeError } from '../utils/errores';
 import type { ActualizarReservaInput, CrearReservaInput } from '../services/reservas.service';
 import type { EstadoReserva, Reserva } from '../types/api';
-
-const inputClass =
-  'w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none';
-const labelClass = 'mb-1.5 block text-sm font-medium text-zinc-700';
 
 const ETIQUETA_ESTADO: Record<EstadoReserva, string> = {
   pendiente: 'Pendiente',
@@ -36,12 +35,6 @@ const TONO_ESTADO: Record<EstadoReserva, 'exito' | 'neutral' | 'peligro'> = {
   completada: 'exito',
   cancelada: 'peligro',
 };
-
-function mensajeError(error: unknown, fallback: string): string {
-  return (
-    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? fallback
-  );
-}
 
 export function Reservas() {
   const { tienePermiso } = useAuth();
@@ -137,7 +130,16 @@ export function Reservas() {
     },
   });
 
-  if (reservasQuery.isLoading) return <Spinner />;
+  function cerrarCrear() {
+    setModalAbierto(false);
+    crearForm.reset();
+    crearMutation.reset();
+  }
+
+  function cerrarEditar() {
+    setReservaEditando(null);
+    editarMutation.reset();
+  }
 
   const reservas = reservasQuery.data ?? [];
   const reservasFiltradas =
@@ -253,12 +255,20 @@ export function Reservas() {
         filas={reservasFiltradas}
         claveFila={(r) => r.id}
         vacio="No hay reservas registradas"
+        cargando={reservasQuery.isLoading}
+        error={
+          reservasQuery.isError
+            ? mensajeError(reservasQuery.error, 'No se pudieron cargar las reservas')
+            : undefined
+        }
+        onReintentar={() => void reservasQuery.refetch()}
       />
 
-      <Modal abierto={modalAbierto} titulo="Nueva reserva" onCerrar={() => setModalAbierto(false)}>
+      <Modal abierto={modalAbierto} titulo="Nueva reserva" onCerrar={cerrarCrear}>
         <form
           onSubmit={crearForm.handleSubmit((values) => crearMutation.mutate(values))}
           className="flex flex-col gap-4"
+          noValidate
         >
           {crearMutation.isError && (
             <Alert
@@ -267,98 +277,98 @@ export function Reservas() {
             />
           )}
 
-          <div>
-            <label className={labelClass}>Cliente</label>
-            <Controller
-              control={crearForm.control}
-              name="clienteId"
-              rules={{ required: true }}
-              render={({ field }) => (
+          <Controller
+            control={crearForm.control}
+            name="clienteId"
+            rules={{ required: 'Selecciona el cliente de la reserva' }}
+            render={({ field, fieldState }) => (
+              <FormField id="reserva-cliente" label="Cliente" error={fieldState.error?.message}>
                 <Combobox
+                  id="reserva-cliente"
                   opciones={opcionesClientes}
                   valor={field.value}
                   onCambiar={field.onChange}
                   placeholder="Buscar cliente…"
                   vacio="No se encontraron clientes"
                 />
-              )}
-            />
-          </div>
+              </FormField>
+            )}
+          />
 
-          <div>
-            <label className={labelClass}>Mesa</label>
-            <Controller
-              control={crearForm.control}
-              name="mesaId"
-              rules={{ required: true }}
-              render={({ field }) => (
+          <Controller
+            control={crearForm.control}
+            name="mesaId"
+            rules={{ required: 'Selecciona la mesa a reservar' }}
+            render={({ field, fieldState }) => (
+              <FormField id="reserva-mesa" label="Mesa" error={fieldState.error?.message}>
                 <Combobox
+                  id="reserva-mesa"
                   opciones={opcionesMesas}
                   valor={field.value}
                   onCambiar={field.onChange}
                   placeholder="Buscar mesa…"
                   vacio="No se encontraron mesas"
                 />
-              )}
+              </FormField>
+            )}
+          />
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Fecha y hora"
+              type="datetime-local"
+              ayuda="Debe ser una fecha futura."
+              error={crearForm.formState.errors.fechaHora?.message}
+              {...crearForm.register('fechaHora', { required: 'Indica la fecha y hora' })}
+            />
+            <Input
+              label="N° de personas"
+              type="number"
+              min="1"
+              ayuda="No puede exceder la capacidad de la mesa."
+              error={crearForm.formState.errors.cantidadPersonas?.message}
+              {...crearForm.register('cantidadPersonas', {
+                required: 'Indica cuántas personas asistirán',
+                valueAsNumber: true,
+                min: { value: 1, message: 'Debe ser al menos 1 persona' },
+              })}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>Fecha y hora</label>
-              <input
-                type="datetime-local"
-                {...crearForm.register('fechaHora', { required: true })}
-                className={inputClass}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>N° de personas</label>
-              <input
-                type="number"
-                min="1"
-                {...crearForm.register('cantidadPersonas', { required: true, valueAsNumber: true })}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className={labelClass}>Duración (minutos)</label>
-            <input
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Duración (minutos)"
               type="number"
               min="15"
               step="15"
               placeholder="90"
+              ayuda="Opcional. Por defecto 90 minutos."
+              error={crearForm.formState.errors.duracionMinutos?.message}
               {...crearForm.register('duracionMinutos', { valueAsNumber: true })}
-              className={inputClass}
+            />
+            <Input
+              label="Notas"
+              ayuda="Opcional. Ej. cumpleaños, silla de bebé."
+              error={crearForm.formState.errors.notas?.message}
+              {...crearForm.register('notas')}
             />
           </div>
 
-          <div>
-            <label className={labelClass}>Notas</label>
-            <input {...crearForm.register('notas')} className={inputClass} />
-          </div>
-
-          <Button
-            type="submit"
-            disabled={crearForm.formState.isSubmitting || crearMutation.isPending}
-            className="mt-2 w-full"
-          >
-            Crear reserva
-          </Button>
+          <FormActions
+            enviar="Crear reserva"
+            enviandoTexto="Creando…"
+            onCancelar={cerrarCrear}
+            enviando={crearForm.formState.isSubmitting || crearMutation.isPending}
+          />
         </form>
       </Modal>
 
-      <Modal
-        abierto={reservaEditando !== null}
-        titulo="Editar reserva"
-        onCerrar={() => setReservaEditando(null)}
-      >
+      <Modal abierto={reservaEditando !== null} titulo="Editar reserva" onCerrar={cerrarEditar}>
         {reservaEditando && (
           <form
             onSubmit={editarForm.handleSubmit((values) => editarMutation.mutate(values))}
             className="flex flex-col gap-4"
+            noValidate
           >
             {editarMutation.isError && (
               <Alert
@@ -367,88 +377,91 @@ export function Reservas() {
               />
             )}
 
-            <div>
-              <label className={labelClass}>Cliente</label>
-              <Controller
-                control={editarForm.control}
-                name="clienteId"
-                rules={{ required: true }}
-                render={({ field }) => (
+            <Controller
+              control={editarForm.control}
+              name="clienteId"
+              rules={{ required: 'Selecciona el cliente de la reserva' }}
+              render={({ field, fieldState }) => (
+                <FormField
+                  id="reserva-editar-cliente"
+                  label="Cliente"
+                  error={fieldState.error?.message}
+                >
                   <Combobox
+                    id="reserva-editar-cliente"
                     opciones={opcionesClientesEdicion}
                     valor={field.value}
                     onCambiar={field.onChange}
                     placeholder="Buscar cliente…"
                     vacio="No se encontraron clientes"
                   />
-                )}
-              />
-            </div>
+                </FormField>
+              )}
+            />
 
-            <div>
-              <label className={labelClass}>Mesa</label>
-              <Controller
-                control={editarForm.control}
-                name="mesaId"
-                rules={{ required: true }}
-                render={({ field }) => (
+            <Controller
+              control={editarForm.control}
+              name="mesaId"
+              rules={{ required: 'Selecciona la mesa a reservar' }}
+              render={({ field, fieldState }) => (
+                <FormField id="reserva-editar-mesa" label="Mesa" error={fieldState.error?.message}>
                   <Combobox
+                    id="reserva-editar-mesa"
                     opciones={opcionesMesasEdicion}
                     valor={field.value}
                     onCambiar={field.onChange}
                     placeholder="Buscar mesa…"
                     vacio="No se encontraron mesas"
                   />
-                )}
+                </FormField>
+              )}
+            />
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Fecha y hora"
+                type="datetime-local"
+                ayuda="Debe ser una fecha futura."
+                error={editarForm.formState.errors.fechaHora?.message}
+                {...editarForm.register('fechaHora', { required: 'Indica la fecha y hora' })}
+              />
+              <Input
+                label="N° de personas"
+                type="number"
+                min="1"
+                ayuda="No puede exceder la capacidad de la mesa."
+                error={editarForm.formState.errors.cantidadPersonas?.message}
+                {...editarForm.register('cantidadPersonas', {
+                  required: 'Indica cuántas personas asistirán',
+                  valueAsNumber: true,
+                  min: { value: 1, message: 'Debe ser al menos 1 persona' },
+                })}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={labelClass}>Fecha y hora</label>
-                <input
-                  type="datetime-local"
-                  {...editarForm.register('fechaHora', { required: true })}
-                  className={inputClass}
-                />
-              </div>
-              <div>
-                <label className={labelClass}>N° de personas</label>
-                <input
-                  type="number"
-                  min="1"
-                  {...editarForm.register('cantidadPersonas', {
-                    required: true,
-                    valueAsNumber: true,
-                  })}
-                  className={inputClass}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className={labelClass}>Duración (minutos)</label>
-              <input
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Input
+                label="Duración (minutos)"
                 type="number"
                 min="15"
                 step="15"
+                ayuda="Por defecto 90 minutos."
+                error={editarForm.formState.errors.duracionMinutos?.message}
                 {...editarForm.register('duracionMinutos', { valueAsNumber: true })}
-                className={inputClass}
+              />
+              <Input
+                label="Notas"
+                ayuda="Opcional."
+                error={editarForm.formState.errors.notas?.message}
+                {...editarForm.register('notas')}
               />
             </div>
 
-            <div>
-              <label className={labelClass}>Notas</label>
-              <input {...editarForm.register('notas')} className={inputClass} />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={editarForm.formState.isSubmitting || editarMutation.isPending}
-              className="mt-2 w-full"
-            >
-              Guardar cambios
-            </Button>
+            <FormActions
+              enviar="Guardar cambios"
+              onCancelar={cerrarEditar}
+              enviando={editarForm.formState.isSubmitting || editarMutation.isPending}
+            />
           </form>
         )}
       </Modal>

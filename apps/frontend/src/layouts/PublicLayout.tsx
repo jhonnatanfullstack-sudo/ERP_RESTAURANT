@@ -13,66 +13,74 @@ export function PublicLayout() {
   const empresa = empresaQuery.data;
   const nombre = empresa?.nombre ?? 'Restaurant ERP';
   // `logo` es una URL/ruta escrita a mano en Empresa (sección en curso, sin subida de
-  // archivo todavía) — si no carga, se vuelve al ícono por defecto en vez de dejar un
+  // archivo todavía): si no carga, se vuelve al ícono por defecto en vez de dejar un
   // hueco en blanco.
   const [logoFallo, setLogoFallo] = useState(false);
   const mostrarLogo = !!empresa?.logo && !logoFallo;
   const enlaceWsp = empresa?.telefono
-    ? enlaceWhatsApp(empresa.telefono, `¡Hola ${nombre}! Quisiera hacer una consulta.`)
+    ? enlaceWhatsApp(empresa.telefono, `Hola ${nombre}, quisiera hacer una consulta.`)
     : null;
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50">
-      <header className="sticky top-0 z-30 border-b border-zinc-200 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-6xl items-center gap-2.5 px-6 py-4">
+    // `data-tema="carta"` activa la paleta propia de la superficie pública (ver index.css),
+    // que sigue el modo claro/oscuro del sistema. El panel interno no la usa.
+    <div
+      data-tema="carta"
+      className="flex min-h-[100dvh] flex-col bg-(--carta-fondo) text-(--carta-texto)"
+    >
+      <header className="sticky top-0 z-30 border-b border-(--carta-borde) bg-(--carta-fondo)/85 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-5 sm:px-8">
           {mostrarLogo ? (
             <img
               src={empresa.logo!}
               alt={nombre}
-              className="h-9 w-9 shrink-0 rounded-lg object-cover"
+              className="h-9 w-9 shrink-0 rounded-xl object-cover"
               onError={() => setLogoFallo(true)}
             />
           ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-600">
-              <ChefHat className="h-5 w-5 text-white" strokeWidth={2.25} />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--carta-acento)">
+              <ChefHat
+                className="h-5 w-5 text-(--carta-acento-contraste)"
+                strokeWidth={2.25}
+              />
             </div>
           )}
-          <span className="truncate text-lg font-bold tracking-tight text-zinc-900">{nombre}</span>
+          <span className="truncate text-[15px] font-semibold tracking-tight">{nombre}</span>
 
           {enlaceWsp && (
             <a
               href={enlaceWsp}
               target="_blank"
               rel="noreferrer"
-              className="ml-auto hidden shrink-0 items-center gap-2 rounded-full bg-[#25D366]/10 px-3.5 py-2 text-sm font-semibold text-[#128C4A] transition-colors hover:bg-[#25D366]/20 sm:flex"
+              className="ml-auto hidden shrink-0 items-center gap-2 rounded-xl border border-(--carta-borde) px-3.5 py-2 text-sm font-medium transition-colors hover:bg-(--carta-elevado) sm:flex"
             >
-              <Phone className="h-4 w-4" strokeWidth={2.25} />
+              <Phone className="h-4 w-4" strokeWidth={2} />
               WhatsApp
             </a>
           )}
         </div>
       </header>
 
-      <main className="animate-fade-in flex-1">
+      <main className="flex-1">
         <Outlet />
       </main>
 
-      <footer className="border-t border-zinc-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col items-center gap-2 px-6 py-8 text-center text-sm text-zinc-500 sm:flex-row sm:justify-between sm:text-left">
-          <p className="font-medium text-zinc-700">{nombre}</p>
-          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5">
+      <footer className="border-t border-(--carta-borde)">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-5 py-10 text-sm text-(--carta-suave) sm:flex-row sm:items-center sm:justify-between sm:px-8">
+          <p className="font-medium text-(--carta-texto)">{nombre}</p>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
             {empresa?.direccion && (
-              <span className="flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+              <span className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 shrink-0" strokeWidth={2} />
                 {empresa.direccion}
               </span>
             )}
             {empresa?.telefono && (
               <a
                 href={`tel:${empresa.telefono}`}
-                className="flex items-center gap-1.5 transition-colors hover:text-orange-600"
+                className="flex items-center gap-2 transition-colors hover:text-(--carta-acento)"
               >
-                <Phone className="h-3.5 w-3.5 shrink-0 text-zinc-400" />
+                <Phone className="h-4 w-4 shrink-0" strokeWidth={2} />
                 {empresa.telefono}
               </a>
             )}

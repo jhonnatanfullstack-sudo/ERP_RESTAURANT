@@ -5,6 +5,8 @@ type Variante = 'primary' | 'secondary' | 'ghost' | 'danger';
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variante?: Variante;
   icono?: ReactNode;
+  /** Muestra un indicador de progreso y deshabilita el botón mientras dura la acción. */
+  cargando?: boolean;
 }
 
 const estilosBase =
@@ -20,13 +22,24 @@ const estilosVariante: Record<Variante, string> = {
 export function Button({
   variante = 'primary',
   icono,
+  cargando = false,
   className = '',
+  disabled,
   children,
   ...props
 }: ButtonProps) {
   return (
-    <button className={`${estilosBase} ${estilosVariante[variante]} ${className}`} {...props}>
-      {icono}
+    <button
+      className={`${estilosBase} ${estilosVariante[variante]} ${className}`}
+      disabled={disabled || cargando}
+      aria-busy={cargando || undefined}
+      {...props}
+    >
+      {cargando ? (
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      ) : (
+        icono
+      )}
       {children}
     </button>
   );

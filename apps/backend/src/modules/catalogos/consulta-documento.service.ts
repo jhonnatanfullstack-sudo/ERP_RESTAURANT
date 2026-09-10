@@ -16,6 +16,11 @@ export interface DatosDocumento {
 }
 
 const PREFIJO_RUC_PERSONA_JURIDICA = '20';
+/** RUC de persona natural (con negocio): "10" + su DNI (8 dígitos) + 1 dígito verificador —
+ * formato fijo de SUNAT. Se aprovecha para extraer el DNI y consultar RENIEC, que sí separa
+ * nombres/apellidos (SUNAT solo devuelve un string combinado en `razon_social`, incluso para
+ * este tipo de RUC). Ver `consultarDocumento`. */
+const PREFIJO_RUC_PERSONA_NATURAL = '10';
 
 /** El proveedor devuelve campos ausentes como null, cadena vacía o "-": todos
  * significan "sin dato" y deben guardarse como null, no como texto basura. */
@@ -97,20 +102,52 @@ export async function consultarDocumento(
 
   const numeroDocumento = String(datos.numero_documento ?? numero);
   const razonSocial = String(datos.razon_social ?? '');
+  // `direccion_completa` incluye distrito/provincia/departamento; `direccion` es solo la vía.
+  // Se prefiere la completa cuando el proveedor la entrega.
+  const direccion = textoOpcional(datos.direccion_completa ?? datos.direccion);
   // RUC que empieza en "20" = persona jurídica (empresa): SUNAT no le asocia
-  // nombres/apellidos, solo razón social. RUC "10"/"15"/"17" = persona natural,
-  // y SUNAT devuelve su nombre completo como una sola cadena en razón social
-  // (no separada en nombres/apellidos como sí hace RENIEC para el DNI).
+  // nombres/apellidos, solo razón social.
   const esPersonaJuridica = numeroDocumento.startsWith(PREFIJO_RUC_PERSONA_JURIDICA);
+
+  if (esPersonaJuridica) {
+    return {
+      numeroDocumento,
+      nombres: null,
+      apellidoPaterno: null,
+      apellidoMaterno: null,
+      razonSocial,
+      direccion,
+    };
+  }
+
+  // Persona natural (RUC "10"/"15"/"17"...). SUNAT solo devuelve el nombre completo como una
+  // sola cadena en `razon_social`. Para el caso más común, RUC "10", el propio número contiene
+  // el DNI de esa persona: se extrae y se consulta RENIEC, que sí separa nombres/apellidos —
+  // mucho mejor que adivinar dónde cortar la cadena de SUNAT. Si esa consulta falla por
+  // cualquier motivo (DNI no hallado, servicio caído), se sigue con el string combinado.
+  if (numeroDocumento.startsWith(PREFIJO_RUC_PERSONA_NATURAL) && numeroDocumento.length === 11) {
+    const dni = numeroDocumento.slice(2, 10);
+    try {
+      const datosDni = await consultarDocumento('dni', dni);
+      return {
+        numeroDocumento,
+        nombres: datosDni.nombres,
+        apellidoPaterno: datosDni.apellidoPaterno,
+        apellidoMaterno: datosDni.apellidoMaterno,
+        razonSocial: null,
+        direccion,
+      };
+    } catch {
+      // Cae al string combinado de abajo.
+    }
+  }
 
   return {
     numeroDocumento,
-    nombres: esPersonaJuridica ? null : razonSocial,
+    nombres: razonSocial || null,
     apellidoPaterno: null,
     apellidoMaterno: null,
-    razonSocial: esPersonaJuridica ? razonSocial : null,
-    // `direccion_completa` incluye distrito/provincia/departamento; `direccion`
-    // es solo la vía. Se prefiere la completa cuando el proveedor la entrega.
-    direccion: textoOpcional(datos.direccion_completa ?? datos.direccion),
+    razonSocial: null,
+    direccion,
   };
 }
