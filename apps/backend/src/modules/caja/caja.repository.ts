@@ -1,6 +1,6 @@
-import { AppDataSource } from '../../database/data-source';
+import { tenantRepository } from '../../database/tenant-repository';
 import { Caja } from './caja.entity';
 import { MovimientoCaja } from './movimiento-caja.entity';
 
-export const cajaRepository = AppDataSource.getRepository(Caja);
-export const movimientoCajaRepository = AppDataSource.getRepository(MovimientoCaja);
+export const cajaRepository = tenantRepository(Caja);
+export const movimientoCajaRepository = tenantRepository(MovimientoCaja);

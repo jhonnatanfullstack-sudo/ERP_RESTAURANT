@@ -9,6 +9,11 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   tienePermiso: (codigo: string) => boolean;
+  /** Adopta la sesión que devuelve el alta de una cuenta de prueba. El registro ya emitió
+   * los tokens (el refresh vino como cookie), así que solo falta guardar el de acceso y
+   * cargar el usuario: pedirle la contraseña otra vez recién registrado sería fricción
+   * gratuita justo en el momento más frágil. */
+  aplicarSesionDemo: (accessToken: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -41,6 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(sesion.usuario);
   }
 
+  async function aplicarSesionDemo(accessToken: string) {
+    setAccessToken(accessToken);
+    setUsuario(await authService.obtenerUsuarioActual());
+  }
+
   async function handleLogout() {
     await authService.logout().catch(() => undefined);
     setAccessToken(null);
@@ -53,7 +63,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ usuario, cargando, login: handleLogin, logout: handleLogout, tienePermiso }}
+      value={{
+        usuario,
+        cargando,
+        login: handleLogin,
+        logout: handleLogout,
+        tienePermiso,
+        aplicarSesionDemo,
+      }}
     >
       {children}
     </AuthContext.Provider>

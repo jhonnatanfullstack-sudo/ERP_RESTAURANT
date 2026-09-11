@@ -8,13 +8,22 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Empresa } from '../empresa/empresa.entity';
 import { TipoDocumentoIdentidad } from '../catalogos/tipo-documento-identidad.entity';
 
 @Entity('clientes')
-@Index(['tipoDocumentoIdentidad', 'numeroDocumento'], { unique: true })
+@Index(['empresa', 'tipoDocumentoIdentidad', 'numeroDocumento'], { unique: true })
+@Index(['empresa', 'email'], { unique: true })
 export class Cliente {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /** Empresa dueña de esta fila. Es la columna sobre la que actúan las políticas RLS de
+   * Postgres: sin ella, una consulta de la Empresa A podría alcanzar filas de la B. Ver
+   * `database/tenant-context.ts`. */
+  @ManyToOne(() => Empresa, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'empresa_id' })
+  empresa!: Empresa;
 
   @Column({ type: 'varchar', length: 150, nullable: true })
   nombres!: string | null;
@@ -38,7 +47,8 @@ export class Cliente {
   @Column({ type: 'varchar', length: 20, nullable: true })
   telefono!: string | null;
 
-  @Index({ unique: true })
+  // Único por empresa (índice de clase), no por columna: dos restaurantes pueden tener al
+  // mismo cliente con el mismo correo.
   @Column({ type: 'varchar', length: 150, nullable: true })
   email!: string | null;
 

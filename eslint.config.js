@@ -6,7 +6,7 @@ const reactRefresh = require('eslint-plugin-react-refresh').default;
 
 module.exports = tseslint.config(
   {
-    ignores: ['**/dist/**', '**/build/**', '**/node_modules/**', '**/coverage/**'],
+    ignores: ['**/dist/**', '**/build/**', '**/node_modules/**', '**/coverage/**', '.claude/**'],
   },
   {
     files: ['**/*.js'],

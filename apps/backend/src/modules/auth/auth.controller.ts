@@ -1,23 +1,17 @@
 import type { NextFunction, Request, Response } from 'express';
 import { sendSuccess } from '../../utils/api-response';
 import { HttpError } from '../../utils/http-error';
-import { env } from '../../config/env';
+import {
+  REFRESH_COOKIE,
+  opcionesBorrarCookieRefresh,
+  opcionesCookieRefresh,
+} from '../../config/cookies';
 import * as authService from './auth.service';
-
-const REFRESH_COOKIE = 'refresh_token';
-
-const cookieOptions = {
-  httpOnly: true,
-  secure: env.nodeEnv === 'production',
-  sameSite: 'lax' as const,
-  maxAge: env.jwt.refreshExpiresInMs,
-  path: '/api/auth',
-};
 
 export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { accessToken, refreshToken, usuario } = await authService.login(req.body);
-    res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions);
+    res.cookie(REFRESH_COOKIE, refreshToken, opcionesCookieRefresh);
     sendSuccess(res, { accessToken, usuario }, 'Sesión iniciada');
   } catch (error) {
     next(error);
@@ -32,7 +26,7 @@ export async function refrescar(req: Request, res: Response, next: NextFunction)
     }
     const { accessToken, refreshToken, usuario } =
       await authService.refrescarSesion(refreshTokenRaw);
-    res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions);
+    res.cookie(REFRESH_COOKIE, refreshToken, opcionesCookieRefresh);
     sendSuccess(res, { accessToken, usuario }, 'Sesión renovada');
   } catch (error) {
     next(error);
@@ -45,7 +39,7 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
     if (refreshTokenRaw) {
       await authService.logout(refreshTokenRaw);
     }
-    res.clearCookie(REFRESH_COOKIE, { path: '/api/auth' });
+    res.clearCookie(REFRESH_COOKIE, opcionesBorrarCookieRefresh);
     sendSuccess(res, null, 'Sesión cerrada');
   } catch (error) {
     next(error);

@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Outlet } from 'react-router';
+import { Outlet, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ChefHat, MapPin, Phone } from 'lucide-react';
 import * as empresaService from '../services/empresa.service';
 import { enlaceWhatsApp } from '../utils/whatsapp';
 
 export function PublicLayout() {
+  const { slug = '' } = useParams<{ slug: string }>();
   const empresaQuery = useQuery({
-    queryKey: ['empresa-publica'],
-    queryFn: empresaService.obtenerEmpresaPublica,
+    queryKey: ['empresa-publica', slug],
+    queryFn: () => empresaService.obtenerEmpresaPublica(slug),
+    enabled: slug.length > 0,
   });
   const empresa = empresaQuery.data;
   const nombre = empresa?.nombre ?? 'Restaurant ERP';
@@ -39,10 +41,7 @@ export function PublicLayout() {
             />
           ) : (
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-(--carta-acento)">
-              <ChefHat
-                className="h-5 w-5 text-(--carta-acento-contraste)"
-                strokeWidth={2.25}
-              />
+              <ChefHat className="h-5 w-5 text-(--carta-acento-contraste)" strokeWidth={2.25} />
             </div>
           )}
           <span className="truncate text-[15px] font-semibold tracking-tight">{nombre}</span>

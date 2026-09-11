@@ -63,7 +63,10 @@ const PRESETS: Preset[] = [
   },
   {
     etiqueta: '30 días',
-    calcular: () => ({ desde: aFechaIso(sumarDias(new Date(), -29)), hasta: aFechaIso(new Date()) }),
+    calcular: () => ({
+      desde: aFechaIso(sumarDias(new Date(), -29)),
+      hasta: aFechaIso(new Date()),
+    }),
   },
   {
     etiqueta: 'Este mes',
@@ -91,7 +94,8 @@ const PRESETS: Preset[] = [
  * tooltip. Para las series de fecha se expande la etiqueta ISO a algo legible. */
 function aSerie(puntos: PuntoReporte[], comoFecha = false): PuntoSerie[] {
   return puntos.map((punto) => {
-    if (!comoFecha) return { etiqueta: punto.etiqueta, detalle: punto.etiqueta, valor: punto.valor };
+    if (!comoFecha)
+      return { etiqueta: punto.etiqueta, detalle: punto.etiqueta, valor: punto.valor };
     const [anio, mes, dia] = punto.etiqueta.split('-').map(Number);
     const fecha = new Date(anio, mes - 1, dia);
     return {
@@ -245,7 +249,10 @@ export function Reportes() {
 
         <div className="ml-auto flex flex-wrap items-end gap-3">
           <div>
-            <label htmlFor="reporte-desde" className="mb-1.5 block text-xs font-medium text-zinc-500">
+            <label
+              htmlFor="reporte-desde"
+              className="mb-1.5 block text-xs font-medium text-zinc-500"
+            >
               Desde
             </label>
             <input
@@ -258,7 +265,10 @@ export function Reportes() {
             />
           </div>
           <div>
-            <label htmlFor="reporte-hasta" className="mb-1.5 block text-xs font-medium text-zinc-500">
+            <label
+              htmlFor="reporte-hasta"
+              className="mb-1.5 block text-xs font-medium text-zinc-500"
+            >
               Hasta
             </label>
             <input
@@ -498,7 +508,10 @@ export function Reportes() {
                           { encabezado: 'Documento', valor: (f) => f.documento ?? '' },
                           { encabezado: 'Visitas', valor: (f) => f.visitas },
                           { encabezado: 'Total consumido', valor: (f) => f.total.toFixed(2) },
-                          { encabezado: 'Ticket promedio', valor: (f) => f.ticketPromedio.toFixed(2) },
+                          {
+                            encabezado: 'Ticket promedio',
+                            valor: (f) => f.ticketPromedio.toFixed(2),
+                          },
                           {
                             encabezado: 'Última visita',
                             valor: (f) => f.ultimaVisita.slice(0, 10),

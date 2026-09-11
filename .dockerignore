@@ -1,0 +1,20 @@
+# Todo lo que no debe entrar en el contexto de construcción: agranda la imagen, invalida
+# capas de caché sin motivo y, en el caso del .env, metería secretos dentro de la imagen.
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.log
+coverage
+.vscode
+.idea
+.claude
+docs
+apps/frontend
+apps/backend/uploads
+apps/backend/tests

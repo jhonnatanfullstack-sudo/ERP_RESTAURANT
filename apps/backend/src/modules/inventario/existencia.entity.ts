@@ -7,6 +7,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { Empresa } from '../empresa/empresa.entity';
 import { Almacen } from '../almacenes/almacen.entity';
 import { Insumo } from '../insumos/insumo.entity';
 import { Producto } from '../productos/producto.entity';
@@ -65,6 +66,13 @@ export function esMovimientoDeEntrada(tipo: TipoMovimientoExistencia): boolean {
 export class Existencia {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /** Empresa dueña de esta fila. Es la columna sobre la que actúan las políticas RLS de
+   * Postgres: sin ella, una consulta de la Empresa A podría alcanzar filas de la B. Ver
+   * `database/tenant-context.ts`. */
+  @ManyToOne(() => Empresa, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'empresa_id' })
+  empresa!: Empresa;
 
   @ManyToOne(() => Almacen, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'almacen_id' })

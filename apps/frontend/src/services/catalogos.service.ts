@@ -1,6 +1,7 @@
 import { api } from './api';
 import type {
   ApiSuccess,
+  Banco,
   MedioPago,
   TipoAfectacionIgv,
   TipoComprobante,
@@ -38,5 +39,10 @@ export async function listarTiposOperacion() {
 
 export async function listarMediosPago() {
   const res = await api.get<ApiSuccess<MedioPago[]>>('/api/catalogos/medios-pago');
+  return res.data.data;
+}
+
+export async function listarBancos() {
+  const res = await api.get<ApiSuccess<Banco[]>>('/api/catalogos/bancos');
   return res.data.data;
 }

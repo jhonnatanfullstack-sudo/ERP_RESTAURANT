@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { ChefHat, Lock, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Alert } from '../components/ui/Alert';
@@ -86,6 +86,13 @@ export function Login() {
             {enviando ? 'Ingresando…' : 'Iniciar sesión'}
           </Button>
         </form>
+
+        <p className="mt-6 text-center text-sm text-zinc-500">
+          ¿Aún no tienes cuenta?{' '}
+          <Link to="/registro" className="font-semibold text-orange-600 hover:text-orange-700">
+            Prueba el sistema gratis
+          </Link>
+        </p>
       </div>
     </div>
   );

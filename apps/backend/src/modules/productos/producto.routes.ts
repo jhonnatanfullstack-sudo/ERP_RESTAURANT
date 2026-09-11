@@ -9,7 +9,7 @@ export const productoRouter = Router();
 
 const uploaderImagenProducto = crearUploaderImagen('productos');
 
-productoRouter.get('/publico', productoController.listarPublico);
+// La carta pública se movió a `/api/publico/:slug/productos` (ver `modules/carta-publica`).
 
 productoRouter.use(requireAuth);
 

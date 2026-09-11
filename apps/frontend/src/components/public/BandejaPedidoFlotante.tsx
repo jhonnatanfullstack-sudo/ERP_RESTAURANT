@@ -1,20 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
+import { Bike, Minus, NotebookPen, Plus, ShoppingBag, Store, Trash2, X } from 'lucide-react';
 import { formatearPrecio, urlImagen } from '../../utils/formato';
 import { enlaceWhatsApp, mensajePedido } from '../../utils/whatsapp';
+import type { DatosEntrega, ModoEntrega } from '../../utils/whatsapp';
 import type { ItemBandeja } from '../../hooks/useBandejaPedido';
 import type { Producto } from '../../types/api';
 
 interface BandejaPedidoFlotanteProps {
   items: ItemBandeja[];
   productos: Producto[];
+  entrega: DatosEntrega;
   onCambiarCantidad: (productoId: string, cantidad: number) => void;
+  onCambiarNota: (productoId: string, nota: string) => void;
+  onCambiarEntrega: (cambios: Partial<DatosEntrega>) => void;
   onQuitar: (productoId: string) => void;
   onVaciar: () => void;
   nombreRestaurante: string;
   /** Sin teléfono configurado no se puede armar el enlace de WhatsApp — se oculta ese botón. */
   telefonoWhatsApp: string | null;
 }
+
+const CLASE_CAMPO =
+  'w-full rounded-xl border border-(--carta-borde) bg-(--carta-fondo) px-3 py-2.5 text-sm transition-colors placeholder:text-(--carta-suave) focus:border-(--carta-acento) focus:outline-none';
+
+const MODOS: Array<{ modo: ModoEntrega; etiqueta: string; icono: typeof Store }> = [
+  { modo: 'recojo', etiqueta: 'Recojo', icono: Store },
+  { modo: 'delivery', etiqueta: 'Delivery', icono: Bike },
+];
 
 /**
  * Botón flotante con el conteo del pedido informal que el cliente arma en la carta, y el
@@ -24,19 +36,30 @@ interface BandejaPedidoFlotanteProps {
 export function BandejaPedidoFlotante({
   items,
   productos,
+  entrega,
   onCambiarCantidad,
+  onCambiarNota,
+  onCambiarEntrega,
   onQuitar,
   onVaciar,
   nombreRestaurante,
   telefonoWhatsApp,
 }: BandejaPedidoFlotanteProps) {
   const [abierta, setAbierta] = useState(false);
+  // Qué línea tiene el campo de nota desplegado. Solo una a la vez: con el campo siempre
+  // visible en cada línea, un pedido de seis platos se vuelve un formulario largo.
+  const [notaAbiertaId, setNotaAbiertaId] = useState<string | null>(null);
 
   const lineas = items
     .map((item) => {
       const producto = productos.find((p) => p.id === item.productoId);
       if (!producto) return null;
-      return { producto, cantidad: item.cantidad, subtotal: producto.precio * item.cantidad };
+      return {
+        producto,
+        cantidad: item.cantidad,
+        nota: item.nota ?? '',
+        subtotal: producto.precio * item.cantidad,
+      };
     })
     .filter((linea): linea is NonNullable<typeof linea> => linea !== null);
 
@@ -53,6 +76,16 @@ export function BandejaPedidoFlotante({
     totalAnterior.current = totalItems;
   }, [totalItems]);
 
+  // Cerrar con Escape: el panel tapa la página entera y es la salida que el visitante espera.
+  useEffect(() => {
+    if (!abierta) return;
+    const alPresionar = (evento: KeyboardEvent) => {
+      if (evento.key === 'Escape') setAbierta(false);
+    };
+    window.addEventListener('keydown', alPresionar);
+    return () => window.removeEventListener('keydown', alPresionar);
+  }, [abierta]);
+
   const enlaceEnviar = telefonoWhatsApp
     ? enlaceWhatsApp(
         telefonoWhatsApp,
@@ -62,8 +95,10 @@ export function BandejaPedidoFlotante({
             nombre: l.producto.nombre,
             cantidad: l.cantidad,
             subtotal: l.subtotal,
+            nota: l.nota,
           })),
           formatearPrecio,
+          entrega,
         ),
       )
     : null;
@@ -125,65 +160,176 @@ export function BandejaPedidoFlotante({
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-(--carta-suave)">
                   <ShoppingBag className="h-10 w-10" strokeWidth={1.25} />
                   <p className="text-sm">
-                    Toca <span className="font-medium text-(--carta-suave)">"Agregar a mi pedido"</span> en
-                    los platillos que te gusten.
+                    Toca el botón <span className="font-medium">+</span> en los platos que te
+                    gusten.
                   </p>
                 </div>
               ) : (
-                <ul className="flex flex-col gap-4">
-                  {lineas.map(({ producto, cantidad, subtotal }) => {
-                    const imagen = urlImagen(producto.imagenUrl);
-                    return (
-                      <li key={producto.id} className="flex items-center gap-3">
-                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-(--carta-elevado)">
-                          {imagen && (
-                            <img
-                              src={imagen}
-                              alt=""
-                              className="h-full w-full object-cover"
-                              loading="lazy"
-                            />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium text-(--carta-texto)">
-                            {producto.nombre}
-                          </p>
-                          <p className="text-xs text-(--carta-suave)">{formatearPrecio(subtotal)}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
+                <>
+                  <ul className="flex flex-col gap-4">
+                    {lineas.map(({ producto, cantidad, nota, subtotal }) => {
+                      const imagen = urlImagen(producto.imagenUrl);
+                      const notaAbierta = notaAbiertaId === producto.id;
+                      return (
+                        <li key={producto.id}>
+                          <div className="flex items-center gap-3">
+                            <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-(--carta-elevado)">
+                              {imagen && (
+                                <img
+                                  src={imagen}
+                                  alt=""
+                                  className="h-full w-full object-cover"
+                                  loading="lazy"
+                                />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-(--carta-texto)">
+                                {producto.nombre}
+                              </p>
+                              <p className="text-xs text-(--carta-suave)">
+                                {formatearPrecio(subtotal)}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => onCambiarCantidad(producto.id, cantidad - 1)}
+                                aria-label={`Quitar una unidad de ${producto.nombre}`}
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-(--carta-borde) text-(--carta-suave) transition-colors hover:bg-(--carta-elevado)"
+                              >
+                                <Minus className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="w-5 text-center text-sm font-semibold tabular-nums">
+                                {cantidad}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => onCambiarCantidad(producto.id, cantidad + 1)}
+                                aria-label={`Agregar una unidad más de ${producto.nombre}`}
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-(--carta-borde) text-(--carta-suave) transition-colors hover:bg-(--carta-elevado)"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onQuitar(producto.id)}
+                                aria-label={`Quitar ${producto.nombre} del pedido`}
+                                className="ml-1 flex h-7 w-7 items-center justify-center rounded-full text-(--carta-suave) transition-colors hover:text-red-500"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Nota por plato: lo que en el mostrador se diría de viva voz
+                              ("sin cebolla"). Va al mensaje bajo su línea. */}
+                          <div className="mt-2 pl-17">
+                            {notaAbierta ? (
+                              <input
+                                type="text"
+                                autoFocus
+                                value={nota}
+                                maxLength={120}
+                                onChange={(evento) =>
+                                  onCambiarNota(producto.id, evento.target.value)
+                                }
+                                onBlur={() => setNotaAbiertaId(null)}
+                                onKeyDown={(evento) => {
+                                  if (evento.key === 'Enter' || evento.key === 'Escape') {
+                                    evento.currentTarget.blur();
+                                  }
+                                }}
+                                placeholder="Sin cebolla, poca sal…"
+                                aria-label={`Nota para ${producto.nombre}`}
+                                className={`${CLASE_CAMPO} py-1.5 text-xs`}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setNotaAbiertaId(producto.id)}
+                                className="flex max-w-full items-center gap-1.5 text-xs text-(--carta-suave) transition-colors hover:text-(--carta-acento)"
+                              >
+                                <NotebookPen className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                                <span className="truncate">
+                                  {nota.trim() || 'Agregar una indicación'}
+                                </span>
+                              </button>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  {/* Cómo lo quiere recibir: son los datos que quien atiende el chat iba a
+                      tener que preguntar igual. */}
+                  <div className="mt-7 border-t border-(--carta-borde) pt-5">
+                    <p className="text-sm font-semibold text-(--carta-texto)">
+                      ¿Cómo lo quieres recibir?
+                    </p>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {MODOS.map(({ modo, etiqueta, icono: Icono }) => {
+                        const activo = entrega.modo === modo;
+                        return (
                           <button
+                            key={modo}
                             type="button"
-                            onClick={() => onCambiarCantidad(producto.id, cantidad - 1)}
-                            aria-label={`Quitar una unidad de ${producto.nombre}`}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-(--carta-borde) text-(--carta-suave) transition-colors hover:bg-(--carta-elevado)"
+                            aria-pressed={activo}
+                            onClick={() => onCambiarEntrega({ modo })}
+                            className={`flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-medium transition-colors ${
+                              activo
+                                ? 'border-(--carta-acento) bg-(--carta-acento-tenue) text-(--carta-acento)'
+                                : 'border-(--carta-borde) text-(--carta-suave) hover:bg-(--carta-elevado)'
+                            }`}
                           >
-                            <Minus className="h-3.5 w-3.5" />
+                            <Icono className="h-4 w-4" strokeWidth={2} />
+                            {etiqueta}
                           </button>
-                          <span className="w-5 text-center text-sm font-semibold tabular-nums">
-                            {cantidad}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => onCambiarCantidad(producto.id, cantidad + 1)}
-                            aria-label={`Agregar una unidad más de ${producto.nombre}`}
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-(--carta-borde) text-(--carta-suave) transition-colors hover:bg-(--carta-elevado)"
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onQuitar(producto.id)}
-                            aria-label={`Quitar ${producto.nombre} del pedido`}
-                            className="ml-1 flex h-7 w-7 items-center justify-center rounded-full text-(--carta-suave) transition-colors hover:text-red-500"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-3 flex flex-col gap-2">
+                      <input
+                        type="text"
+                        value={entrega.nombre ?? ''}
+                        maxLength={80}
+                        onChange={(evento) => onCambiarEntrega({ nombre: evento.target.value })}
+                        placeholder="Tu nombre"
+                        aria-label="Tu nombre"
+                        className={CLASE_CAMPO}
+                      />
+                      {entrega.modo === 'delivery' && (
+                        <input
+                          type="text"
+                          value={entrega.direccion ?? ''}
+                          maxLength={160}
+                          onChange={(evento) =>
+                            onCambiarEntrega({ direccion: evento.target.value })
+                          }
+                          placeholder="Dirección de entrega"
+                          aria-label="Dirección de entrega"
+                          className={CLASE_CAMPO}
+                        />
+                      )}
+                      <input
+                        type="text"
+                        value={entrega.referencia ?? ''}
+                        maxLength={160}
+                        onChange={(evento) => onCambiarEntrega({ referencia: evento.target.value })}
+                        placeholder={
+                          entrega.modo === 'delivery'
+                            ? 'Referencia (opcional)'
+                            : 'Hora de recojo (opcional)'
+                        }
+                        aria-label="Indicaciones adicionales"
+                        className={CLASE_CAMPO}
+                      />
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
@@ -191,7 +337,9 @@ export function BandejaPedidoFlotante({
               <div className="shrink-0 border-t border-(--carta-borde) px-5 py-4">
                 <div className="mb-3 flex items-center justify-between text-sm">
                   <span className="text-(--carta-suave)">Total estimado</span>
-                  <span className="text-lg font-bold text-(--carta-texto)">{formatearPrecio(total)}</span>
+                  <span className="text-lg font-bold text-(--carta-texto)">
+                    {formatearPrecio(total)}
+                  </span>
                 </div>
                 {enlaceEnviar ? (
                   <a

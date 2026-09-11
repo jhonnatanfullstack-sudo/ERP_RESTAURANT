@@ -17,6 +17,8 @@ import { Pedidos } from '../pages/Pedidos';
 import { PedidoDetalle } from '../pages/PedidoDetalle';
 import { Cocina } from '../pages/Cocina';
 import { Ventas } from '../pages/Ventas';
+import { Talonarios } from '../pages/Talonarios';
+import { CuentasPorCobrar } from '../pages/CuentasPorCobrar';
 import { Caja } from '../pages/Caja';
 import { Insumos } from '../pages/Insumos';
 import { Almacenes } from '../pages/Almacenes';
@@ -24,19 +26,27 @@ import { Inventario } from '../pages/Inventario';
 import { Proveedores } from '../pages/Proveedores';
 import { Compras } from '../pages/Compras';
 import { Reportes } from '../pages/Reportes';
+import { Costos } from '../pages/Costos';
+import { Auditoria } from '../pages/Auditoria';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
+import { RegistroDemo } from '../pages/public/RegistroDemo';
+import { Plataforma } from '../pages/Plataforma';
+import { Configuracion } from '../pages/Configuracion';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export function AppRoutes() {
   return (
     <Routes>
+      {/* La carta lleva el slug del restaurante: con varias empresas en el sistema, `/carta`
+          a secas ya no identifica a ninguna. */}
       <Route element={<PublicLayout />}>
-        <Route path="/carta" element={<Carta />} />
+        <Route path="/carta/:slug" element={<Carta />} />
       </Route>
 
       <Route path="/login" element={<Login />} />
+      <Route path="/registro" element={<RegistroDemo />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AdminLayout />}>
@@ -55,6 +65,8 @@ export function AppRoutes() {
           <Route path="/pedidos/:id" element={<PedidoDetalle />} />
           <Route path="/cocina" element={<Cocina />} />
           <Route path="/ventas" element={<Ventas />} />
+          <Route path="/talonarios" element={<Talonarios />} />
+          <Route path="/cuentas-por-cobrar" element={<CuentasPorCobrar />} />
           <Route path="/caja" element={<Caja />} />
           <Route path="/insumos" element={<Insumos />} />
           <Route path="/almacenes" element={<Almacenes />} />
@@ -62,6 +74,10 @@ export function AppRoutes() {
           <Route path="/proveedores" element={<Proveedores />} />
           <Route path="/compras" element={<Compras />} />
           <Route path="/reportes" element={<Reportes />} />
+          <Route path="/costos" element={<Costos />} />
+          <Route path="/plataforma" element={<Plataforma />} />
+          <Route path="/configuracion" element={<Configuracion />} />
+          <Route path="/auditoria" element={<Auditoria />} />
           <Route path="/empresa" element={<Empresa />} />
           <Route path="/cambiar-password" element={<CambiarPassword />} />
         </Route>

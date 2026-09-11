@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, MessageCircle, Search, UtensilsCrossed, X } from 'lucide-react';
 import * as productosService from '../../services/productos.service';
@@ -12,7 +13,9 @@ import { BarraProgresoLectura } from '../../components/public/BarraProgresoLectu
 import { PalabraRotativa } from '../../components/public/PalabraRotativa';
 import { ComoPedir } from '../../components/public/ComoPedir';
 import { MapaUbicacion } from '../../components/public/MapaUbicacion';
+import { BotonCompartir } from '../../components/public/BotonCompartir';
 import { useBandejaPedido } from '../../hooks/useBandejaPedido';
+import { useMetaDocumento } from '../../hooks/useMetaDocumento';
 import { useMovimientoReducido } from '../../hooks/animacion';
 import { enlaceWhatsApp } from '../../utils/whatsapp';
 import { urlImagen } from '../../utils/formato';
@@ -46,18 +49,23 @@ function ListaCargando() {
 }
 
 export function Carta() {
+  // Qué restaurante publica esta carta. Viene de la URL (`/carta/:slug`) porque un cliente
+  // mirando el menú no tiene sesión: no hay otra forma de saber de quién es la carta.
+  const { slug = '' } = useParams<{ slug: string }>();
   const [busqueda, setBusqueda] = useState('');
   const [platilloAbierto, setPlatilloAbierto] = useState<Producto | null>(null);
   const bandeja = useBandejaPedido();
   const movimientoReducido = useMovimientoReducido();
 
   const productosQuery = useQuery({
-    queryKey: ['productos-publico'],
-    queryFn: productosService.listarProductosPublico,
+    queryKey: ['productos-publico', slug],
+    queryFn: () => productosService.listarProductosPublico(slug),
+    enabled: slug.length > 0,
   });
   const empresaQuery = useQuery({
-    queryKey: ['empresa-publica'],
-    queryFn: empresaService.obtenerEmpresaPublica,
+    queryKey: ['empresa-publica', slug],
+    queryFn: () => empresaService.obtenerEmpresaPublica(slug),
+    enabled: slug.length > 0,
   });
   const empresa = empresaQuery.data;
   const nombreRestaurante = empresa?.nombre ?? 'nuestro restaurante';
@@ -94,7 +102,12 @@ export function Carta() {
     );
     return encontrados.length === 0
       ? []
-      : [{ categoria: { id: 'busqueda', nombre: `Resultados (${encontrados.length})` }, productos: encontrados }];
+      : [
+          {
+            categoria: { id: 'busqueda', nombre: `Resultados (${encontrados.length})` },
+            productos: encontrados,
+          },
+        ];
   }, [productos, busqueda]);
 
   // --- Scrollspy: qué categoría resaltar en la barra según lo que esté a la vista.
@@ -159,11 +172,25 @@ export function Carta() {
     return conFoto ? { url: urlImagen(conFoto.imagenUrl)!, nombre: conFoto.nombre } : null;
   }, [productos]);
 
+  // El enlace de la carta se comparte por chat: ahí se ve este título, esta descripción y
+  // esta foto, no el título genérico del `index.html`.
+  useMetaDocumento({
+    titulo: empresa ? `Carta de ${empresa.nombre}` : 'Carta digital',
+    descripcion: empresa
+      ? `Mira la carta de ${empresa.nombre} con fotos y precios al día, arma tu pedido y envíalo por WhatsApp.`
+      : null,
+    imagen: fotoHero?.url ?? null,
+  });
+
   const cantidadPlatilloAbierto = platilloAbierto
     ? (bandeja.items.find((item) => item.productoId === platilloAbierto.id)?.cantidad ?? 0)
     : 0;
 
   const gruposVisibles = buscando ? gruposBusqueda : grupos;
+
+  // Un local que solo atiende en salón publica su menú sin invitar a pedir: se oculta la
+  // bandeja y los botones de agregar, pero la carta se ve completa.
+  const permitirPedidos = empresa?.aceptaPedidosWhatsapp !== false;
 
   return (
     <div>
@@ -186,8 +213,7 @@ export function Carta() {
               className="animar-revelar mt-6 text-[2.6rem] leading-[1.02] font-semibold tracking-tight sm:text-5xl lg:text-6xl"
               style={{ animationDelay: '150ms' }}
             >
-              Elige tu{' '}
-              <PalabraRotativa palabras={['almuerzo.', 'antojo.', 'cena.', 'menú.']} />
+              Elige tu <PalabraRotativa palabras={['almuerzo.', 'antojo.', 'cena.', 'menú.']} />
               <br />
               Pide por WhatsApp.
             </h1>
@@ -195,8 +221,21 @@ export function Carta() {
               className="animar-revelar mt-6 max-w-sm text-base leading-relaxed text-(--carta-suave)"
               style={{ animationDelay: '240ms' }}
             >
-              Toda la carta con fotos y precios al día. Arma tu pedido y envíalo en un toque.
+              {/* El restaurante puede poner su propio mensaje en Configuración; si no, se usa
+                  uno genérico que describe lo que la carta hace. */}
+              {empresa?.mensajeBienvenida ??
+                (permitirPedidos
+                  ? 'Toda la carta con fotos y precios al día. Arma tu pedido y envíalo en un toque.'
+                  : 'Toda la carta con fotos y precios al día.')}
             </p>
+            {empresa?.horarioAtencion && (
+              <p
+                className="animar-revelar mt-3 text-sm font-medium text-(--carta-acento)"
+                style={{ animationDelay: '270ms' }}
+              >
+                {empresa.horarioAtencion}
+              </p>
+            )}
 
             <div
               className="animar-revelar mt-9 flex flex-wrap items-center gap-3"
@@ -220,25 +259,27 @@ export function Carta() {
                   Escríbenos
                 </a>
               )}
+              <BotonCompartir
+                titulo={`Carta de ${nombreRestaurante}`}
+                texto={`Mira la carta de ${nombreRestaurante} y pide por WhatsApp.`}
+              />
             </div>
           </div>
 
           {fotoHero && (
-            <div
-              className="animar-revelar relative hidden lg:block"
-              style={{ animationDelay: '420ms' }}
-            >
+            <div className="animar-revelar relative" style={{ animationDelay: '420ms' }}>
               <div
                 aria-hidden="true"
                 className="animar-resplandor absolute -inset-6 rounded-full bg-(--carta-acento)/10 blur-3xl"
               />
-              {/* `w-screen` more allá del contenedor: la foto sale por el borde derecho de la
-                  pantalla en vez de quedar centrada como una tarjeta. */}
-              <div className="relative overflow-hidden rounded-l-[3rem]">
+              {/* En escritorio la foto sale por el borde derecho de la pantalla en vez de
+                  quedar centrada como una tarjeta; en móvil es una foto apaisada bajo el
+                  titular, que es donde el visitante decide si le provoca entrar. */}
+              <div className="relative overflow-hidden rounded-3xl lg:rounded-r-none lg:rounded-l-[3rem]">
                 <img
                   src={fotoHero.url}
                   alt={fotoHero.nombre}
-                  className="aspect-[4/5] w-full object-cover"
+                  className="aspect-16/10 w-full object-cover sm:aspect-2/1 lg:aspect-4/5"
                 />
               </div>
             </div>
@@ -344,12 +385,11 @@ export function Carta() {
             onQuitarUna={(id, cantidadActual) => bandeja.cambiarCantidad(id, cantidadActual - 1)}
             onVerDetalle={setPlatilloAbierto}
             registrarSeccion={registrarSeccion}
+            permitirPedidos={permitirPedidos}
             pie={
               enlaceWspGeneral ? (
                 <div className="rounded-2xl border border-(--carta-borde) bg-(--carta-superficie) p-7">
-                  <p className="text-lg font-semibold tracking-tight">
-                    ¿Dudas con algún plato?
-                  </p>
+                  <p className="text-lg font-semibold tracking-tight">¿Dudas con algún plato?</p>
                   <p className="mt-2 text-sm leading-relaxed text-(--carta-suave)">
                     Escríbenos y te contamos qué lleva, cuánto demora o si podemos ajustarlo.
                   </p>
@@ -379,15 +419,20 @@ export function Carta() {
 
       <BotonSubir />
 
-      <BandejaPedidoFlotante
-        items={bandeja.items}
-        productos={productos}
-        onCambiarCantidad={bandeja.cambiarCantidad}
-        onQuitar={bandeja.quitar}
-        onVaciar={bandeja.vaciar}
-        nombreRestaurante={nombreRestaurante}
-        telefonoWhatsApp={empresa?.telefono ?? null}
-      />
+      {permitirPedidos && (
+        <BandejaPedidoFlotante
+          items={bandeja.items}
+          productos={productos}
+          entrega={bandeja.entrega}
+          onCambiarCantidad={bandeja.cambiarCantidad}
+          onCambiarNota={bandeja.cambiarNota}
+          onCambiarEntrega={bandeja.cambiarEntrega}
+          onQuitar={bandeja.quitar}
+          onVaciar={bandeja.vaciar}
+          nombreRestaurante={nombreRestaurante}
+          telefonoWhatsApp={empresa?.telefono ?? null}
+        />
+      )}
 
       <ModalPlatillo
         producto={platilloAbierto}

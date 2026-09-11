@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, ChefHat, Flame, Utensils, XCircle } from 'lucide-react';
 import * as comandasService from '../services/comandas.service';
+import * as configuracionService from '../services/configuracion.service';
 import { useAuth } from '../context/AuthContext';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -43,10 +44,21 @@ export function Cocina() {
   const [filtro, setFiltro] = useState<Filtro>('activas');
   const [comandaCancelando, setComandaCancelando] = useState<Comanda | null>(null);
 
+  // El ritmo de refresco lo define el restaurante en Configuración. Se consulta aparte y
+  // con `staleTime` alto: cambia muy de vez en cuando y no tiene sentido re-pedirla
+  // junto a cada refresco de la cola.
+  const configuracionQuery = useQuery({
+    queryKey: ['configuracion'],
+    queryFn: configuracionService.obtenerConfiguracion,
+    staleTime: 10 * 60 * 1000,
+  });
+
   const comandasQuery = useQuery({
     queryKey: ['comandas'],
     queryFn: comandasService.listarComandas,
-    refetchInterval: 8000,
+    // Cada restaurante define su propio ritmo en Configuración (FASE 21): antes era un
+    // valor fijo de 8 segundos para todos.
+    refetchInterval: (configuracionQuery.data?.segundosRefrescoCocina ?? 8) * 1000,
   });
 
   function invalidar() {

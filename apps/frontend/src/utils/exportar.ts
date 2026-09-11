@@ -44,9 +44,7 @@ export function exportarCsv<T>(
 ): void {
   const lineas = [
     columnas.map((columna) => escapar(columna.encabezado)).join(SEPARADOR),
-    ...filas.map((fila) =>
-      columnas.map((columna) => escapar(columna.valor(fila))).join(SEPARADOR),
-    ),
+    ...filas.map((fila) => columnas.map((columna) => escapar(columna.valor(fila))).join(SEPARADOR)),
   ];
   descargar(`${BOM_UTF8}${lineas.join('\r\n')}`, `${nombreArchivo}.csv`, 'text/csv;charset=utf-8;');
 }

@@ -18,9 +18,12 @@ export async function listarEmpresas() {
 }
 
 /** Sin autenticación — usado por la carta pública para mostrar el nombre, dirección,
- * teléfono y logo reales del restaurante en vez de un branding genérico. */
-export async function obtenerEmpresaPublica() {
-  const res = await api.get<ApiSuccess<EmpresaPublica | null>>('/api/empresas/publico');
+ * teléfono y logo reales del restaurante en vez de un branding genérico.
+ *
+ * Lleva el slug del restaurante porque con varias empresas en el sistema ya no existe "la"
+ * empresa pública: cada una publica su propia carta en `/carta/:slug`. */
+export async function obtenerEmpresaPublica(slug: string) {
+  const res = await api.get<ApiSuccess<EmpresaPublica | null>>(`/api/publico/${slug}/empresa`);
   return res.data.data;
 }
 

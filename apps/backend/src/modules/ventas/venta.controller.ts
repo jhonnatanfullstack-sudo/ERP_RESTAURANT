@@ -23,7 +23,7 @@ export async function obtener(req: Request, res: Response, next: NextFunction): 
 
 export async function crear(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const venta = await ventaService.crearVenta(req.body);
+    const venta = await ventaService.crearVenta(req.usuarioAuth!.sub, req.body);
     sendSuccess(res, venta, 'Venta registrada', 201);
   } catch (error) {
     next(error);

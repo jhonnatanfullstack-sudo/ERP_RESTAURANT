@@ -26,6 +26,7 @@ export async function obtenerUsuarioParaLogin(email: string): Promise<Usuario | 
     .createQueryBuilder('usuario')
     .addSelect('usuario.passwordHash')
     .leftJoinAndSelect('usuario.personal', 'personal')
+    .leftJoinAndSelect('personal.empresa', 'empresa')
     .leftJoinAndSelect('usuario.rol', 'rol')
     .leftJoinAndSelect('rol.permisos', 'permisos')
     .where('usuario.email = :email', { email })

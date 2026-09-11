@@ -9,6 +9,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Empresa } from '../empresa/empresa.entity';
 import { Usuario } from '../usuarios/usuario.entity';
 import { MovimientoCaja } from './movimiento-caja.entity';
 import { numericTransformer } from '../../utils/numeric-transformer';
@@ -23,10 +24,22 @@ export enum EstadoCaja {
 // invariante que "una sola sesión de caja activa" pero garantizada por Postgres, no solo por
 // el chequeo en caja.service.ts — evita una condición de carrera si dos "abrir caja" llegan
 // al mismo tiempo.
-@Index('IDX_una_caja_abierta', ['estado'], { unique: true, where: `"estado" = 'abierta'` })
+// Una sola caja abierta **por empresa**, no en todo el sistema: con multi-empresa, el índice
+// global impedía que un restaurante abriera caja si otro la tenía abierta.
+@Index('IDX_una_caja_abierta_por_empresa', ['empresa', 'estado'], {
+  unique: true,
+  where: `"estado" = 'abierta'`,
+})
 export class Caja {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /** Empresa dueña de esta fila. Es la columna sobre la que actúan las políticas RLS de
+   * Postgres: sin ella, una consulta de la Empresa A podría alcanzar filas de la B. Ver
+   * `database/tenant-context.ts`. */
+  @ManyToOne(() => Empresa, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'empresa_id' })
+  empresa!: Empresa;
 
   @ManyToOne(() => Usuario, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'usuario_apertura_id' })

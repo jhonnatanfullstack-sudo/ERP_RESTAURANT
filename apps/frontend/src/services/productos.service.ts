@@ -37,8 +37,8 @@ export async function listarProductos() {
   return res.data.data;
 }
 
-export async function listarProductosPublico() {
-  const res = await api.get<ApiSuccess<Producto[]>>('/api/productos/publico');
+export async function listarProductosPublico(slug: string) {
+  const res = await api.get<ApiSuccess<Producto[]>>(`/api/publico/${slug}/productos`);
   return res.data.data;
 }
 

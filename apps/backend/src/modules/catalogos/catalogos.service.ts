@@ -1,5 +1,6 @@
 import {
   medioPagoRepository,
+  bancoRepository,
   tipoAfectacionIgvRepository,
   tipoComprobanteRepository,
   tipoDocumentoIdentidadRepository,
@@ -32,4 +33,8 @@ export async function listarTiposOperacion() {
 
 export async function listarMediosPago() {
   return medioPagoRepository.find({ where: { activo: true }, order: { nombre: 'ASC' } });
+}
+
+export async function listarBancos() {
+  return bancoRepository.find({ where: { activo: true }, order: { nombre: 'ASC' } });
 }

@@ -53,6 +53,14 @@ export interface EmpresaPublica {
   direccion: string | null;
   telefono: string | null;
   logo: string | null;
+  // Subconjunto público de la configuración (FASE 21): viaja junto a la empresa porque la
+  // carta lo necesita en el mismo momento para pintar su cabecera y su pie.
+  horarioAtencion: string | null;
+  mensajeBienvenida: string | null;
+  aceptaPedidosWhatsapp: boolean;
+  facebookUrl: string | null;
+  instagramUrl: string | null;
+  tiktokUrl: string | null;
 }
 
 export interface Personal {
@@ -112,6 +120,8 @@ export interface MedioPago {
   id: string;
   codigo: string;
   nombre: string;
+  /** Si exige registrar banco y número de operación (transferencia, depósito, cheque). */
+  requiereBanco: boolean;
 }
 
 export type TipoProducto = 'mercaderia' | 'servicio';
@@ -140,6 +150,51 @@ export interface Insumo {
   /** Costo unitario de compra más reciente (cualquier almacén) — `null` si nunca se compró.
    * Solo lo devuelve `GET /api/insumos` (listado), no viene en cada relación anidada. */
   ultimoCosto?: number | null;
+}
+
+/** Por qué un producto no se puede costear todavía (FASE 18). */
+export type MotivoSinCosteo = 'sin_receta' | 'sin_costos';
+
+/** De dónde salió el costo: de una compra registrada (con desglose de IGV real) o de un
+ * movimiento de inventario tipeado a mano. */
+export type OrigenCosto = 'compra' | 'manual';
+
+export interface LineaCosteo {
+  insumoId: string;
+  nombre: string;
+  unidadMedida: string;
+  cantidad: number;
+  costoUnitario: number | null;
+  costoLinea: number | null;
+  origenCosto: OrigenCosto | null;
+}
+
+export interface CosteoProducto {
+  productoId: string;
+  nombre: string;
+  tipo: TipoProducto;
+  categoria: { id: string; nombre: string };
+  /** Precio de carta, con IGV incluido. */
+  precio: number;
+  /** Precio sin IGV: la base contra la que se mide el margen. */
+  valorVenta: number;
+  costo: number | null;
+  costoCompleto: boolean;
+  componentesSinCosto: string[];
+  margen: number | null;
+  margenPorcentaje: number | null;
+  /** "Food cost": costo sobre el valor de venta, en porcentaje. */
+  costoPorcentaje: number | null;
+  motivoSinCosteo: MotivoSinCosteo | null;
+  origenCosto: OrigenCosto | null;
+  lineas: LineaCosteo[];
+}
+
+export interface ResumenCosteo {
+  tasaIgv: number;
+  sinCostear: number;
+  margenPromedioPorcentaje: number | null;
+  productos: CosteoProducto[];
 }
 
 export interface RecetaInsumo {
@@ -338,6 +393,39 @@ export interface DetalleVenta {
   subtotal: number;
 }
 
+export interface Banco {
+  id: string;
+  /** Código SBS de la entidad financiera. */
+  codigo: string;
+  nombre: string;
+}
+
+export interface TalonarioUsuarioAsignado {
+  id: string;
+  usuario: Pick<Usuario, 'id' | 'email' | 'personal'>;
+}
+
+/** Serie de comprobantes con su correlativo vigente. `siguienteNumero` lo calcula el backend
+ * (`talonario.service.ts`): es el número que le tocará al próximo comprobante. */
+export interface Talonario {
+  id: string;
+  empresa: Pick<Empresa, 'id' | 'razonSocial'>;
+  tipoComprobante: TipoComprobante;
+  almacen: Pick<Almacen, 'id' | 'nombre'>;
+  serie: string;
+  /** Último número emitido; 0 si el talonario todavía no emitió nada. */
+  numeroActual: number;
+  numeroInicio: number;
+  numeroFin: number;
+  activo: boolean;
+  usuarios: TalonarioUsuarioAsignado[];
+  siguienteNumero: number;
+  siguienteNumeroFormateado: string;
+  numerosDisponibles: number;
+  agotado: boolean;
+  creadoEn: string;
+}
+
 export interface Venta {
   id: string;
   /** null en una venta directa (sin pedido de origen: los productos se venden sueltos). */
@@ -347,11 +435,16 @@ export interface Venta {
     'id' | 'nombres' | 'apellidos' | 'razonSocial' | 'numeroDocumento' | 'tipoDocumentoIdentidad'
   > | null;
   tipoComprobante: TipoComprobante;
+  /** null en las ventas emitidas antes del módulo de talonarios (serie fija por comprobante). */
+  talonario: Pick<Talonario, 'id' | 'serie'> | null;
   serie: string;
   numero: number;
   tipoOperacion: TipoOperacion;
   formaPago: FormaPago;
   medioPago: MedioPago | null;
+  /** Entidad financiera del cobro al contado bancarizado; null si fue en efectivo o al crédito. */
+  banco: Banco | null;
+  numeroOperacion: string | null;
   subtotal: number;
   igv: number;
   total: number;
@@ -404,6 +497,8 @@ export interface UsuarioAutenticado {
   id: string;
   email: string;
   activo: boolean;
+  /** Marca al proveedor del sistema: habilita el panel transversal `/plataforma`. */
+  esProveedor: boolean;
   personal: {
     id: string;
     nombres: string | null;
@@ -471,4 +566,159 @@ export interface Reporte {
   topProductos: ProductoReporte[];
   clientes: ClienteReporte[];
   proveedores: ProveedorReporte[];
+}
+
+export type AccionAuditoria =
+  'crear' | 'actualizar' | 'eliminar' | 'anular' | 'login' | 'login_fallido' | 'logout';
+
+export interface RegistroAuditoria {
+  id: string;
+  /** `null` en intentos de login fallidos: aún no había sesión que atribuir. */
+  usuario: Pick<Usuario, 'id' | 'email' | 'personal'> | null;
+  accion: AccionAuditoria;
+  modulo: string;
+  recursoId: string | null;
+  metodo: string;
+  ruta: string;
+  estadoHttp: number;
+  ip: string | null;
+  /** Cuerpo de la petición con los campos sensibles ya redactados por el backend. */
+  datos: Record<string, unknown> | null;
+  creadoEn: string;
+}
+
+export interface PaginaAuditoria {
+  registros: RegistroAuditoria[];
+  total: number;
+  pagina: number;
+  porPagina: number;
+}
+
+export type EstadoCobranza = 'pendiente' | 'parcial' | 'pagada' | 'vencida';
+
+/** Cuota del cronograma de una venta al crédito (exigido por SUNAT en el comprobante). */
+export interface CuotaVenta {
+  id: string;
+  numero: number;
+  monto: number;
+  fechaVencimiento: string;
+}
+
+export interface PagoVenta {
+  id: string;
+  fechaPago: string;
+  monto: number;
+  medioPago: MedioPago;
+  banco: Banco | null;
+  numeroOperacion: string | null;
+  observacion: string | null;
+  anulado: boolean;
+  motivoAnulacion: string | null;
+  usuario: Pick<Usuario, 'id' | 'personal'>;
+  creadoEn: string;
+}
+
+/** Documento por cobrar: la venta al crédito con su cronograma, sus cobros y el saldo, que
+ * el backend calcula desde los pagos vigentes (nunca se guarda). */
+export interface Cobranza {
+  venta: Venta;
+  cuotas: CuotaVenta[];
+  pagos: PagoVenta[];
+  total: number;
+  pagado: number;
+  saldo: number;
+  estadoCobranza: EstadoCobranza;
+  proximoVencimiento: string | null;
+  diasVencido: number;
+}
+
+// --- Multi-empresa, demo y panel del proveedor (FASE 25-26) ---
+
+export type EstadoSuscripcion = 'activa' | 'demo' | 'demo_vencida' | 'suspendida';
+export type PlanEmpresa = 'demo' | 'activo';
+
+export interface ContactoProveedor {
+  nombre: string;
+  email: string | null;
+  telefono: string | null;
+}
+
+export interface ResumenSuscripcion {
+  estado: EstadoSuscripcion;
+  plan: PlanEmpresa;
+  /** Días completos que quedan de prueba; `null` en una cuenta contratada. */
+  diasRestantes: number | null;
+  expiraEn: string | null;
+  puedeEscribir: boolean;
+  contactoProveedor: ContactoProveedor;
+}
+
+export interface InformacionDemo {
+  diasDePrueba: number;
+  proveedor: ContactoProveedor;
+}
+
+export interface SesionDemo {
+  accessToken: string;
+  empresa: { id: string; razonSocial: string; slug: string };
+  suscripcion: ResumenSuscripcion;
+}
+
+export interface EmpresaEnPanel {
+  id: string;
+  ruc: string;
+  razonSocial: string;
+  nombreComercial: string | null;
+  slug: string;
+  email: string | null;
+  telefono: string | null;
+  plan: PlanEmpresa;
+  estado: EstadoSuscripcion;
+  diasRestantes: number | null;
+  expiraEn: string | null;
+  creadaPorAutoservicio: boolean;
+  creadoEn: string;
+  peticiones: number;
+  escrituras: number;
+  diasConActividad: number;
+  ultimoAcceso: string | null;
+}
+
+export interface PanelPlataforma {
+  totalEmpresas: number;
+  demosActivas: number;
+  demosVencidas: number;
+  clientesActivos: number;
+  suspendidas: number;
+  activasUltimos7Dias: number;
+  empresas: EmpresaEnPanel[];
+}
+
+export interface UsoDiario {
+  fecha: string;
+  peticiones: number;
+  escrituras: number;
+}
+
+export type AccionEmpresa =
+  | { tipo: 'activar' }
+  | { tipo: 'extender_demo'; dias: number }
+  | { tipo: 'suspender' }
+  | { tipo: 'reactivar' };
+
+/** Parámetros operativos del restaurante (FASE 21). Lo que antes eran constantes fijas. */
+export interface ConfiguracionRestaurante {
+  duracionReservaMinutos: number;
+  segundosRefrescoCocina: number;
+  diasCreditoPorDefecto: number;
+  /** Hasta este porcentaje de food cost un plato se considera sano. */
+  foodCostObjetivo: number;
+  /** A partir de este porcentaje el margen se considera crítico. */
+  foodCostCritico: number;
+  horarioAtencion: string | null;
+  mensajeBienvenida: string | null;
+  aceptaPedidosWhatsapp: boolean;
+  facebookUrl: string | null;
+  instagramUrl: string | null;
+  tiktokUrl: string | null;
 }

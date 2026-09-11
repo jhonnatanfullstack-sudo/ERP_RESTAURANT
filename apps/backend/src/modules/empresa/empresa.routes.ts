@@ -8,8 +8,8 @@ export const empresaRouter = Router();
 
 // Sin autenticación: datos de contacto para la carta pública (nombre, dirección, teléfono,
 // logo). Debe registrarse antes de empresaRouter.use(requireAuth) — mismo patrón que
-// GET /api/productos/publico.
-empresaRouter.get('/publico', empresaController.obtenerPublica);
+// La carta pública se movió a `/api/publico/:slug/empresa` (ver `modules/carta-publica`):
+// con varias empresas en el sistema, "la empresa pública" dejó de ser una sola.
 
 empresaRouter.use(requireAuth);
 

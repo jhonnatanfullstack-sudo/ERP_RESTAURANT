@@ -22,7 +22,26 @@ interface LineaMensajePedido {
   nombre: string;
   cantidad: number;
   subtotal: number;
+  /** Indicación del cliente para ese plato ("sin cebolla"). */
+  nota?: string;
 }
+
+export type ModoEntrega = 'recojo' | 'delivery';
+
+export interface DatosEntrega {
+  modo: ModoEntrega;
+  /** A nombre de quién va el pedido. Opcional: si no lo llena, no se inventa una línea. */
+  nombre?: string;
+  /** Solo tiene sentido con `modo: 'delivery'`. */
+  direccion?: string;
+  /** Cualquier indicación general: hora de recojo, referencia de la casa, etc. */
+  referencia?: string;
+}
+
+const ETIQUETA_MODO: Record<ModoEntrega, string> = {
+  recojo: 'Recojo en el local',
+  delivery: 'Delivery',
+};
 
 /**
  * Texto del pedido armado en la carta pública, listo para pegarse en el mensaje de WhatsApp.
@@ -33,11 +52,29 @@ export function mensajePedido(
   nombreRestaurante: string,
   lineas: LineaMensajePedido[],
   formatearPrecio: (valor: number) => string,
+  entrega?: DatosEntrega,
 ): string {
   const detalle = lineas
-    .map((linea) => `• ${linea.cantidad}x ${linea.nombre} — ${formatearPrecio(linea.subtotal)}`)
+    .flatMap((linea) => {
+      const fila = `• ${linea.cantidad}x ${linea.nombre} — ${formatearPrecio(linea.subtotal)}`;
+      const nota = linea.nota?.trim();
+      return nota ? [fila, `   ↳ ${nota}`] : [fila];
+    })
     .join('\n');
   const total = lineas.reduce((suma, linea) => suma + linea.subtotal, 0);
+
+  // Solo se escriben los datos que el visitante realmente llenó: un bloque con "Nombre: —"
+  // no ayuda a quien atiende el chat.
+  const bloqueEntrega: string[] = [];
+  if (entrega) {
+    const nombre = entrega.nombre?.trim();
+    const direccion = entrega.direccion?.trim();
+    const referencia = entrega.referencia?.trim();
+    bloqueEntrega.push(`Entrega: ${ETIQUETA_MODO[entrega.modo]}`);
+    if (nombre) bloqueEntrega.push(`A nombre de: ${nombre}`);
+    if (entrega.modo === 'delivery' && direccion) bloqueEntrega.push(`Dirección: ${direccion}`);
+    if (referencia) bloqueEntrega.push(`Indicaciones: ${referencia}`);
+  }
 
   return [
     `¡Hola ${nombreRestaurante}! Quisiera hacer este pedido:`,
@@ -45,6 +82,7 @@ export function mensajePedido(
     detalle,
     '',
     `Total estimado: ${formatearPrecio(total)}`,
+    ...(bloqueEntrega.length > 0 ? ['', ...bloqueEntrega] : []),
     '',
     '(Enviado desde la carta digital)',
   ].join('\n');

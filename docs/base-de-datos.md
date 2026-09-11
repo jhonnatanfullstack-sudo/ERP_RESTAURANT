@@ -102,6 +102,32 @@ Los catálogos se poblaron con los códigos oficiales más usados (subconjunto e
 
 **`medios_pago`** (catálogo propio, no numerado por SUNAT, FASE 14): `efectivo` Efectivo, `tarjeta_credito` Tarjeta de crédito, `tarjeta_debito` Tarjeta de débito, `transferencia` Transferencia bancaria, `yape` Yape, `plin` Plin.
 
+## Talonarios (series de comprobantes)
+
+| Tabla                | Columnas clave                                                                                                                   | Notas                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `talonarios`         | `empresa_id`, `tipo_comprobante_id`, `almacen_id`, `serie` (varchar 4), `numero_actual`, `numero_inicio`, `numero_fin`, `activo` | Único `(empresa_id, serie)`. `CHECK` de rango (`numero_inicio >= 1`, `numero_fin >= numero_inicio`) y `numero_actual >= 0` |
+| `talonario_usuarios` | `talonario_id` (CASCADE), `usuario_id` (CASCADE)                                                                                 | Único `(talonario_id, usuario_id)`: quiénes emiten desde esa serie                                                         |
+| `ventas`             | `talonario_id` (nullable, RESTRICT)                                                                                              | De qué talonario salió `serie`/`numero`; nullable en las ventas anteriores al módulo                                       |
+
+`numero_actual` es el **último número emitido** (0 = ninguno), no el siguiente. Ver `docs/api.md` › Talonarios para el cálculo del siguiente número y el bloqueo del correlativo.
+
+Migraciones: `1788992000000-TalonariosTablas`, `1788992100000-SeedPermisosTalonarios`.
+
+## Créditos y cobranzas
+
+| Tabla          | Columnas clave                                                                                                               | Notas                                                                                |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `bancos`       | `codigo` (SBS, único), `nombre`, `activo`                                                                                    | Entidades del sistema financiero; sembradas por la migración                         |
+| `cuotas_venta` | `venta_id` (CASCADE), `numero`, `monto`, `fecha_vencimiento`                                                                 | Único `(venta_id, numero)`. Cronograma exigido por SUNAT en el comprobante a crédito |
+| `pagos_venta`  | `venta_id` (RESTRICT), `fecha_pago`, `monto`, `medio_pago_id`, `banco_id`, `numero_operacion`, `anulado`, `motivo_anulacion` | Cobros que amortizan la venta; se anulan, nunca se borran                            |
+| `ventas`       | `banco_id`, `numero_operacion`                                                                                               | Sustento del cobro al contado bancarizado                                            |
+| `medios_pago`  | `requiere_banco`                                                                                                             | Marca los medios que exigen banco + nº de operación                                  |
+
+**El saldo de una venta no se guarda**: se calcula sumando los pagos no anulados. Ver `docs/api.md` › Créditos y cobranzas.
+
+Migraciones: `1788993000000-CreditosYCobranzas`, `1788993100000-SeedPermisosCobranzas`.
+
 ## Migraciones
 
 Ubicación: `apps/backend/src/database/migrations/`.
@@ -153,3 +179,52 @@ Migraciones aplicadas (en orden):
 36. `InsumoTipoAfectacionIgv` — agrega `insumos.tipo_afectacion_igv_id` (FK obligatoria a `tipos_afectacion_igv`, mismo catálogo que ya usa `productos`): un insumo tiene su propia afectación de IGV, independiente de la del platillo que lo usa (ej. una verdura fresca exonerada en la receta de un platillo gravado). Sin backfill: no había insumos creados todavía cuando se generó (2026-09-09).
 
 Todas las migraciones fueron probadas con `migration:run` → `migration:revert` → `migration:run` para confirmar que `up()`/`down()` son simétricos.
+
+## FASE 18 — Recetas y costos (2026-09-10): sin tablas nuevas
+
+El costeo con margen no agregó ninguna tabla ni columna: se calcula al vuelo sobre `receta_insumos`, `detalle_compras` y `existencias`, que ya existían desde FASE 16/17. La única migración de la fase es `SeedPermisoCostos1788994000000`, que siembra el permiso `costos.ver` y lo otorga al rol Administrador.
+
+**Por qué no se persiste un costo por producto.** Una columna `costo` en `productos` quedaría desactualizada en silencio con la siguiente compra de un insumo, y no hay un único "costo verdadero" que congelar: el costo de un platillo cambia cada vez que cambia el precio de cualquiera de sus ingredientes. La foto histórica de lo que costó una venta concreta ya la guarda el kardex (`existencias.costo_unitario`, por movimiento). Ver `decisiones-tecnicas.md`.
+
+**De dónde sale el costo neto.** `SELECT DISTINCT ON (insumo_id, producto_id)` sobre `existencias` (solo movimientos de entrada con costo), con `LEFT JOIN detalle_compras` por `compra_id` + ítem, tomando `COALESCE(dc.valor_compra / NULLIF(dc.cantidad, 0), e.costo_unitario)`. El `valor_compra` de `detalle_compras` ya está neto de IGV según el `tipoAfectacionIgv` del ítem y el `incluyeIgv` de esa compra; `existencias.costo_unitario` es el bruto tipeado y solo se usa como respaldo para movimientos manuales.
+
+## FASES 25-26 — Multi-empresa y cuentas de prueba (2026-09-10)
+
+**`empresa_id` en 27 tablas más.** Antes solo `almacenes`, `personal` y `talonarios` lo tenían. Ahora lo llevan todas las tablas de negocio, incluidas las hijas (`detalle_*`, `movimientos_caja`, `cuotas_venta`, `pagos_venta`, `receta_insumos`, `talonario_usuarios`). FK `ON DELETE CASCADE`: la empresa es la raíz de todo lo suyo, y borrar un tenant tiene que llevarse sus datos.
+
+**Valor por defecto tomado del contexto.** Cada `empresa_id` tiene `DEFAULT NULLIF(current_setting('app.empresa_id', true), '')::uuid`. Cubre las escrituras que no pasan por TypeORM (SQL crudo) y hace imposible insertar una fila sin dueño por descuido: sin contexto el default es NULL y el `NOT NULL` la rechaza.
+
+**Row-Level Security en 32 tablas.** `ENABLE` + `FORCE ROW LEVEL SECURITY` y una política `aislamiento_empresa` con `USING` y `WITH CHECK` (sin la segunda, una empresa no podría leer las filas de otra pero sí crearle una). `empresas` se aísla por su propia clave primaria. `refresh_tokens` queda fuera a propósito (ver `decisiones-tecnicas.md`).
+
+**Dos roles de base de datos.** `DB_USER` (dueño de las tablas, superusuario) ejecuta migraciones y se salta RLS, que es lo que un backfill necesita. `DB_APP_USER` (`restaurant_erp_app`, creado por la migración `RolAplicacionSinBypassRls` a partir de `DB_APP_PASSWORD`) atiende las peticiones **sin `SUPERUSER` ni `BYPASSRLS`**. Sin esta separación las políticas no se aplican: un superusuario se las salta siempre.
+
+**Migraciones futuras: cuidado.** Con `FORCE ROW LEVEL SECURITY` activo, una migración que **lea o escriba datos** de estas tablas no verá ninguna fila salvo que active el bypass primero:
+
+```sql
+SELECT set_config('app.bypass_rls', 'on', true);
+```
+
+El DDL puro (crear columnas, índices, tipos) no necesita nada. Las migraciones corren como dueño de las tablas, que es superusuario, así que en la práctica el bypass ya aplica — pero conviene ser explícito si algún día se cambia el rol de migraciones.
+
+**Restricciones únicas que pasaron a ser por empresa**: `(empresa_id, nombre)` en categorías, marcas, insumos, salones y roles; `(empresa_id, tipo_documento_identidad_id, numero_documento)` en clientes, proveedores y personal; `(empresa_id, email)` en clientes; `(empresa_id, estado) WHERE estado = 'abierta'` en cajas; `(empresa_id, tipo_comprobante_id, serie, numero)` en ventas. `usuarios.email` sigue único globalmente.
+
+**Tablas nuevas:** `registros_uso` (una fila por empresa y día: peticiones, escrituras, último acceso). **Columnas nuevas en `empresas`:** `slug` (único, para `/carta/:slug`), `plan` (`demo`|`activo`), `demo_expira_en`, `suspendida`, `creada_por_autoservicio`. **En `usuarios`:** `es_proveedor`.
+
+## FASE 21 — Configuración operativa (2026-09-10)
+
+Tabla nueva `configuraciones`: **una fila por empresa** (`empresa_id` único), bajo RLS como
+cualquier tabla de negocio. Guarda lo que antes eran constantes en el código —duración de
+reserva, refresco de cocina, días de crédito, umbrales de food cost— y los datos públicos de
+la carta (horario, mensaje de bienvenida, si acepta pedidos, redes sociales).
+
+**No se sembró ninguna fila.** Los valores por defecto viven en el service y la fila se crea
+con el primer guardado. Una empresa que nunca abra esa pantalla se comporta exactamente como
+antes de la fase.
+
+**`CHK_food_cost_coherente`** garantiza en la base que el umbral crítico sea mayor que el
+objetivo. Sin él, un semáforo sin franja ámbar marcaría en rojo platos que están dentro de lo
+esperado — y validarlo solo en zod dejaría la puerta abierta a cualquier escritura directa.
+
+Permisos nuevos: `configuracion.ver` y `configuracion.editar`, otorgados al rol Administrador
+de cada empresa. La migración activa el bypass de RLS antes de consultar `roles`, que sí está
+bajo las políticas.

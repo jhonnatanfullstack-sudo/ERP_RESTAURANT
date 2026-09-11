@@ -5,6 +5,9 @@ export function usuarioPublico(usuario: Usuario) {
     id: usuario.id,
     email: usuario.email,
     activo: usuario.activo,
+    // Habilita el panel del proveedor en la interfaz. No es un permiso del RBAC del
+    // restaurante a propósito: ningún rol de un cliente debería poder contenerlo.
+    esProveedor: usuario.esProveedor,
     personal: {
       id: usuario.personal.id,
       nombres: usuario.personal.nombres,

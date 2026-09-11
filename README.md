@@ -49,3 +49,15 @@ docker compose up -d
 ## Estado del proyecto
 
 Desarrollo incremental por fases, sin avanzar a la siguiente sin autorización explícita. Ver progreso y decisiones técnicas en `docs/`.
+
+## Pruebas
+
+```bash
+pnpm --filter @restaurant-erp/backend test
+```
+
+Las pruebas integrales del backend (40, con Vitest + supertest) corren **contra un PostgreSQL
+real**: recrean la base `restaurant_erp_test` y le aplican todas las migraciones en cada
+ejecución, así que Docker tiene que estar levantado. Se conectan con el rol restringido de la
+aplicación (`DB_APP_USER`), el mismo que en producción — es lo que hace que las pruebas de
+aislamiento entre empresas signifiquen algo. Ver `docs/decisiones-tecnicas.md`.

@@ -12,7 +12,7 @@ import { Empresa } from '../empresa/empresa.entity';
 import { TipoDocumentoIdentidad } from '../catalogos/tipo-documento-identidad.entity';
 
 @Entity('personal')
-@Index(['tipoDocumentoIdentidad', 'numeroDocumento'], { unique: true })
+@Index(['empresa', 'tipoDocumentoIdentidad', 'numeroDocumento'], { unique: true })
 export class Personal {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

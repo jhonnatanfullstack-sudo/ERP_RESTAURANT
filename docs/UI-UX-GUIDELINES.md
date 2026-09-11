@@ -6,14 +6,14 @@ Este documento define las reglas visuales y de experiencia de usuario que deben 
 
 El objetivo es que el sistema tenga una interfaz:
 
-* Profesional
-* Moderna
-* Limpia
-* Consistente
-* Rápida de utilizar
-* Responsive
-* Orientada a software empresarial
-* Adecuada para un ERP y POS de restaurante
+- Profesional
+- Moderna
+- Limpia
+- Consistente
+- Rápida de utilizar
+- Responsive
+- Orientada a software empresarial
+- Adecuada para un ERP y POS de restaurante
 
 Estas reglas deben aplicarse tanto a:
 
@@ -53,27 +53,27 @@ La mejora visual debe realizarse preferentemente sobre la estructura existente.
 
 La interfaz debe priorizar:
 
-* Claridad
-* Velocidad de operación
-* Jerarquía visual
-* Consistencia
-* Accesibilidad
-* Facilidad de aprendizaje
-* Reducción de errores
-* Buena utilización del espacio
+- Claridad
+- Velocidad de operación
+- Jerarquía visual
+- Consistencia
+- Accesibilidad
+- Facilidad de aprendizaje
+- Reducción de errores
+- Buena utilización del espacio
 
 Evitar:
 
-* Exceso de tarjetas
-* Exceso de sombras
-* Colores innecesarios
-* Gradientes excesivos
-* Animaciones innecesarias
-* Botones gigantes
-* Formularios excesivamente altos
-* Espacios desperdiciados
-* Interfaces que parezcan una plantilla genérica
-* Elementos decorativos que no aporten funcionalidad
+- Exceso de tarjetas
+- Exceso de sombras
+- Colores innecesarios
+- Gradientes excesivos
+- Animaciones innecesarias
+- Botones gigantes
+- Formularios excesivamente altos
+- Espacios desperdiciados
+- Interfaces que parezcan una plantilla genérica
+- Elementos decorativos que no aporten funcionalidad
 
 La interfaz debe parecer un producto empresarial profesional, no una página web promocional.
 
@@ -145,36 +145,36 @@ Debe existir una jerarquía clara.
 
 Usar para:
 
-* Guardar
-* Crear
-* Confirmar
-* Registrar
-* Procesar
+- Guardar
+- Crear
+- Confirmar
+- Registrar
+- Procesar
 
 ## Acción secundaria
 
 Usar para:
 
-* Cancelar
-* Volver
-* Limpiar
-* Filtrar
+- Cancelar
+- Volver
+- Limpiar
+- Filtrar
 
 ## Acción peligrosa
 
 Usar para:
 
-* Eliminar
-* Anular
-* Desactivar
+- Eliminar
+- Anular
+- Desactivar
 
 Los botones deben:
 
-* Tener texto claro.
-* Tener estados hover.
-* Tener estado disabled.
-* Tener estado loading cuando corresponda.
-* No utilizar iconos sin contexto cuando puedan generar confusión.
+- Tener texto claro.
+- Tener estados hover.
+- Tener estado disabled.
+- Tener estado loading cuando corresponda.
+- No utilizar iconos sin contexto cuando puedan generar confusión.
 
 ---
 
@@ -186,10 +186,10 @@ Los formularios deben ser profesionales, compactos y fáciles de completar.
 
 Cada campo debe tener:
 
-* Label
-* Input / Select / Autocomplete
-* Texto de ayuda cuando sea necesario
-* Mensaje de validación cuando corresponda
+- Label
+- Input / Select / Autocomplete
+- Texto de ayuda cuando sea necesario
+- Mensaje de validación cuando corresponda
 
 Ejemplo:
 
@@ -213,14 +213,14 @@ Cuando exista suficiente espacio, utilizar grids.
 
 Ejemplo:
 
-Código             Nombre
-[************]     [************____________]
+Código Nombre
+[************] [************____________]
 
-Categoría          Marca
-[************]     [************____________]
+Categoría Marca
+[************] [************____________]
 
-Precio              Estado
-[____________]      [Activo ▼]
+Precio Estado
+[____________] [Activo ▼]
 
 Descripción
 [____________________________________________]
@@ -247,16 +247,16 @@ Primero:
 
 Después mejorar:
 
-* Distribución
-* Espaciado
-* Labels
-* Agrupación de campos
-* Jerarquía
-* Botones
-* Mensajes
-* Estados visuales
-* Responsive
-* Accesibilidad
+- Distribución
+- Espaciado
+- Labels
+- Agrupación de campos
+- Jerarquía
+- Botones
+- Mensajes
+- Estados visuales
+- Responsive
+- Accesibilidad
 
 La lógica existente debe conservarse.
 
@@ -294,17 +294,17 @@ Deben ser compactas pero legibles.
 
 Características recomendadas:
 
-* Encabezado claramente diferenciado.
-* Filas con altura consistente.
-* Hover.
-* Estados mediante badges.
-* Acciones claramente identificables.
-* Paginación.
-* Búsqueda.
-* Filtros cuando sean necesarios.
-* Estado de carga.
-* Estado vacío.
-* Estado de error.
+- Encabezado claramente diferenciado.
+- Filas con altura consistente.
+- Hover.
+- Estados mediante badges.
+- Acciones claramente identificables.
+- Paginación.
+- Búsqueda.
+- Filtros cuando sean necesarios.
+- Estado de carga.
+- Estado vacío.
+- Estado de error.
 
 Evitar tablas visualmente saturadas.
 
@@ -367,13 +367,13 @@ La validación debe ayudar al usuario a corregir el problema.
 
 Los inputs deben tener:
 
-* Altura consistente.
-* Padding adecuado.
-* Border visible pero discreto.
-* Focus claramente identificable.
-* Estado disabled.
-* Estado error.
-* Placeholder únicamente cuando ayude.
+- Altura consistente.
+- Padding adecuado.
+- Border visible pero discreto.
+- Focus claramente identificable.
+- Estado disabled.
+- Estado error.
+- Placeholder únicamente cuando ayude.
 
 No utilizar placeholders como sustitutos de labels.
 
@@ -392,22 +392,22 @@ Nombre
 
 Cuando exista una cantidad importante de opciones, preferir:
 
-* Combobox
-* Autocomplete
-* Búsqueda
+- Combobox
+- Autocomplete
+- Búsqueda
 
 en lugar de un select gigantesco.
 
 Especialmente para:
 
-* Productos
-* Clientes
-* Proveedores
-* Usuarios
-* Categorías
-* Marcas
-* Puntos de control
-* Establecimientos
+- Productos
+- Clientes
+- Proveedores
+- Usuarios
+- Categorías
+- Marcas
+- Puntos de control
+- Establecimientos
 
 ---
 
@@ -415,10 +415,10 @@ Especialmente para:
 
 Toda nueva interfaz debe funcionar correctamente en:
 
-* Desktop
-* Laptop
-* Tablet
-* Mobile
+- Desktop
+- Laptop
+- Tablet
+- Mobile
 
 Desktop debe aprovechar correctamente el espacio disponible.
 
@@ -426,12 +426,12 @@ Mobile no debe simplemente reducir el tamaño de los elementos.
 
 Debe adaptar:
 
-* Tablas
-* Formularios
-* Sidebar
-* Modales
-* Botones
-* Filtros
+- Tablas
+- Formularios
+- Sidebar
+- Modales
+- Botones
+- Filtros
 
 ---
 
@@ -536,15 +536,15 @@ El dashboard debe priorizar información útil.
 
 Para un ERP de restaurante puede incluir:
 
-* Ventas del día
-* Ventas del mes
-* Pedidos
-* Ticket promedio
-* Productos más vendidos
-* Productos con bajo stock
-* Estado de caja
-* Ventas por período
-* Resumen de operaciones
+- Ventas del día
+- Ventas del mes
+- Pedidos
+- Ticket promedio
+- Productos más vendidos
+- Productos con bajo stock
+- Estado de caja
+- Ventas por período
+- Resumen de operaciones
 
 No llenar el dashboard de gráficos simplemente por estética.
 
@@ -558,14 +558,14 @@ El POS requiere una interfaz diferente a las páginas administrativas.
 
 Debe priorizar:
 
-* Velocidad
-* Visibilidad
-* Acciones rápidas
-* Productos
-* Carrito
-* Total
-* Métodos de pago
-* Estado de la venta
+- Velocidad
+- Visibilidad
+- Acciones rápidas
+- Productos
+- Carrito
+- Total
+- Métodos de pago
+- Estado de la venta
 
 Reducir al mínimo los pasos necesarios para registrar una venta.
 
@@ -603,12 +603,12 @@ Evitar eliminar registros críticos inmediatamente sin confirmación.
 
 Considerar:
 
-* Labels asociados a inputs.
-* Contraste suficiente.
-* Navegación mediante teclado.
-* Focus visible.
-* Botones correctamente identificables.
-* Mensajes de error claros.
+- Labels asociados a inputs.
+- Contraste suficiente.
+- Navegación mediante teclado.
+- Focus visible.
+- Botones correctamente identificables.
+- Mensajes de error claros.
 
 No depender exclusivamente del color para comunicar estados.
 
@@ -647,12 +647,12 @@ No crear componentes específicos duplicados para cada página.
 
 Si el proyecto utiliza Tailwind CSS:
 
-* Utilizar las clases existentes.
-* Mantener consistencia.
-* Evitar estilos inline innecesarios.
-* Evitar valores arbitrarios cuando exista una alternativa estándar.
-* Reutilizar componentes.
-* Mantener responsive mediante breakpoints.
+- Utilizar las clases existentes.
+- Mantener consistencia.
+- Evitar estilos inline innecesarios.
+- Evitar valores arbitrarios cuando exista una alternativa estándar.
+- Reutilizar componentes.
+- Mantener responsive mediante breakpoints.
 
 No introducir otra librería de estilos sin autorización.
 
@@ -682,14 +682,14 @@ QUINTO:
 
 Verificar:
 
-* Desktop
-* Tablet
-* Mobile
-* Loading
-* Empty
-* Error
-* Validaciones
-* Responsive
+- Desktop
+- Tablet
+- Mobile
+- Loading
+- Empty
+- Error
+- Validaciones
+- Responsive
 
 SEXTO:
 
@@ -718,9 +718,9 @@ Orden recomendado:
 
 Después de cada grupo:
 
-* Ejecutar build.
-* Verificar errores.
-* Verificar que la funcionalidad continúe funcionando.
+- Ejecutar build.
+- Verificar errores.
+- Verificar que la funcionalidad continúe funcionando.
 
 ---
 
@@ -728,16 +728,16 @@ Después de cada grupo:
 
 NO:
 
-* Cambiar arquitectura sin autorización.
-* Cambiar endpoints sin autorización.
-* Eliminar lógica existente para simplificar el código.
-* Crear componentes duplicados.
-* Instalar librerías innecesarias.
-* Reescribir todo un módulo solamente por estética.
-* Modificar la base de datos por una necesidad puramente visual.
-* Cambiar nombres de variables o archivos masivamente sin necesidad.
-* Eliminar funcionalidades existentes.
-* Romper compatibilidad con otros módulos.
+- Cambiar arquitectura sin autorización.
+- Cambiar endpoints sin autorización.
+- Eliminar lógica existente para simplificar el código.
+- Crear componentes duplicados.
+- Instalar librerías innecesarias.
+- Reescribir todo un módulo solamente por estética.
+- Modificar la base de datos por una necesidad puramente visual.
+- Cambiar nombres de variables o archivos masivamente sin necesidad.
+- Eliminar funcionalidades existentes.
+- Romper compatibilidad con otros módulos.
 
 ---
 
@@ -764,14 +764,14 @@ No debe parecer que cada módulo fue desarrollado por una persona diferente.
 
 Productos, clientes, usuarios, inventario, ventas, caja, reportes y POS deben compartir:
 
-* misma jerarquía visual
-* mismos componentes
-* mismos botones
-* mismos inputs
-* mismos modales
-* mismos estados
-* mismos patrones de navegación
-* misma experiencia de usuario
+- misma jerarquía visual
+- mismos componentes
+- mismos botones
+- mismos inputs
+- mismos modales
+- mismos estados
+- mismos patrones de navegación
+- misma experiencia de usuario
 
 La consistencia es más importante que agregar elementos visuales.
 
@@ -785,10 +785,10 @@ NO empieces inmediatamente a escribir código.
 
 Primero analiza brevemente el frontend existente y determina:
 
-* qué componentes existen;
-* qué patrones visuales existen;
-* qué archivos están involucrados;
-* qué componentes pueden reutilizarse.
+- qué componentes existen;
+- qué patrones visuales existen;
+- qué archivos están involucrados;
+- qué componentes pueden reutilizarse.
 
 Después implementa la solución respetando estas reglas.
 

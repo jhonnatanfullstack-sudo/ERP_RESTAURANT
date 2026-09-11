@@ -13,6 +13,7 @@ import { UnidadMedida } from '../modules/catalogos/unidad-medida.entity';
 import { TipoAfectacionIgv } from '../modules/catalogos/tipo-afectacion-igv.entity';
 import { TipoOperacion } from '../modules/catalogos/tipo-operacion.entity';
 import { MedioPago } from '../modules/catalogos/medio-pago.entity';
+import { Banco } from '../modules/catalogos/banco.entity';
 import { Categoria } from '../modules/categorias/categoria.entity';
 import { Marca } from '../modules/marcas/marca.entity';
 import { Producto } from '../modules/productos/producto.entity';
@@ -34,14 +35,28 @@ import { Existencia } from '../modules/inventario/existencia.entity';
 import { Proveedor } from '../modules/proveedores/proveedor.entity';
 import { Compra } from '../modules/compras/compra.entity';
 import { DetalleCompra } from '../modules/compras/detalle-compra.entity';
+import { ComprobanteElectronico } from '../modules/facturacion/comprobante-electronico.entity';
+import { RegistroAuditoria } from '../modules/auditoria/registro-auditoria.entity';
+import { Talonario } from '../modules/talonario/talonario.entity';
+import { CuotaVenta } from '../modules/cobranzas/cuota-venta.entity';
+import { PagoVenta } from '../modules/cobranzas/pago-venta.entity';
+import { TalonarioUsuario } from '../modules/talonario/talonario-usuario.entity';
+import { RegistroUso } from '../modules/suscripcion/registro-uso.entity';
+import { Configuracion } from '../modules/configuracion/configuracion.entity';
 
+/**
+ * Conexión de la aplicación. Usa el rol restringido (`DB_APP_USER`), **no** el dueño de las
+ * tablas: es lo que hace que las políticas RLS de aislamiento entre empresas realmente
+ * apliquen (un superusuario se las salta siempre). Las migraciones usan otra conexión, ver
+ * `migration-data-source.ts`.
+ */
 export const AppDataSource = new DataSource({
   type: 'postgres',
   host: env.db.host,
   port: env.db.port,
   database: env.db.name,
-  username: env.db.user,
-  password: env.db.password,
+  username: env.db.appUser,
+  password: env.db.appPassword,
   synchronize: false,
   logging: env.nodeEnv === 'development',
   entities: [
@@ -53,6 +68,7 @@ export const AppDataSource = new DataSource({
     TipoAfectacionIgv,
     TipoOperacion,
     MedioPago,
+    Banco,
     Usuario,
     Rol,
     Permiso,
@@ -78,6 +94,14 @@ export const AppDataSource = new DataSource({
     Proveedor,
     Compra,
     DetalleCompra,
+    ComprobanteElectronico,
+    RegistroAuditoria,
+    Talonario,
+    TalonarioUsuario,
+    CuotaVenta,
+    PagoVenta,
+    RegistroUso,
+    Configuracion,
   ],
   migrations: [__dirname + '/migrations/*.{ts,js}'],
 });

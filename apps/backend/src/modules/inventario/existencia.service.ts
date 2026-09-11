@@ -1,7 +1,7 @@
 import type { EntityManager } from 'typeorm';
 import { HttpError } from '../../utils/http-error';
-import { empresaRepository } from '../empresa/empresa.repository';
 import { almacenRepository } from '../almacenes/almacen.repository';
+import { empresaIdActual } from '../../database/tenant-context';
 import { insumoRepository } from '../insumos/insumo.repository';
 import { productoRepository } from '../productos/producto.repository';
 import { TipoProducto } from '../productos/producto.entity';
@@ -96,6 +96,71 @@ export async function obtenerUltimosCostosInsumos(): Promise<Map<string, number>
   return new Map(filas.map((fila) => [fila.insumo_id, Number(fila.costo_unitario)]));
 }
 
+/** De dónde salió el costo neto de un ítem: de una compra registrada (con su desglose de
+ * IGV real) o de un movimiento manual, donde el monto se tomó tal cual se tipeó. */
+export type OrigenCosto = 'compra' | 'manual';
+
+export interface CostoNeto {
+  /** Costo unitario SIN IGV — es el que se compara contra el valor de venta al calcular
+   * margen. `existencias.costo_unitario` no sirve para eso: guarda el monto tal como se
+   * tipeó, que en una compra con `incluyeIgv` trae el IGV adentro. */
+  costo: number;
+  origen: OrigenCosto;
+}
+
+export interface CostosNetos {
+  insumos: Map<string, CostoNeto>;
+  productos: Map<string, CostoNeto>;
+}
+
+interface FilaCostoNeto {
+  insumo_id: string | null;
+  producto_id: string | null;
+  costo: string | null;
+  origen: OrigenCosto;
+}
+
+/**
+ * Último costo unitario neto de IGV conocido por ítem (insumo y producto mercadería), desde
+ * el movimiento de entrada más reciente en cualquier almacén. Base del costeo de recetas
+ * (`modules/recetas/costeo.service.ts`).
+ *
+ * Cuando el movimiento vino de una `Compra` se usa `detalle_compras.valor_compra / cantidad`,
+ * que ya está desglosado según el `tipoAfectacionIgv` del propio ítem y el `incluyeIgv` de esa
+ * compra. Un movimiento manual (`inicial`/`ajuste_entrada`/compra sin proveedor) no tiene ese
+ * desglose: ahí se toma `costo_unitario` tal cual y se marca `origen: 'manual'`, para que la
+ * interfaz pueda advertir que ese costo no pasó por un comprobante.
+ *
+ * Es distinto de `obtenerUltimosCostosInsumos`, que devuelve el monto bruto tal como se tipeó
+ * (lo que efectivamente se pagó) y se sigue usando para sugerir el costo en una compra nueva.
+ */
+export async function obtenerCostosNetos(): Promise<CostosNetos> {
+  const filas: FilaCostoNeto[] = await existenciaRepository.query(`
+    SELECT DISTINCT ON (e.insumo_id, e.producto_id)
+           e.insumo_id,
+           e.producto_id,
+           COALESCE(dc.valor_compra / NULLIF(dc.cantidad, 0), e.costo_unitario) AS costo,
+           CASE WHEN dc.id IS NULL THEN 'manual' ELSE 'compra' END AS origen
+    FROM existencias e
+    LEFT JOIN detalle_compras dc
+      ON dc.compra_id = e.compra_id
+     AND dc.insumo_id IS NOT DISTINCT FROM e.insumo_id
+     AND dc.producto_id IS NOT DISTINCT FROM e.producto_id
+    WHERE e.costo_unitario IS NOT NULL
+      AND e.tipo IN ('inicial', 'compra', 'ajuste_entrada')
+    ORDER BY e.insumo_id, e.producto_id, e.creado_en DESC
+  `);
+
+  const costos: CostosNetos = { insumos: new Map(), productos: new Map() };
+  for (const fila of filas) {
+    if (fila.costo === null) continue;
+    const valor: CostoNeto = { costo: Number(fila.costo), origen: fila.origen };
+    if (fila.insumo_id) costos.insumos.set(fila.insumo_id, valor);
+    else if (fila.producto_id) costos.productos.set(fila.producto_id, valor);
+  }
+  return costos;
+}
+
 export async function calcularStock(
   almacenId: string,
   item: { insumoId: string } | { productoId: string },
@@ -110,19 +175,14 @@ export async function calcularStock(
 }
 
 /** Almacén donde se registran los movimientos automáticos (consumo de cocina, venta directa)
- * cuando nadie elige uno a mano: el principal de la primera empresa activa (sistema de un
- * solo local, ver CLAUDE.md sección 1). `null` si todavía no se configuró ningún almacén
+ * cuando nadie elige uno a mano: el almacén marcado como principal
+ * de la empresa de la petición en curso. `null` si todavía no se configuró ningún almacén
  * principal — en ese caso los movimientos automáticos simplemente no se registran (Inventario
  * es un módulo nuevo; Pedidos/Cocina/Ventas deben seguir funcionando igual para quien no lo
  * haya configurado todavía, mismo criterio de degradación que `obtenerEmpresaPublica`). */
 async function obtenerAlmacenPorDefecto() {
-  const empresa = await empresaRepository.findOne({
-    where: { activo: true },
-    order: { creadoEn: 'ASC' },
-  });
-  if (!empresa) return null;
   return almacenRepository.findOne({
-    where: { empresa: { id: empresa.id }, esPrincipal: true, activo: true },
+    where: { empresa: { id: empresaIdActual() }, esPrincipal: true, activo: true },
   });
 }
 

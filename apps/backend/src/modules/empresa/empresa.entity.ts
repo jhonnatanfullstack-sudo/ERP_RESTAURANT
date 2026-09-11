@@ -2,14 +2,51 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+
+/** Qué tipo de cuenta tiene la empresa dentro del sistema. */
+export enum PlanEmpresa {
+  /** Prueba gratuita con fecha de vencimiento (`demoExpiraEn`). */
+  DEMO = 'demo',
+  /** Cliente que contrató: sin vencimiento. */
+  ACTIVO = 'activo',
+}
 
 @Entity('empresas')
 export class Empresa {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /** Identificador corto y legible de la empresa en URLs públicas: la carta se sirve en
+   * `/carta/:slug`. No se usa el UUID porque este enlace lo comparte el restaurante con sus
+   * clientes por WhatsApp, y `/carta/el-fogon` se lee y se dicta; un UUID no. */
+  @Index({ unique: true })
+  @Column({ type: 'varchar', length: 60, unique: true })
+  slug!: string;
+
+  @Column({ type: 'enum', enum: PlanEmpresa, default: PlanEmpresa.DEMO })
+  plan!: PlanEmpresa;
+
+  /** Cuándo vence la prueba. Solo aplica a `plan = demo`; `null` en una cuenta contratada.
+   * El vencimiento se **deriva** de esta fecha en cada petición en vez de guardarse como un
+   * estado que haya que ir actualizando: así no hace falta una tarea programada que marque
+   * las demos vencidas cada noche, y no existe la ventana en la que una demo ya venció pero
+   * el estado todavía dice lo contrario. */
+  @Column({ name: 'demo_expira_en', type: 'timestamptz', nullable: true })
+  demoExpiraEn!: Date | null;
+
+  /** Suspensión manual por parte del proveedor (impago, abuso). Independiente del
+   * vencimiento de la demo: una cuenta contratada también se puede suspender. */
+  @Column({ type: 'boolean', default: false })
+  suspendida!: boolean;
+
+  /** Si nació del registro público de demo o la creó el proveedor a mano. Sirve para separar
+   * en el panel las altas reales de las de prueba. */
+  @Column({ name: 'creada_por_autoservicio', type: 'boolean', default: false })
+  creadaPorAutoservicio!: boolean;
 
   @Column({ type: 'varchar', length: 11, unique: true })
   ruc!: string;

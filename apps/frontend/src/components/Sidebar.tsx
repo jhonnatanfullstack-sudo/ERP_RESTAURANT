@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router';
 import {
+  BookMarked,
   Boxes,
+  HandCoins,
   Building2,
+  Calculator,
   CalendarCheck,
   ChartColumn,
   ChefHat,
@@ -15,7 +18,9 @@ import {
   Flame,
   LayoutDashboard,
   Receipt,
+  ScrollText,
   ShieldCheck,
+  SlidersHorizontal,
   Truck,
   UtensilsCrossed,
   Wallet,
@@ -30,12 +35,16 @@ interface EnlaceHijo {
   permiso?: string;
 }
 
+/** Entradas que no dependen del RBAC del restaurante sino de la marca de proveedor. */
+type VisibilidadEspecial = 'proveedor';
+
 interface ItemEnlace {
   tipo: 'enlace';
   etiqueta: string;
   ruta: string;
   icono: LucideIcon;
   permiso?: string;
+  soloPara?: VisibilidadEspecial;
 }
 
 interface ItemGrupo {
@@ -74,6 +83,13 @@ const menu: SeccionMenu[] = [
         permiso: 'ventas.ver',
       },
       { tipo: 'enlace', etiqueta: 'Caja', ruta: '/caja', icono: Wallet, permiso: 'caja.ver' },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Cuentas por cobrar',
+        ruta: '/cuentas-por-cobrar',
+        icono: HandCoins,
+        permiso: 'cobranzas.ver',
+      },
       {
         tipo: 'enlace',
         etiqueta: 'Reservas',
@@ -150,6 +166,27 @@ const menu: SeccionMenu[] = [
         icono: ChartColumn,
         permiso: 'reportes.ver',
       },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Costos',
+        ruta: '/costos',
+        icono: Calculator,
+        permiso: 'costos.ver',
+      },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Plataforma',
+        ruta: '/plataforma',
+        icono: Building2,
+        soloPara: 'proveedor',
+      },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Auditoría',
+        ruta: '/auditoria',
+        icono: ScrollText,
+        permiso: 'auditoria.ver',
+      },
     ],
   },
   {
@@ -164,6 +201,20 @@ const menu: SeccionMenu[] = [
           { etiqueta: 'Personal', ruta: '/personal', permiso: 'personal.ver' },
           { etiqueta: 'Roles', ruta: '/roles', permiso: 'roles.ver' },
         ],
+      },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Talonarios',
+        ruta: '/talonarios',
+        icono: BookMarked,
+        permiso: 'talonarios.ver',
+      },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Configuración',
+        ruta: '/configuracion',
+        icono: SlidersHorizontal,
+        permiso: 'configuracion.ver',
       },
       {
         tipo: 'enlace',
@@ -205,7 +256,7 @@ export function Sidebar({
   abiertoMovil,
   onCerrarMovil,
 }: SidebarProps) {
-  const { tienePermiso } = useAuth();
+  const { tienePermiso, usuario } = useAuth();
   const { pathname } = useLocation();
   // Se abre de entrada el grupo que contiene la ruta actual (ej. al entrar
   // directo por URL a /marcas); a partir de ahí el usuario controla el resto.
@@ -243,6 +294,10 @@ export function Sidebar({
       items: seccion.items
         .map((item): ItemMenu | null => {
           if (item.tipo === 'enlace') {
+            // `soloPara: 'proveedor'` no se resuelve con el catálogo de permisos: los
+            // permisos son del RBAC interno de cada restaurante, y el panel del proveedor
+            // está fuera de ese eje a propósito.
+            if (item.soloPara === 'proveedor' && !usuario?.esProveedor) return null;
             return !item.permiso || tienePermiso(item.permiso) ? item : null;
           }
           const hijosVisibles = item.hijos.filter(

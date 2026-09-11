@@ -1,4 +1,4 @@
-import { AppDataSource } from '../../database/data-source';
+import { tenantRepository } from '../../database/tenant-repository';
 import { Proveedor } from './proveedor.entity';
 
-export const proveedorRepository = AppDataSource.getRepository(Proveedor);
+export const proveedorRepository = tenantRepository(Proveedor);

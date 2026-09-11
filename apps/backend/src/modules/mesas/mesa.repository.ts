@@ -1,4 +1,4 @@
-import { AppDataSource } from '../../database/data-source';
+import { tenantRepository } from '../../database/tenant-repository';
 import { Mesa } from './mesa.entity';
 
-export const mesaRepository = AppDataSource.getRepository(Mesa);
+export const mesaRepository = tenantRepository(Mesa);

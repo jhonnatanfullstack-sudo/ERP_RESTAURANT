@@ -18,6 +18,15 @@ export class MedioPago {
   @Column({ type: 'varchar', length: 100 })
   nombre!: string;
 
+  /**
+   * Si el cobro por este medio pasa por una entidad financiera y, por tanto, exige registrar
+   * banco y número de operación (transferencia, depósito en cuenta, cheque). Es un dato del
+   * catálogo y no una lista de códigos en el código fuente, para poder agregar un medio nuevo
+   * sin tocar la validación (`cobranza.service.ts`).
+   */
+  @Column({ name: 'requiere_banco', type: 'boolean', default: false })
+  requiereBanco!: boolean;
+
   @Column({ type: 'boolean', default: true })
   activo!: boolean;
 }

@@ -1,15 +1,22 @@
+import type { EntityManager } from 'typeorm';
+import { enTransaccion } from '../../database/tenant-context';
 import { HttpError } from '../../utils/http-error';
 import { pedidoRepository } from '../pedidos/pedido.repository';
 import { EstadoPedido } from '../pedidos/pedido.entity';
 import { clienteRepository } from '../clientes/cliente.repository';
 import { productoRepository } from '../productos/producto.repository';
-import { empresaRepository } from '../empresa/empresa.repository';
+import { esGravado, resolverTasaIgv } from '../empresa/igv.service';
+import { obtenerConfiguracion } from '../configuracion/configuracion.service';
 import {
   tipoComprobanteRepository,
   tipoOperacionRepository,
   medioPagoRepository,
+  bancoRepository,
 } from '../catalogos/catalogos.repository';
+import { CODIGO_BOLETA, CODIGO_FACTURA } from '../catalogos/codigos-sunat';
 import { consultarTipoCambio } from '../catalogos/tipo-cambio.service';
+import { reservarNumero, resolverTalonarioParaVenta } from '../talonario/talonario.service';
+import { guardarCuotas } from '../cobranzas/cobranza.service';
 import { registrarConsumoVenta } from '../inventario/existencia.service';
 import { ventaRepository, detalleVentaRepository } from './venta.repository';
 import { EstadoVenta, FormaPago, Venta } from './venta.entity';
@@ -22,42 +29,26 @@ import type { TipoAfectacionIgv } from '../catalogos/tipo-afectacion-igv.entity'
 import type { TipoComprobante } from '../catalogos/tipo-comprobante.entity';
 import type { TipoOperacion } from '../catalogos/tipo-operacion.entity';
 import type { MedioPago } from '../catalogos/medio-pago.entity';
+import type { Banco } from '../catalogos/banco.entity';
+import type { Talonario } from '../talonario/talonario.entity';
 
 const RELACIONES = {
   pedido: { mesa: { salon: true } },
+  talonario: true,
   cliente: { tipoDocumentoIdentidad: true },
   tipoComprobante: true,
   tipoOperacion: true,
   medioPago: true,
+  banco: true,
   detalles: { producto: true, tipoAfectacionIgv: true },
 } as const;
 
-/** Tasa general de IGV vigente en Perú (16% IGV + 2% IPM). Cambiar aquí si SUNAT modifica la tasa. */
-const TASA_IGV_GENERAL = 0.18;
-
-/** Tasa especial para MYPE de restaurantes/hoteles/alojamiento turístico (8% IGV + 2.5% IPM,
- * 2026) — no es automática: solo aplica a la empresa que se acogió explícitamente ante SUNAT
- * (Ley N° 31940/32219/32387, Formulario Virtual 621), reflejado en
- * `Empresa.acogidoRegimenMypeRestaurantes`. Verificado en orientacion.sunat.gob.pe, 2026-09-09. */
-const TASA_IGV_MYPE_RESTAURANTES = 0.105;
-
-/** La tasa de IGV depende de si la empresa se acogió al régimen especial — nunca es un valor
- * fijo del sistema. Se resuelve contra la empresa activa más antigua, mismo criterio de
- * "sistema de un solo local" que ya usan `obtenerEmpresaPublica`/`obtenerAlmacenPorDefecto`. */
-async function resolverTasaIgv(): Promise<number> {
-  const empresa = await empresaRepository.findOne({
-    where: { activo: true },
-    order: { creadoEn: 'ASC' },
-  });
-  return empresa?.acogidoRegimenMypeRestaurantes ? TASA_IGV_MYPE_RESTAURANTES : TASA_IGV_GENERAL;
-}
-
-const CODIGO_BOLETA = '03';
-const CODIGO_FACTURA = '01';
 const CODIGO_RUC = '6';
-const CODIGO_AFECTACION_GRAVADO = '10';
 const CODIGO_TIPO_OPERACION_DEFECTO = '0101';
 
+/** Serie usada cuando el usuario no tiene ningún talonario asignado para ese comprobante:
+ * es la numeración con la que funcionaba Ventas antes del módulo de Talonarios, y se
+ * conserva para que una instalación sin talonarios configurados siga pudiendo facturar. */
 const SERIE_POR_COMPROBANTE: Record<string, string> = {
   [CODIGO_BOLETA]: 'B001',
   [CODIGO_FACTURA]: 'F001',
@@ -163,12 +154,69 @@ async function resolverMedioPago(
   return medioPago;
 }
 
-async function generarNumeroCorrelativo(tipoComprobanteId: string, serie: string): Promise<number> {
-  const ultima = await ventaRepository.findOne({
+/** Correlativo de la serie fija, sin talonario de por medio: el siguiente al mayor emitido.
+ * Se ejecuta dentro de la transacción de la venta, igual que `reservarNumero`. */
+/**
+ * Sustento bancario del cobro al contado. La Ley 28194 (bancarización) obliga a canalizar por
+ * el sistema financiero desde S/ 2,000 o US$ 500, y en ese caso el comprobante tiene que poder
+ * mostrar por qué entidad entró el dinero y con qué número de operación. Qué medios lo exigen
+ * es un dato del catálogo (`MedioPago.requiereBanco`), no una lista de códigos aquí.
+ */
+async function resolverBanco(
+  medioPago: MedioPago | null,
+  bancoId: string | undefined,
+  numeroOperacion: string | undefined,
+): Promise<Banco | null> {
+  if (!medioPago?.requiereBanco) return null;
+
+  if (!bancoId) {
+    throw new HttpError(400, `Un pago por ${medioPago.nombre.toLowerCase()} requiere el banco`, [
+      'bancoId requerido',
+    ]);
+  }
+  if (!numeroOperacion) {
+    throw new HttpError(
+      400,
+      `Un pago por ${medioPago.nombre.toLowerCase()} requiere el número de operación`,
+      ['numeroOperacion requerido'],
+    );
+  }
+  const banco = await bancoRepository.findOneBy({ id: bancoId });
+  if (!banco) {
+    throw new HttpError(400, 'El banco indicado no existe', ['bancoId inválido']);
+  }
+  return banco;
+}
+
+// El plazo por defecto de una venta al crédito lo define cada restaurante en su
+// configuración (FASE 21); antes era una constante fija de 30 días.
+
+function fechaEnDias(dias: number): string {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() + dias);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${fecha.getFullYear()}-${pad(fecha.getMonth() + 1)}-${pad(fecha.getDate())}`;
+}
+
+async function generarNumeroCorrelativo(
+  manager: EntityManager,
+  tipoComprobanteId: string,
+  serie: string,
+): Promise<number> {
+  const ultima = await manager.findOne(Venta, {
     where: { tipoComprobante: { id: tipoComprobanteId }, serie },
     order: { numero: 'DESC' },
   });
   return (ultima?.numero ?? 0) + 1;
+}
+
+/** Serie y número de una venta emitida sin talonario asignado. */
+async function numerarSinTalonario(
+  manager: EntityManager,
+  tipoComprobante: TipoComprobante,
+): Promise<{ serie: string; numero: number }> {
+  const serie = SERIE_POR_COMPROBANTE[tipoComprobante.codigo] as string;
+  return { serie, numero: await generarNumeroCorrelativo(manager, tipoComprobante.id, serie) };
 }
 
 interface LineasResueltas {
@@ -189,11 +237,11 @@ function calcularLinea(
   tasaIgv: number,
 ): { tipoAfectacionIgv: TipoAfectacionIgv; valorVenta: number; igv: number } {
   const tipoAfectacionIgv = producto.tipoAfectacionIgv;
-  const esGravado = tipoAfectacionIgv.codigo === CODIGO_AFECTACION_GRAVADO;
-  const valorVenta = esGravado
+  const gravado = esGravado(tipoAfectacionIgv);
+  const valorVenta = gravado
     ? Math.round((subtotalLinea / (1 + tasaIgv)) * 100) / 100
     : subtotalLinea;
-  const igv = esGravado ? Math.round((subtotalLinea - valorVenta) * 100) / 100 : 0;
+  const igv = gravado ? Math.round((subtotalLinea - valorVenta) * 100) / 100 : 0;
   return { tipoAfectacionIgv, valorVenta, igv };
 }
 
@@ -289,7 +337,64 @@ async function construirDirectas(
   };
 }
 
-export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
+/** Código de Postgres para "violación de restricción única". */
+const UNIQUE_VIOLATION = '23505';
+
+/** Índice único de `ventas (tipo_comprobante_id, serie, numero)` — ver `venta.entity.ts`. */
+const INDICE_CORRELATIVO = 'IDX_un_correlativo_por_serie';
+
+/**
+ * Cuántas veces se vuelve a intentar la venta cuando su correlativo resultó estar ocupado.
+ * Con 3 alcanza de sobra: cada reintento salta al siguiente número libre, así que solo haría
+ * falta más si hubiera tantos cajeros emitiendo a la vez sobre la misma serie que se pisaran
+ * tres veces seguidas — y ese caso ya lo previene el `FOR UPDATE` de `reservarNumero`.
+ */
+const MAXIMO_REINTENTOS_CORRELATIVO = 3;
+
+function esColisionDeCorrelativo(error: unknown): boolean {
+  const driverError = (error as { driverError?: { code?: string; constraint?: string } })
+    ?.driverError;
+  return driverError?.code === UNIQUE_VIOLATION && driverError?.constraint === INDICE_CORRELATIVO;
+}
+
+/**
+ * Guarda la venta reintentando si su número ya estaba tomado.
+ *
+ * El caso: dos cajeros con la MISMA serie abierta a la vez. El `FOR UPDATE` de
+ * `reservarNumero` ya serializa a los que comparten talonario, pero el número puede estar
+ * ocupado igual si la serie se emite desde dos talonarios distintos, o si alguien insertó un
+ * comprobante por fuera del sistema. En todos esos casos la regla es la misma y es la que
+ * pidió el usuario: **la venta que llegó primero se queda con el número**, y la segunda no se
+ * pierde — se vuelve a numerar con el siguiente libre.
+ *
+ * No hace falta resincronizar el talonario a mano: `reservarNumero` calcula el siguiente
+ * número contra el máximo realmente emitido en `ventas` (no solo contra `numero_actual`), así
+ * que el reintento ya salta el hueco y deja `numero_actual` al día. La venta devuelta trae el
+ * número definitivo, y el frontend avisa si no es el que mostraba.
+ */
+async function guardarReintentandoColision(
+  intentar: () => Promise<Venta>,
+  talonario: Talonario | null,
+): Promise<Venta> {
+  for (let intento = 1; ; intento += 1) {
+    try {
+      return await intentar();
+    } catch (error) {
+      if (!esColisionDeCorrelativo(error) || intento >= MAXIMO_REINTENTOS_CORRELATIVO) {
+        if (esColisionDeCorrelativo(error)) {
+          const serie = talonario ? ` ${talonario.serie}` : '';
+          throw new HttpError(
+            409,
+            `El correlativo de la serie${serie} está siendo usado por otra venta en este momento. Vuelve a intentarlo.`,
+          );
+        }
+        throw error;
+      }
+    }
+  }
+}
+
+export async function crearVenta(usuarioId: string, dto: CrearVentaDto): Promise<Venta> {
   let pedido: Pedido | null = null;
   let lineas: LineasResueltas;
   const tasaIgv = await resolverTasaIgv();
@@ -323,32 +428,69 @@ export async function crearVenta(dto: CrearVentaDto): Promise<Venta> {
   const tipoOperacion = await resolverTipoOperacion(dto.tipoOperacionId);
   const formaPago = dto.formaPago ?? FormaPago.CONTADO;
   const medioPago = await resolverMedioPago(dto.medioPagoId, formaPago);
+  // En una venta al crédito el dinero no entró todavía: el banco se registra en cada cobro
+  // (`PagoVenta`), no en la venta.
+  const banco =
+    formaPago === FormaPago.CONTADO
+      ? await resolverBanco(medioPago, dto.bancoId, dto.numeroOperacion)
+      : null;
 
-  const serie = SERIE_POR_COMPROBANTE[tipoComprobante.codigo];
-  const numero = await generarNumeroCorrelativo(tipoComprobante.id, serie);
+  // Serie y correlativo salen del talonario asignado al usuario; sin talonarios configurados
+  // se usa la serie fija de siempre (ver SERIE_POR_COMPROBANTE).
+  const talonario = await resolverTalonarioParaVenta(usuarioId, tipoComprobante, dto.talonarioId);
+
   const fechaEmision = new Date();
   const tipoCambio = await consultarTipoCambio(fechaEmision);
 
-  const venta = ventaRepository.create({
-    pedido,
-    cliente,
-    tipoComprobante,
-    serie,
-    numero,
-    tipoOperacion,
-    formaPago,
-    medioPago,
-    subtotal: lineas.subtotal,
-    igv: lineas.igv,
-    total: lineas.total,
-    tipoCambio: tipoCambio?.venta ?? null,
-  });
-  const guardada = await ventaRepository.save(venta);
+  // Reservar el correlativo, guardar la venta y consumir el talonario tienen que ser
+  // atómicos: si la venta fallara después de avanzar el número, ese número quedaría quemado
+  // sin comprobante detrás (y al revés, dos cajeros simultáneos repetirían el mismo número).
+  const intentarGuardar = () =>
+    enTransaccion(async (manager) => {
+      const { serie, numero } = talonario
+        ? await reservarNumero(manager, talonario.id)
+        : await numerarSinTalonario(manager, tipoComprobante);
 
-  lineas.detalles.forEach((detalle) => {
-    detalle.venta = guardada;
-  });
-  await detalleVentaRepository.save(lineas.detalles);
+      const venta = manager.create(Venta, {
+        pedido,
+        cliente,
+        tipoComprobante,
+        talonario,
+        serie,
+        numero,
+        tipoOperacion,
+        formaPago,
+        medioPago,
+        banco,
+        numeroOperacion: banco ? (dto.numeroOperacion ?? null) : null,
+        subtotal: lineas.subtotal,
+        igv: lineas.igv,
+        total: lineas.total,
+        tipoCambio: tipoCambio?.venta ?? null,
+      });
+      const ventaGuardada = await manager.save(Venta, venta);
+
+      lineas.detalles.forEach((detalle) => {
+        detalle.venta = ventaGuardada;
+      });
+      await manager.save(DetalleVenta, lineas.detalles);
+
+      // Un comprobante al crédito debe llevar su cronograma de cuotas (RS 193-2020/SUNAT).
+      // Se guarda en la misma transacción: una venta al crédito sin cuotas no es válida.
+      if (formaPago === FormaPago.CREDITO) {
+        await guardarCuotas(
+          manager,
+          ventaGuardada,
+          dto.fechaPrimerVencimiento ??
+            fechaEnDias((await obtenerConfiguracion()).diasCreditoPorDefecto),
+          dto.numeroCuotas ?? 1,
+        );
+      }
+
+      return ventaGuardada;
+    });
+
+  const guardada = await guardarReintentandoColision(intentarGuardar, talonario);
 
   // Descuenta insumos/mercadería que no se hayan consumido ya al entregar la comanda (venta
   // directa, o líneas de un pedido que nunca pasaron por cocina) — ver existencia.service.ts.

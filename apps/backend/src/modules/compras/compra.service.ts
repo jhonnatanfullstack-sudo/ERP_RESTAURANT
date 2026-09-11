@@ -1,5 +1,6 @@
 import { HttpError } from '../../utils/http-error';
-import { AppDataSource } from '../../database/data-source';
+import { esGravado } from '../empresa/igv.service';
+import { enTransaccion } from '../../database/tenant-context';
 import { proveedorRepository } from '../proveedores/proveedor.repository';
 import { almacenRepository } from '../almacenes/almacen.repository';
 import { tipoComprobanteRepository } from '../catalogos/catalogos.repository';
@@ -32,7 +33,6 @@ const RELACIONES = {
  * de restaurantes (10.5%, ver `venta.service.ts`) es sobre lo que el restaurante le vende a
  * *sus* clientes, no sobre lo que a él le cobra un proveedor externo. */
 const TASA_IGV_COMPRAS = 0.18;
-const CODIGO_AFECTACION_GRAVADO = '10';
 
 function ordenarDetalles(compra: Compra): Compra {
   compra.detalles.sort((a, b) => a.creadoEn.getTime() - b.creadoEn.getTime());
@@ -82,8 +82,7 @@ function calcularLineaCompra(
   montoLinea: number,
   incluyeIgv: boolean,
 ): { valorCompra: number; igv: number; subtotal: number } {
-  const esGravado = tipoAfectacionIgv.codigo === CODIGO_AFECTACION_GRAVADO;
-  if (!esGravado) {
+  if (!esGravado(tipoAfectacionIgv)) {
     return { valorCompra: montoLinea, igv: 0, subtotal: montoLinea };
   }
   if (incluyeIgv) {
@@ -269,7 +268,7 @@ export async function actualizarCompra(
   const { proveedor, almacen, tipoComprobante, usuario, lineasResueltas, subtotal, igv, total } =
     await resolverCabeceraYLineas(usuarioId, dto);
 
-  await AppDataSource.transaction(async (manager) => {
+  await enTransaccion(async (manager) => {
     await anularEntradasCompra(compra, usuario, manager, 'Reversa por edición de compra');
 
     await manager.delete(DetalleCompra, { compra: { id: compra.id } });

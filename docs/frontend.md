@@ -59,8 +59,8 @@ React 19 + TypeScript + Vite 8 + TailwindCSS 4 (plugin `@tailwindcss/vite`, conf
 
 - **Carta pública: tercer rediseño — mosaico de fotos reales, navegación agrupada por categoría y scrollspy (2026-09-09, pedido del usuario: "diseñalo nuevamente, que sea mas animado, mas moderno y mas intuitivo, con imagenes de restaurant o cosas asi"):**
   - **"Imágenes de restaurante" con fotos reales, no stock:** el proyecto no tiene un campo de foto de ambiente para `Empresa` (y agregar uno tocaría `empresa.entity.ts`/`empresa.dto.ts`, que ya tenían cambios en curso del usuario sin commitear — se optó por no tocar ese módulo). En su lugar, el fondo del hero (`pages/public/Carta.tsx`) es un mosaico (`grid-cols-3 sm:grid-cols-6`) armado con las fotos reales de los platillos (`producto.imagenUrl`, repetidas si hay pocas), bajo un degradado semitransparente + `backdrop-blur-[3px]` para que el texto siga siendo legible — nunca se difumina la foto en sí. `.animar-mosaico` (`index.css`) le da un zoom lentísimo (18s) para que se sienta vivo sin llamar la atención, y `hooks/useDesplazamientoParalaje.ts` (nuevo, `requestAnimationFrame` + `scroll` pasivo, acotado a un máximo de px) lo desplaza más lento que el scroll. Con 0 productos con foto, el mosaico simplemente no se renderiza y el hero cae al degradado plano de siempre.
-  - **De grilla filtrada a secciones agrupadas + scrollspy — navegación "a la Uber Eats/Rappi":** antes, elegir una categoría *filtraba* la grilla (ocultaba las demás). Ahora todas las categorías están siempre visibles como secciones (`components/public/SeccionCategoriaCarta.tsx`, nuevo) y los chips de categoría hacen `scrollIntoView` hacia su sección (`scroll-mt-[170px]` compensa la barra pegajosa). Un único `IntersectionObserver` en `Carta.tsx` cumple dos roles: resalta en naranja el chip de la categoría visible (`rootMargin: '-170px 0px -65% 0px'`, para que "visible" se dispare cuando la sección ya cruzó la barra pegajosa, no apenas asoma abajo) y marca cada sección como `revelada` la primera vez que aparece (anima su encabezado). El buscador sigue el modelo anterior (lista plana cruzando categorías) porque agrupar resultados de búsqueda no aporta nada. Los chips ahora llevan una miniatura circular (la foto del primer producto de esa categoría) en vez de ser texto plano.
-  - **Mismo bug que ya se había corregido una vez, evitado por diseño:** `useEnVista.ts` (commit anterior) tuvo que reescribirse como *callback ref* porque un `useEffect` de dependencias fijas no se re-ejecuta cuando un `ref` se adjunta tarde a un nodo montado asíncronamente. El nuevo observer de scrollspy es un `useEffect` "clásico" (no callback ref), así que se le puso `categorias` como dependencia — el mismo array cuya identidad cambia justo cuando `productosQuery` resuelve y las secciones recién existen en el DOM — para que el efecto se re-ejecute en el momento correcto y sí encuentre los nodos a observar.
+  - **De grilla filtrada a secciones agrupadas + scrollspy — navegación "a la Uber Eats/Rappi":** antes, elegir una categoría _filtraba_ la grilla (ocultaba las demás). Ahora todas las categorías están siempre visibles como secciones (`components/public/SeccionCategoriaCarta.tsx`, nuevo) y los chips de categoría hacen `scrollIntoView` hacia su sección (`scroll-mt-[170px]` compensa la barra pegajosa). Un único `IntersectionObserver` en `Carta.tsx` cumple dos roles: resalta en naranja el chip de la categoría visible (`rootMargin: '-170px 0px -65% 0px'`, para que "visible" se dispare cuando la sección ya cruzó la barra pegajosa, no apenas asoma abajo) y marca cada sección como `revelada` la primera vez que aparece (anima su encabezado). El buscador sigue el modelo anterior (lista plana cruzando categorías) porque agrupar resultados de búsqueda no aporta nada. Los chips ahora llevan una miniatura circular (la foto del primer producto de esa categoría) en vez de ser texto plano.
+  - **Mismo bug que ya se había corregido una vez, evitado por diseño:** `useEnVista.ts` (commit anterior) tuvo que reescribirse como _callback ref_ porque un `useEffect` de dependencias fijas no se re-ejecuta cuando un `ref` se adjunta tarde a un nodo montado asíncronamente. El nuevo observer de scrollspy es un `useEffect` "clásico" (no callback ref), así que se le puso `categorias` como dependencia — el mismo array cuya identidad cambia justo cuando `productosQuery` resuelve y las secciones recién existen en el DOM — para que el efecto se re-ejecute en el momento correcto y sí encuentre los nodos a observar.
   - **`components/public/BotonSubir.tsx`** (nuevo): "volver arriba" flotante, aparece tras `scrollY > 700`, `bottom-5 left-5` (lado opuesto al botón "Mi pedido", que es `right-5`, para que no choquen).
   - **Rebote del contador de "Mi pedido":** `BandejaPedidoFlotante.tsx` ahora detecta cuándo `totalItems` sube (con un `useRef` guardando el valor anterior) y le agrega `key={rebotes}` al badge — cambiar la `key` fuerza a React a desmontar/remontar el nodo, que es la única forma de reiniciar una animación CSS (`.animar-rebote`) ya corrida sobre el mismo elemento; solo reaplicar la clase no la reinicia.
   - **Verificación:** typecheck + ESLint + Prettier + `vite build` limpios; verificación visual con Playwright real (`chromium`) contra los servidores de desarrollo, sembrando temporalmente 3 categorías y 7 productos de prueba vía TypeORM directo (`npx tsx`, se limpiaron al terminar) para poder probar el mosaico, los chips con miniatura, el scrollspy y las secciones agrupadas con más de 1 categoría — capturas en escritorio y móvil (390px), y una pasada con `reducedMotion: 'reduce'` sin errores de consola.
@@ -112,10 +112,10 @@ src/
 | `/pedidos/:id`      | Admin   | Detalle de pedido (agregar/editar/quitar líneas, enviar a cocina, cerrar/cancelar) | Sí                    |
 | `/cocina`           | Admin   | Cola de cocina (avanzar/cancelar comandas)                                         | Sí                    |
 | `/ventas`           | Admin   | Ventas (filtro por estado, registrar venta desde un pedido cerrado, anular)        | Sí                    |
-| `/caja`             | Admin   | Caja (abrir/cerrar sesión, movimientos manuales, historial de arqueos)            | Sí                    |
-| `/inventario`       | Admin   | Inventario (stock consolidado, kardex, registrar compra/ajuste)                   | Sí                    |
-| `/insumos`          | Admin   | Insumos (lista + crear + editar + desactivar)                                     | Sí                    |
-| `/almacenes`        | Admin   | Almacenes (lista + crear + editar + eliminar)                                     | Sí                    |
+| `/caja`             | Admin   | Caja (abrir/cerrar sesión, movimientos manuales, historial de arqueos)             | Sí                    |
+| `/inventario`       | Admin   | Inventario (stock consolidado, kardex, registrar compra/ajuste)                    | Sí                    |
+| `/insumos`          | Admin   | Insumos (lista + crear + editar + desactivar)                                      | Sí                    |
+| `/almacenes`        | Admin   | Almacenes (lista + crear + editar + eliminar)                                      | Sí                    |
 | `/cambiar-password` | Admin   | Cambiar contraseña propia                                                          | Sí                    |
 | `/login`            | —       | Login (formulario real, conectado a `/api/auth/login`)                             | No                    |
 | `/carta`            | Público | Carta (hero + buscador + categorías, "Mi pedido" con envío por WhatsApp)           | No                    |
@@ -159,6 +159,57 @@ La tabla de `/ventas` expone columnas separadas de Comprobante (serie-correlativ
 - **`pages/Ventas.tsx`**: la etiqueta fija "IGV (18%)" del detalle de una venta pasó a solo "IGV" — con la tasa ahora dependiendo de la empresa, un porcentaje fijo en la UI podía quedar mal etiquetado; el monto en soles ya es exacto y no necesita el porcentaje al lado.
 - **`pages/Insumos.tsx`**: gana el `Select` "Afectación del IGV" (mismo catálogo que ya usa `Productos.tsx`) y dos columnas nuevas en la tabla: "IGV" y "Último costo" (el `costoUnitario` de su compra más reciente, `formatearPrecio` o "—" si nunca se compró).
 - **`pages/Productos.tsx`: costo estimado de la receta**: `EditorReceta` ahora muestra, por línea, el costo de esa cantidad de insumo (`insumo.ultimoCosto × cantidad`, o "—" si el insumo nunca se compró) y un total "Costo estimado por unidad" al pie — con un aviso si algún insumo todavía no tiene costo conocido, para que quede claro que el número puede estar incompleto. Es puramente informativo: no se guarda, no calcula margen contra `Producto.precio` — ese costeo real es FASE 18.
+
+## Costos y márgenes (FASE 18, 2026-09-10)
+
+Página `/costos` (permiso `costos.ver`, grupo "Análisis" del sidebar). Cuatro KPIs (margen promedio ponderado, food cost promedio, productos costeados, productos en margen crítico), filtros de búsqueda/categoría/orden, y una tabla con precio, valor de venta, costo, margen y **food cost con barra de semáforo**: verde hasta 35%, ámbar hasta 50%, rojo por encima — los umbrales de gestión del rubro, definidos en el frontend (`FOOD_COST_SANO`/`FOOD_COST_ALERTA`) porque son criterio de lectura, no una regla contable; el backend devuelve el porcentaje crudo.
+
+- El orden por defecto es **menor margen primero**: la pregunta con la que se entra a esta pantalla es "¿qué plato me está haciendo perder plata?". Los productos sin costear no se mezclan como si tuvieran margen 0 (eso los pondría arriba): van siempre al final.
+- Al hacer clic en un producto se abre el desglose: de dónde sale cada sol de su costo, línea por línea de la receta, más las advertencias de `origenCosto: 'manual'` y de componentes sin costo.
+- **Bug real encontrado y corregido durante la verificación:** el desglose mostraba "0 Kilogramo" para una línea de 0.25 kg — se estaba usando `formatearNumero` (0 decimales, pensado para conteos). Se extrajo `formatearCantidad` (hasta 3 decimales, la precisión real de las columnas `numeric(10,3)`) a `utils/formato.ts` y se aplicó también en `Inventario.tsx`, que hasta ahora repetía ese `toLocaleString` a mano.
+
+## Carta pública: metadatos al compartir, notas por plato y datos de entrega (2026-09-10)
+
+Cuarta iteración sobre `/carta`, sin rehacer el diseño otra vez (ver la decisión de mejora incremental en `decisiones-tecnicas.md`): se completó lo que le faltaba para que el pedido por WhatsApp sirva tal cual llega.
+
+- **`useMetaDocumento`** (hook nuevo): título y metadatos Open Graph de la página. El enlace de la carta se comparte por chat, y hasta ahora la vista previa decía "Restaurant ERP" — el nombre real del restaurante vive en la base de datos y solo llega con la consulta de Empresa, así que el `index.html` no podía traerlo. Ahora la pestaña y la tarjeta del chat muestran "Carta de &lt;restaurante&gt;", su descripción y la foto de un plato real. Limpia sus propias etiquetas al desmontar, para que una ruta no se lleve puestos los metadatos de otra.
+- **`BotonCompartir`**: menú nativo del sistema en celular (`navigator.share`, que ahí ofrece WhatsApp de primera) y copiado del enlace al portapapeles en escritorio, con acuse de "Enlace copiado".
+- **Nota por plato** en "Mi pedido" ("sin cebolla, poca sal"): se guarda en `ItemBandeja.nota` y viaja bajo su línea en el mensaje. Solo una nota abierta a la vez — con el campo siempre visible en cada línea, un pedido de seis platos se vuelve un formulario largo.
+- **Datos de entrega**: recojo o delivery, a nombre de quién, dirección (solo en delivery) e indicaciones. Son los datos que quien atiende el chat iba a tener que preguntar igual. Se persisten en `localStorage` junto con el pedido, así que sobreviven un refresco.
+- **Descripción del plato en la lista**, recortada a dos líneas bajo el nombre: es lo que hace que la lista se lea como una carta y no como una lista de precios (el texto completo sigue en el detalle del plato).
+- **Foto del hero también en móvil** (antes era `hidden lg:block`): apaisada bajo el titular, que es donde el visitante decide si le provoca entrar.
+- Verificado de punta a punta en navegador real: agregar dos platos → nota en uno → delivery con nombre/dirección/referencia → el enlace `wa.me` sale con el mensaje completo y el número normalizado a `51…`, y todo sobrevive un refresco de página.
+
+## Configuración del restaurante (FASE 21, 2026-09-10)
+
+Página `/configuracion` (permiso `configuracion.ver`; editar exige `configuracion.editar`, y
+sin él la página se muestra en modo consulta con los campos deshabilitados y un aviso, en vez
+de esconderse).
+
+Los campos se agrupan **por el módulo donde se notan**, no por tipo de dato: quien ajusta el
+refresco de cocina está pensando en la cocina, no en "un entero de la configuración". Cuatro
+paneles: Reservas y cocina, Ventas y costos, Carta pública, Redes sociales.
+
+**Consumidores conectados** (el módulo no es una pantalla decorativa: cada valor reemplaza una
+constante que existía antes):
+
+- `Cocina.tsx` — `refetchInterval` sale de `segundosRefrescoCocina` (antes 8000 ms fijos).
+- `Costos.tsx` — el semáforo de food cost usa `foodCostObjetivo`/`foodCostCritico` (antes 35 y
+  50 fijos); los valores de respaldo se mantienen por si la consulta aún no cargó.
+- `Carta.tsx` — muestra `mensajeBienvenida` y `horarioAtencion` en el hero, y oculta toda la
+  mecánica de pedido cuando `aceptaPedidosWhatsapp` es `false`.
+- En el backend: `reserva.service.ts` y `venta.service.ts` (ver `api.md`).
+
+Al guardar se invalida también `['empresa-publica']`: la carta muestra horario y mensaje, y sin
+eso quien la tuviera abierta en otra pestaña seguiría viendo los datos viejos.
+
+## Registro público, aviso de prueba y panel del proveedor (FASES 25-26, 2026-09-10)
+
+- **`/registro`** (`pages/public/RegistroDemo.tsx`): página pública de alta. Crea el restaurante y la persona que lo administra en un solo formulario, y entra directo al panel — pedirle la contraseña otra vez a quien acaba de registrarse es fricción gratuita en el momento más frágil del embudo. La duración de la prueba se lee del backend (`GET /api/demo/informacion`) en vez de estar escrita a mano, para que cambiarla en el `.env` se refleje en el texto de la página.
+- **`AvisoSuscripcion`**: barra entre el navbar y el contenido, visible en todas las pantallas del panel. Solo aparece cuando hay algo que decir (una cuenta contratada no la ve). Durante la prueba informa los días restantes —y pasa a tono de urgencia en los últimos 3—; al vencer explica en el mismo lugar por qué dejaron de funcionar los botones de guardar y con quién continuar, con enlaces directos a WhatsApp y correo. Se revalida al volver a la pestaña: la cuenta puede vencer con la sesión abierta.
+- **`/plataforma`** (`pages/Plataforma.tsx`): panel del proveedor. KPIs (empresas, pruebas en curso, activas esta semana, suspendidas), tabla con estado y uso real de cada cuenta, detalle día a día de los últimos 90 días, y acciones para activar, extender 15 días, suspender o reactivar. Su entrada en el sidebar usa `soloPara: 'proveedor'` y **no** un permiso: los permisos son del RBAC interno de cada restaurante, y ningún rol de un cliente debería poder contener uno que le deje ver a los demás.
+- **La carta pública pasó a `/carta/:slug`**: `PublicLayout` y `Carta` toman el slug de la URL, porque un cliente mirando el menú desde su celular no tiene sesión y no hay otra forma de saber de quién es la carta.
+- Verificado en navegador real: alta desde `/registro` → entra al panel con "Te quedan 15 días de prueba" → el menú **no** muestra Plataforma para esa cuenta → el proveedor sí lo ve y lista las 5 empresas con su uso → la carta de la empresa recién creada responde en su slug con su propio nombre en el título.
 
 ## Autenticación en el frontend
 

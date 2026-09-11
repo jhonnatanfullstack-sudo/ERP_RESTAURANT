@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router';
 import { Sidebar } from '../components/Sidebar';
 import { Navbar } from '../components/Navbar';
+import { AvisoSuscripcion } from '../components/AvisoSuscripcion';
 
 const CLAVE_COLAPSADO = 'restaurant-erp:sidebar-colapsado';
 
@@ -34,6 +35,9 @@ export function AdminLayout() {
       />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Navbar onAbrirMenuMovil={() => setAbiertoMovil(true)} />
+        {/* Entre el navbar y el contenido: se ve en todas las pantallas del panel sin
+            empujar el menú ni competir con el título de cada página. */}
+        <AvisoSuscripcion />
         <main className="animate-fade-in flex-1 overflow-y-auto p-8">
           <Outlet />
         </main>

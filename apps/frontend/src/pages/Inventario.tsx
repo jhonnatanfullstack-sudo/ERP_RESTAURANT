@@ -28,7 +28,7 @@ import { FormActions } from '../components/ui/FormActions';
 import { TarjetaOpcion } from '../components/ui/TarjetaOpcion';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
-import { formatearFechaHora, nombrePersonal } from '../utils/formato';
+import { formatearCantidad, formatearFechaHora, nombrePersonal } from '../utils/formato';
 import { mensajeError } from '../utils/errores';
 import type { RegistrarMovimientoInventarioInput } from '../services/inventario.service';
 import type { TipoMovimientoExistencia } from '../types/api';
@@ -409,7 +409,7 @@ export function Inventario() {
               render: (m) => (
                 <span className={esEntrada(m.tipo) ? 'text-emerald-700' : 'text-red-700'}>
                   {esEntrada(m.tipo) ? '+' : '−'}
-                  {m.cantidad.toLocaleString('es-PE', { maximumFractionDigits: 3 })}
+                  {formatearCantidad(m.cantidad)}
                 </span>
               ),
             },

@@ -65,8 +65,64 @@ Helpers en `src/utils/api-response.ts`: `sendSuccess(res, data, message?, status
 | POST/PUT/DELETE     | `/api/pedidos/:id/detalles`, `/api/pedidos/:id/detalles/:detalleId`                                                                               | Sí + `pedidos.editar`            | Agregar/editar/quitar líneas de producto de un pedido abierto                          |
 | GET/POST/PUT/DELETE | `/api/comandas`, `/api/comandas/:id`                                                                                                              | Sí + `cocina.*`/`pedidos.editar` | Cola de cocina (DELETE = cancelar, ver reglas de negocio abajo)                        |
 | GET/POST/DELETE     | `/api/ventas`, `/api/ventas/:id`                                                                                                                  | Sí + `ventas.*`                  | Comprobantes de venta, desde un pedido cerrado o directos (DELETE = anular, ver abajo) |
+| GET/POST/PUT/DELETE | `/api/talonarios`, `/api/talonarios/:id`                                                                                                          | Sí + `talonarios.*`              | Series de comprobantes y su correlativo (DELETE = borrado real, solo si no emitió)     |
+| PUT                 | `/api/talonarios/:id/usuarios`                                                                                                                    | Sí + `talonarios.asignar`        | Reemplaza el conjunto de usuarios que emiten desde ese talonario                       |
+| GET                 | `/api/talonarios/mios?tipoComprobanteId=...`                                                                                                      | Sí + `ventas.crear`              | Talonarios del usuario autenticado, para el selector de Ventas                         |
+| GET                 | `/api/cuentas-por-cobrar`, `/api/cuentas-por-cobrar/:ventaId`                                                                                     | Sí + `cobranzas.ver`             | Documentos por cobrar (ventas al crédito) con cronograma, cobros y saldo               |
+| POST                | `/api/cuentas-por-cobrar/:ventaId/pagos`                                                                                                          | Sí + `cobranzas.registrar`       | Registra un cobro contra una venta al crédito                                          |
+| DELETE              | `/api/pagos-venta/:id`                                                                                                                            | Sí + `cobranzas.anular`          | Anula un cobro mal registrado (conserva la fila y el motivo)                           |
+| GET                 | `/api/catalogos/bancos`                                                                                                                           | Sí                               | Entidades financieras (código SBS) para el sustento bancario                           |
 
 Detalle completo de request/response de auth y roles en `autenticacion.md` y `roles-y-permisos.md`. El resto de rutas de negocio se van agregando módulo por módulo a partir de FASE 15.
+
+### Talonarios (series de comprobantes)
+
+Un **talonario** es una serie SUNAT autorizada (`B001`, `F001`, …) con su correlativo vigente y el rango que puede recorrer. Reemplaza la serie fija por tipo de comprobante que traía `venta.service.ts` y permite que dos cajas emitan en paralelo sin pisarse el número.
+
+- **Campos** (`talonarios`): `empresa`, `tipoComprobante`, `almacen` (punto de emisión), `serie` (4 caracteres), `numeroInicio`/`numeroFin` (rango autorizado), `numeroActual` (**último número emitido**, 0 si no emitió nada), `activo`.
+- **Siguiente número**: `max(numeroActual + 1, numeroInicio, últimoEmitidoEnVentas + 1)`. El tercer término cubre las ventas anteriores a este módulo (serie fija `B001`/`F001`): un talonario creado después continúa tras ellas en vez de chocar contra el índice único de `ventas (tipo_comprobante, serie, numero)`. La API lo devuelve ya calculado en `siguienteNumero`, `siguienteNumeroFormateado` (`B001-00000001`, 8 dígitos), `numerosDisponibles` y `agotado`.
+- **Serie**: única por empresa (índice `IDX_un_talonario_por_empresa_serie`) y debe empezar con la letra que SUNAT exige para su comprobante — `F` factura, `B` boleta (`LETRA_SERIE_POR_COMPROBANTE` en `catalogos/codigos-sunat.ts`). Solo puede cambiarse mientras el talonario no haya emitido nada (409 si ya emitió).
+- **Asignación a usuarios** (`talonario_usuarios`): `PUT /api/talonarios/:id/usuarios` con `{ usuarioIds: [] }` **reemplaza** el conjunto completo, igual que los permisos de un rol. Solo los usuarios asignados pueden emitir con esa serie.
+- **Eliminar**: `DELETE` solo funciona si el talonario no tiene ventas (409 en caso contrario, y la FK `ventas.talonario_id` es `RESTRICT`); un talonario que ya emitió se desactiva.
+
+#### Cómo se numera una venta (`POST /api/ventas`)
+
+`talonarioId` es **opcional** en el body. `resolverTalonarioParaVenta` decide, contra los talonarios activos asignados al usuario autenticado para ese tipo de comprobante:
+
+| Situación                                | Resultado                                                                              |
+| ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| `talonarioId` indicado y disponible      | Se usa ese                                                                             |
+| `talonarioId` indicado pero no asignado  | 400 "El talonario indicado no está disponible para este usuario y tipo de comprobante" |
+| Sin `talonarioId`, un solo talonario     | Se resuelve solo (la UI ni siquiera muestra un combo)                                  |
+| Sin `talonarioId`, varios talonarios     | 400 "Tienes varios talonarios para este comprobante: elige uno"                        |
+| Sin `talonarioId`, todos agotados        | 409 con el mensaje de agotado — **nunca** cae a la serie fija a escondidas             |
+| El usuario no tiene **ningún** talonario | `null` → serie fija `B001`/`F001`, la numeración anterior al módulo                    |
+
+- **Atomicidad**: reservar el correlativo, guardar la venta con sus detalles y consumir el talonario ocurren en una sola transacción (`AppDataSource.transaction` en `crearVenta`). `reservarNumero` bloquea la fila con `SELECT … FOR UPDATE` (`lock: pessimistic_write`, sin `relations` para no romper el lock con un LEFT JOIN), de modo que dos cajeros simultáneos sobre la misma serie se serializan. Verificado con 8 ventas en paralelo: 8 correlativos distintos y consecutivos.
+- **Correlativo ya ocupado**: si aun así el número resultara tomado (dos talonarios distintos con la misma serie, o un comprobante insertado por fuera del sistema), la venta **no se pierde**: el índice único `IDX_un_correlativo_por_serie` la rechaza, `guardarReintentandoColision` la vuelve a numerar con el siguiente libre (hasta 3 intentos) y devuelve la venta con su número definitivo. La primera venta conserva su número. El frontend compara el número emitido con el que mostraba y avisa al cajero si cambió, porque el comprobante impreso ya no lleva el número que tenía a la vista.
+- **Agotado**: emitir cuando el siguiente número supera `numeroFin` devuelve 409 "El talonario X llegó a su último número autorizado (N). Registra un talonario nuevo."
+- **Anular una venta no devuelve el número** al talonario: el correlativo emitido se conserva, como ya hacía Ventas (`estado = anulada`, nunca borrado).
+- `ventas.talonario_id` es nullable: las ventas emitidas antes de este módulo no pertenecen a ningún talonario.
+
+### Créditos y cobranzas
+
+Una venta con `formaPago: "credito"` no se cobra al emitirse: queda como **documento por cobrar** y se amortiza con uno o varios pagos.
+
+- **Cronograma (`cuotas_venta`)**: la RS 193-2020/SUNAT obliga a que un comprobante al crédito consigne el monto pendiente y el detalle de cada cuota. `POST /api/ventas` acepta `fechaPrimerVencimiento` y `numeroCuotas` (1 a 36, mensuales); si no se envían, se genera **una cuota única a 30 días** — una venta al crédito nunca queda sin cronograma. El reparto es en partes iguales y la última cuota absorbe el redondeo, de modo que las cuotas suman exactamente el total.
+- **Saldo**: no se guarda en `ventas`. Se calcula sumando los pagos no anulados (`cobranza.service.ts: armarVista`), única forma de que no se desincronice al anular un cobro o una venta.
+- **Estado de cobranza** (derivado, no persistido): `pendiente` (sin cobros) → `parcial` → `pagada`; `vencida` si queda saldo y la primera cuota impaga ya venció. `diasVencido` cuenta el atraso de esa cuota.
+- **Cobros (`pagos_venta`)**: `fechaPago`, `monto`, `medioPagoId`, y `bancoId` + `numeroOperacion` si el medio lo exige. Se rechaza un monto mayor al saldo (400) y cualquier cobro sobre una venta al contado, anulada o ya cancelada. La venta se bloquea con `FOR UPDATE` durante el registro: dos cajeros cobrando el mismo documento a la vez no pueden dejarlo sobrepagado.
+- **Anular un cobro** (`DELETE /api/pagos-venta/:id`, body `{ motivo }`) marca `anulado` y conserva la fila con su motivo; el saldo vuelve a subir solo, porque se recalcula.
+
+#### Sustento bancario (Ley 28194)
+
+La bancarización obliga a canalizar por el sistema financiero las operaciones desde S/ 2,000 o US$ 500, dejando constancia de la entidad y el número de operación.
+
+- **Qué medios lo exigen** es un dato del catálogo, `medios_pago.requiere_banco` (hoy: transferencia, depósito en cuenta, cheque) — no una lista de códigos en el código fuente, así agregar un medio bancarizado no obliga a tocar la validación ni la UI.
+- **Al contado**: el banco va en la propia venta (`ventas.banco_id`, `numero_operacion`), porque el dinero entró en ese momento.
+- **Al crédito**: va en cada `PagoVenta`, no en la venta — el dinero entra después y puede entrar por varias vías distintas.
+- Falta el banco o el número de operación cuando el medio lo exige → 400 con el mensaje del medio concreto ("Un pago por depósito en cuenta requiere el banco").
+- `bancos` se siembra con las entidades del sistema financiero peruano y su **código SBS**, el mismo del Catálogo N° 54 de SUNAT.
 
 ### Reservas de mesa (FASE 11.5)
 
@@ -156,6 +212,45 @@ Detalle completo de request/response de auth y roles en `autenticacion.md` y `ro
 - **Permisos**: `almacenes.ver/.crear/.editar/.eliminar`, `insumos.ver/.crear/.editar/.eliminar` (patrón genérico, sin ejemplo propio en la sección 10 de `CLAUDE.md`); `inventario.ver`/`inventario.ajustar` (nombrados tal como los da esa sección).
 - **Detalle no obvio en `venta.service.ts: crearVenta`:** para poder distinguir una línea de pedido ya consumida en cocina (no se debe volver a descontar) de una que nunca se envió a cocina (sí hay que descontarla al facturar), la consulta del pedido tuvo que ampliarse para cargar también `detalles.comanda` (antes solo cargaba `detalles.producto`) — sin ese dato, `registrarConsumoVenta` no tiene cómo saber si ya hubo un `consumo_cocina` para esa línea.
 - **Bug real encontrado y corregido (2026-09-09):** `receta.service.ts: reemplazarReceta` fallaba con 400 "Uno o más insumos indicados no existen" al vaciar una receta (`lineas: []`) — `insumoRepository.findBy([])` con un arreglo vacío de condiciones no filtra nada en TypeORM, devuelve **todos** los insumos en vez de ninguno, así que la comparación `insumos.length !== idsInsumos.length` (`N !== 0`) siempre disparaba el error. Se detectó al limpiar los datos de prueba de la verificación de esta misma fase. Fix: cortar antes de consultar cuando `idsInsumos.length === 0`.
+
+### Configuración operativa del restaurante (FASE 21)
+
+- **`GET /api/configuracion`** y **`PUT /api/configuracion`** (permisos `configuracion.ver` / `configuracion.editar`). Es un recurso **singular**: no hay una lista de configuraciones, hay _la_ configuración de la empresa, que sale del token como en todo el resto de la API.
+- **Leer no crea la fila.** Si la empresa nunca guardó su configuración, el service devuelve `CONFIGURACION_POR_DEFECTO` sin escribir nada. Una petición GET no debería tener efectos secundarios, y así tampoco hace falta sembrar una fila por cada empresa nueva ni hacer un backfill para las existentes. La fila nace con el primer `PUT`.
+- **Qué contiene**: lo que hasta esta fase eran **constantes escritas en el código** y que cada restaurante quiere distinto — `duracionReservaMinutos` (antes 90 fijo en `reserva.service.ts`), `segundosRefrescoCocina` (antes 8000 ms fijos en `Cocina.tsx`), `diasCreditoPorDefecto` (antes `DIAS_CREDITO_POR_DEFECTO = 30` en `venta.service.ts`), `foodCostObjetivo`/`foodCostCritico` (antes 35 y 50 en `Costos.tsx`) — más los datos que la carta pública necesitaba y no tenía dónde guardar: `horarioAtencion`, `mensajeBienvenida`, `aceptaPedidosWhatsapp` y los enlaces de redes.
+- **Tabla tipada, no clave-valor.** Un `configuraciones(clave, valor)` sería más flexible pero pierde el tipo, la validación y el valor por defecto: nada impediría guardar `dias_credito = "treinta"`. Con columnas tipadas validan Postgres y zod por su cuenta, y un `CHECK` garantiza que el food cost crítico siempre sea mayor que el objetivo.
+- **El subconjunto público se enumera explícitamente.** `GET /api/publico/:slug/empresa` devuelve horario, mensaje, si acepta pedidos y las redes **junto a** los datos de la empresa (la carta los necesita a la vez; separarlos obligaría a dos viajes de red para pintar la cabecera). Los umbrales de food cost y los días de crédito **no** viajan: son información interna del negocio, no algo que deba llegar al celular de un comensal.
+- **`aceptaPedidosWhatsapp: false`** deja la carta como menú de consulta: se ve completa, pero sin la bandeja flotante ni los botones de agregar. Hay locales que solo atienden en salón y publican el menú como referencia.
+
+### Multi-empresa: aislamiento de datos entre restaurantes (FASE 25)
+
+- **Cada petición a `/api` corre dentro de una transacción** que fija `app.empresa_id` (`middlewares/tenant.middleware.ts`). Es la única conexión donde las políticas RLS de Postgres dejan ver algo: sin ese ajuste, **ninguna consulta devuelve filas**.
+- **La empresa sale del token firmado**, nunca de una cabecera o del cuerpo. `AccessTokenPayload` gana `empresaId`; `requireAuth` lo aplica con `establecerEmpresaDeLaPeticion`. Los tokens emitidos antes de esta fase no lo traen y se rechazan con 401 "Sesión desactualizada" en vez de adivinar una empresa.
+- **Los repositorios cambiaron de `AppDataSource.getRepository(X)` a `tenantRepository(X)`** (27 archivos). Ese proxy hace dos cosas: enruta cada consulta por la transacción de la petición, y estampa la empresa al escribir. **No filtra por `empresa_id` en el `where`** — eso lo hace Postgres, lo que de paso cubre las consultas SQL crudas de Reportes, Costeo y Kardex, que un filtro en TypeScript nunca habría tocado.
+- **`AppDataSource.transaction(...)` se reemplazó por `enTransaccion(...)`** en Ventas, Compras y Cobranzas: abría una transacción en **otra** conexión, sin `app.empresa_id`, donde las políticas no habrían dejado ni leer ni escribir.
+- **Dos roles de base de datos.** `DB_USER` (dueño, superusuario) solo ejecuta migraciones; `DB_APP_USER` atiende peticiones y **no tiene `SUPERUSER` ni `BYPASSRLS`**. Sin esta separación el aislamiento es decorativo — un superusuario se salta RLS siempre, incluso con `FORCE`. Ver `decisiones-tecnicas.md`.
+- **Endpoints públicos de la carta**: `GET /api/empresas/publico` y `GET /api/productos/publico` fueron reemplazados por `GET /api/publico/:slug/empresa` y `GET /api/publico/:slug/productos`. "La empresa pública" dejó de ser una sola.
+- **Restricciones únicas que pasaron a ser por empresa**: nombre de categoría/marca/insumo/salón/rol, documento de cliente/proveedor/personal, correo de cliente, caja abierta, y el correlativo `(tipo_comprobante, serie, numero)` de ventas. `usuarios.email` sigue siendo único globalmente a propósito (el login no tiene selector de empresa).
+- **Resueltos los tres puntos que asumían un solo restaurante**: `resolverTasaIgv()`, `obtenerEmpresaPublica()` y `obtenerAlmacenPorDefecto()` tomaban "la empresa activa más antigua"; ahora usan la empresa de la petición.
+
+### Cuentas de prueba, suscripción y panel del proveedor (FASE 26)
+
+- **`POST /api/demo/registrar`** (público, 5 por hora y por IP): crea la empresa, el rol Administrador con todos los permisos, el personal, el usuario y el almacén principal, y devuelve la sesión iniciada. Exige RUC (único: una prueba por negocio real). `GET /api/demo/informacion` expone la duración real de la prueba y el contacto del proveedor; `GET /api/demo/tipos-documento` sirve el catálogo SUNAT que el formulario necesita sin sesión.
+- **`GET /api/suscripcion`**: estado de la cuenta (`activa` | `demo` | `demo_vencida` | `suspendida`), días restantes y contacto del proveedor. **El vencimiento se deriva de `demoExpiraEn` en cada petición**, no se guarda como estado: así no hace falta una tarea programada ni existe la ventana en que la demo ya venció pero la columna dice lo contrario.
+- **Al vencer, la cuenta queda en solo lectura.** Las escrituras responden **402 (Pago requerido)** —no 403, que significaría "no tienes permiso"— con el mensaje de contacto. La lectura sigue abierta para que el restaurante conserve y exporte lo que cargó. El control vive dentro de `requireAuth`, el único punto por el que pasan todas las rutas protegidas.
+- **`registros_uso`**: una fila por empresa y día, con peticiones, escrituras y último acceso, acumulada con `INSERT ... ON CONFLICT DO UPDATE` dentro de la transacción que la petición ya tiene abierta. Agregado por día y no por petición a propósito: responde "¿se usa de verdad?" sin crecer sin límite.
+- **`GET /api/plataforma/panel`**, `GET /api/plataforma/empresas/:id/uso` y `POST /api/plataforma/empresas/:id/acciones` (`activar` | `extender_demo` | `suspender` | `reactivar`). Es el **único recurso que atraviesa el aislamiento** y corre bajo `conBypassRls`. Se protege con `usuarios.es_proveedor` —activable solo por migración— y no con el catálogo de permisos: ningún rol de un restaurante debería poder contener un permiso que le deje ver a los demás. Responde **404** a quien no es proveedor: no se confirma siquiera que el panel exista.
+
+### Recetas y costos: costo, margen y food cost por producto (FASE 18)
+
+- **Qué agrega sobre FASE 16**: la receta (`receta_insumos`) y el costo de cada compra ya existían; lo que faltaba era convertirlos en el indicador que realmente se usa para decidir precios. `GET /api/costeo` devuelve, por producto activo: `precio` (de carta, con IGV), `valorVenta` (sin IGV), `costo` (neto), `margen`, `margenPorcentaje`, `costoPorcentaje` ("food cost") y el desglose `lineas[]` de su receta. `GET /api/costeo/:productoId` devuelve lo mismo para uno solo.
+- **Sin tablas nuevas**: el costeo se recalcula al vuelo en cada consulta, no se persiste un costo "congelado" por producto — el costo real cambia con cada compra, y una tabla de costos guardada quedaría desactualizada en silencio. La foto histórica de lo que costó una venta concreta ya la da el kardex (`existencias`), que sí guarda el costo del momento.
+- **El costo usado es NETO de IGV, y no es el mismo número que `Insumo.ultimoCosto`.** `existencias.costo_unitario` guarda el monto _tal como se tipeó en la compra_, que con `Compra.incluyeIgv = true` (el caso normal) trae el IGV adentro. Comparar eso contra el valor de venta sin IGV inflaría el costo y subestimaría el margen. `existencia.service.ts: obtenerCostosNetos()` toma, del movimiento de entrada más reciente de cada ítem, `detalle_compras.valor_compra / cantidad` cuando ese movimiento vino de una `Compra` (ya desglosado según el `tipoAfectacionIgv` del propio ítem), y `existencias.costo_unitario` tal cual cuando fue un movimiento manual — marcando ese caso con `origenCosto: 'manual'` para que la interfaz advierta que el costo no pasó por un comprobante. `obtenerUltimosCostosInsumos()` (bruto) se conserva sin cambios: sigue alimentando la sugerencia de costo al registrar una compra nueva, donde lo que interesa es lo que efectivamente se pagó.
+- **Mercadería vs. servicio**: un `servicio` (platillo) se costea sumando su receta; una `mercaderia` (ej. una gaseosa) no tiene receta, su costo es el de su propia última compra.
+- **Lo que no se puede costear se dice, no se asume cero**: `motivoSinCosteo` distingue `sin_receta` (un platillo al que nunca se le cargó la receta) de `sin_costos` (hay qué costear, pero ningún componente tiene compra con costo registrado). Un platillo sin receta mostrado como "margen 100%" sería una mentira más peligrosa que un hueco visible. `costoCompleto: false` + `componentesSinCosto[]` marcan el caso intermedio: parte de la receta sí tiene costo, así que el costo mostrado es un piso y el margen está sobreestimado.
+- **`resolverTasaIgv()` se movió de `modules/ventas` a `modules/empresa/igv.service.ts`** (junto con `CODIGO_AFECTACION_GRAVADO` y el helper `esGravado`): la tasa es un atributo de la empresa, no de la venta, y ahora la necesitan dos módulos — emitir comprobantes y costear platillos. `venta.service.ts` y `compra.service.ts` la importan de ahí; el cálculo no cambió.
+- **Endpoints**: `GET /api/costeo`, `GET /api/costeo/:productoId`. **Permiso**: `costos.ver` (nuevo, migración `SeedPermisoCostos`, otorgado a Administrador).
+- **Fuera de alcance de esta fase**: costo promedio ponderado o PEPS (se usa el último costo conocido, que es lo que un restaurante mira para fijar precio), sugerencia automática de precio por margen objetivo, y margen real por venta emitida (eso es analítica de Reportes, no costeo de carta).
 
 ### Tasa de IGV configurable por empresa: régimen MYPE de restaurantes (2026-09-09)
 

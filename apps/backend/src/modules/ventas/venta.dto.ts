@@ -15,10 +15,26 @@ export const crearVentaSchema = z
     pedidoId: z.string().uuid().optional(),
     detalles: z.array(lineaVentaSchema).min(1).max(50).optional(),
     tipoComprobanteId: z.string().uuid(),
+    /** Serie desde la que se numera el comprobante. Opcional: si el usuario tiene un solo
+     * talonario para ese comprobante se resuelve solo, y si no tiene ninguno se cae a la
+     * numeración anterior al módulo (ver `venta.service.ts: crearVenta`). */
+    talonarioId: z.string().uuid().optional(),
     clienteId: z.string().uuid().optional(),
     tipoOperacionId: z.string().uuid().optional(),
     formaPago: z.enum(FormaPago).optional(),
     medioPagoId: z.string().uuid().optional(),
+    /** Sustento bancario del cobro al contado, obligatorio si el medio de pago lo exige
+     * (`MedioPago.requiereBanco`) — se valida en el servicio. */
+    bancoId: z.string().uuid().optional(),
+    numeroOperacion: z.string().trim().min(1).max(50).optional(),
+    /** Venta al crédito: vencimiento de la primera cuota y en cuántas se pactó. SUNAT exige
+     * el cronograma en el comprobante (RS 193-2020); si no se envía, se asume una sola cuota
+     * a 30 días. */
+    fechaPrimerVencimiento: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha debe tener el formato YYYY-MM-DD')
+      .optional(),
+    numeroCuotas: z.coerce.number().int().min(1).max(36).optional(),
   })
   .refine((data) => Boolean(data.pedidoId) !== Boolean(data.detalles?.length), {
     message: 'Indica un pedido cerrado a facturar o una lista de productos, no ambos',

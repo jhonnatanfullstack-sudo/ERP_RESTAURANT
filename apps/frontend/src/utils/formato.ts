@@ -28,6 +28,15 @@ export function formatearNumero(valor: number): string {
   return formateadorNumero.format(valor);
 }
 
+const formateadorCantidad = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 3 });
+
+/** Cantidad de inventario o de receta: hasta 3 decimales, la misma precisión que guardan las
+ * columnas `numeric(10,3)` de `existencias` y `receta_insumos`. No usar `formatearNumero`
+ * para esto — redondea a enteros y convierte "0.25 kg" en "0 kg". */
+export function formatearCantidad(valor: number): string {
+  return formateadorCantidad.format(valor);
+}
+
 const formateadorFechaHora = new Intl.DateTimeFormat('es-PE', {
   dateStyle: 'medium',
   timeStyle: 'short',
@@ -82,6 +91,17 @@ export function origenVenta(venta: {
 }): string {
   if (!venta.pedido) return 'Venta directa';
   return nombreMesa(venta.pedido.mesa);
+}
+
+/** Dígitos del correlativo en el número de un comprobante (formato SUNAT: serie de 4 +
+ * guion + correlativo de 8). Mismo valor que `utils/comprobante.ts` en el backend. */
+export const DIGITOS_CORRELATIVO = 8;
+
+/** Número completo de un comprobante: "B001-00000001". Usar siempre esto en vez de armar el
+ * padding a mano, para que la lista de ventas, el detalle y el selector de talonarios
+ * muestren exactamente el mismo formato. */
+export function numeroComprobante(serie: string, numero: number): string {
+  return `${serie}-${String(numero).padStart(DIGITOS_CORRELATIVO, '0')}`;
 }
 
 interface IdentidadPersona {

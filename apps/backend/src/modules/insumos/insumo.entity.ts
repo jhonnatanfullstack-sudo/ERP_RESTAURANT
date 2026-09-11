@@ -2,11 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Empresa } from '../empresa/empresa.entity';
 import { UnidadMedida } from '../catalogos/unidad-medida.entity';
 import { TipoAfectacionIgv } from '../catalogos/tipo-afectacion-igv.entity';
 
@@ -24,11 +26,19 @@ import { TipoAfectacionIgv } from '../catalogos/tipo-afectacion-igv.entity';
  * insumo se calcula con este campo, no con el del producto final.
  */
 @Entity('insumos')
+@Index(['empresa', 'nombre'], { unique: true })
 export class Insumo {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'varchar', length: 150, unique: true })
+  /** Empresa dueña de esta fila. Es la columna sobre la que actúan las políticas RLS de
+   * Postgres: sin ella, una consulta de la Empresa A podría alcanzar filas de la B. Ver
+   * `database/tenant-context.ts`. */
+  @ManyToOne(() => Empresa, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'empresa_id' })
+  empresa!: Empresa;
+
+  @Column({ type: 'varchar', length: 150 })
   nombre!: string;
 
   @Column({ type: 'varchar', length: 500, nullable: true })

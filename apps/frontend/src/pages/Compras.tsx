@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { CheckCircle2, Eye, Pencil, Plus, PlusCircle, ShoppingBag, Trash2, XCircle } from 'lucide-react';
+import {
+  CheckCircle2,
+  Eye,
+  Pencil,
+  Plus,
+  PlusCircle,
+  ShoppingBag,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
 import * as comprasService from '../services/compras.service';
 import * as almacenesService from '../services/almacenes.service';
 import * as insumosService from '../services/insumos.service';
@@ -256,7 +265,11 @@ export function Compras() {
     if (linea.productoId) {
       const producto = (productosQuery.data ?? []).find((p) => p.id === linea.productoId);
       return producto
-        ? { nombre: producto.nombre, unidad: null, codigoAfectacionIgv: producto.tipoAfectacionIgv.codigo }
+        ? {
+            nombre: producto.nombre,
+            unidad: null,
+            codigoAfectacionIgv: producto.tipoAfectacionIgv.codigo,
+          }
         : null;
     }
     return null;
@@ -270,7 +283,11 @@ export function Compras() {
   const incluyeIgv = useWatch({ control: crearForm.control, name: 'incluyeIgv' }) ?? true;
 
   const desglosesCarrito = lineasCarrito.map((linea) =>
-    calcularLineaVista(itemDe(linea)?.codigoAfectacionIgv, linea.costoUnitario * linea.cantidad, incluyeIgv),
+    calcularLineaVista(
+      itemDe(linea)?.codigoAfectacionIgv,
+      linea.costoUnitario * linea.cantidad,
+      incluyeIgv,
+    ),
   );
   const totalSinIgv = desglosesCarrito.reduce((suma, d) => suma + d.sinIgv, 0);
   const totalIgv = desglosesCarrito.reduce((suma, d) => suma + d.igv, 0);
@@ -535,7 +552,9 @@ export function Compras() {
               tipo="error"
               mensaje={mensajeError(
                 compraEditando ? editarMutation.error : crearMutation.error,
-                compraEditando ? 'No se pudo actualizar la compra' : 'No se pudo registrar la compra',
+                compraEditando
+                  ? 'No se pudo actualizar la compra'
+                  : 'No se pudo registrar la compra',
               )}
             />
           )}
@@ -588,7 +607,10 @@ export function Compras() {
               />
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <Select label="Comprobante del proveedor" {...crearForm.register('tipoComprobanteId')}>
+              <Select
+                label="Comprobante del proveedor"
+                {...crearForm.register('tipoComprobanteId')}
+              >
                 <option value="">Sin comprobante</option>
                 {tiposComprobanteQuery.data?.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -717,7 +739,10 @@ export function Compras() {
                               onChange={(evento) =>
                                 carrito.update(indice, {
                                   ...linea,
-                                  cantidad: Math.max(1, Math.round(Number(evento.target.value)) || 1),
+                                  cantidad: Math.max(
+                                    1,
+                                    Math.round(Number(evento.target.value)) || 1,
+                                  ),
                                 })
                               }
                               aria-label={`Cantidad de ${item?.nombre ?? 'ítem'}`}

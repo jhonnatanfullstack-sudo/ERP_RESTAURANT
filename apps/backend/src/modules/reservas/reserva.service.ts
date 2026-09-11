@@ -1,6 +1,7 @@
 import { HttpError } from '../../utils/http-error';
 import { clienteRepository } from '../clientes/cliente.repository';
 import { mesaRepository } from '../mesas/mesa.repository';
+import { obtenerConfiguracion } from '../configuracion/configuracion.service';
 import { reservaRepository } from './reserva.repository';
 import { EstadoReserva, Reserva } from './reserva.entity';
 import type { ActualizarReservaDto, CrearReservaDto } from './reserva.dto';
@@ -91,7 +92,10 @@ export async function crearReserva(dto: CrearReservaDto): Promise<Reserva> {
   const cliente = await resolverCliente(dto.clienteId);
   const mesa = await resolverMesa(dto.mesaId);
   const fechaHora = new Date(dto.fechaHora);
-  const duracionMinutos = dto.duracionMinutos ?? 90;
+  // El valor por defecto sale de la configuración del restaurante (FASE 21): una
+  // cevichería y una pollería no ocupan la mesa el mismo tiempo.
+  const duracionMinutos =
+    dto.duracionMinutos ?? (await obtenerConfiguracion()).duracionReservaMinutos;
 
   validarFechaFutura(fechaHora);
   validarCapacidad(mesa, dto.cantidadPersonas);

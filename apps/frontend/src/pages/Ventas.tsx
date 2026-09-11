@@ -2,13 +2,17 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import {
+  BookMarked,
   ClipboardList,
+  CreditCard,
   Eye,
   MapPin,
   Plus,
+  Landmark,
   Receipt,
   ShoppingCart,
   Trash2,
+  UserRound,
   XCircle,
 } from 'lucide-react';
 import * as ventasService from '../services/ventas.service';
@@ -16,6 +20,7 @@ import * as pedidosService from '../services/pedidos.service';
 import * as productosService from '../services/productos.service';
 import * as clientesService from '../services/clientes.service';
 import * as catalogosService from '../services/catalogos.service';
+import * as talonariosService from '../services/talonarios.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
@@ -31,12 +36,14 @@ import { Input } from '../components/ui/Input';
 import { FormField } from '../components/ui/FormField';
 import { FormActions } from '../components/ui/FormActions';
 import { TarjetaOpcion } from '../components/ui/TarjetaOpcion';
+import { SeccionFormulario } from '../components/ui/SeccionFormulario';
 import { EmptyState } from '../components/ui/EmptyState';
 import {
   formatearFechaHora,
   formatearPrecio,
   nombreCliente,
   nombreMesa,
+  numeroComprobante,
   origenVenta,
 } from '../utils/formato';
 import { mensajeError } from '../utils/errores';
@@ -60,15 +67,15 @@ const TONO_ESTADO: Record<EstadoVenta, 'exito' | 'neutral' | 'peligro'> = {
  * agregando productos sin depender de que exista un pedido facturable. */
 type ModoVenta = 'pedido' | 'directa';
 
-function numeroComprobante(venta: Pick<Venta, 'serie' | 'numero'>): string {
-  return `${venta.serie}-${String(venta.numero).padStart(6, '0')}`;
-}
-
 function VentaDetalleModal({ venta, onCerrar }: { venta: Venta | null; onCerrar: () => void }) {
   return (
     <Modal
       abierto={venta !== null}
-      titulo={venta ? `${venta.tipoComprobante.nombre} ${numeroComprobante(venta)}` : ''}
+      titulo={
+        venta
+          ? `${venta.tipoComprobante.nombre} ${numeroComprobante(venta.serie, venta.numero)}`
+          : ''
+      }
       onCerrar={onCerrar}
     >
       {venta && (
@@ -182,6 +189,9 @@ export function Ventas() {
   const [productoStaging, setProductoStaging] = useState<string | undefined>(undefined);
   const [cantidadStaging, setCantidadStaging] = useState(1);
   const [errorCarrito, setErrorCarrito] = useState<string | null>(null);
+  // Aviso cuando el número que finalmente se emitió no es el que mostraba el formulario:
+  // otro cajero tomó ese correlativo primero (ver `venta.service.ts: guardarReintentandoColision`).
+  const [avisoCorrelativo, setAvisoCorrelativo] = useState<string | null>(null);
 
   const ventasQuery = useQuery({
     queryKey: ['ventas'],
@@ -207,6 +217,7 @@ export function Ventas() {
     queryKey: ['medios-pago'],
     queryFn: catalogosService.listarMediosPago,
   });
+  const bancosQuery = useQuery({ queryKey: ['bancos'], queryFn: catalogosService.listarBancos });
 
   const tiposComprobanteFacturables = (tiposComprobanteQuery.data ?? []).filter(
     (t) => t.codigo === '01' || t.codigo === '03',
@@ -241,11 +252,54 @@ export function Ventas() {
   });
   const carrito = useFieldArray({ control: crearForm.control, name: 'detalles' });
   const tipoComprobanteId = useWatch({ control: crearForm.control, name: 'tipoComprobanteId' });
+  const talonarioId = useWatch({ control: crearForm.control, name: 'talonarioId' });
   const formaPago = useWatch({ control: crearForm.control, name: 'formaPago' });
   const pedidoIdSeleccionado = useWatch({ control: crearForm.control, name: 'pedidoId' });
+  const medioPagoId = useWatch({ control: crearForm.control, name: 'medioPagoId' });
   const lineasCarrito = useWatch({ control: crearForm.control, name: 'detalles' }) ?? [];
   const esFactura =
     tiposComprobanteFacturables.find((t) => t.id === tipoComprobanteId)?.codigo === CODIGO_FACTURA;
+  const esCredito = formaPago === 'credito';
+  // Qué medios exigen banco lo dice el catálogo (`requiereBanco`), no una lista de códigos:
+  // agregar un medio bancarizado nuevo no obliga a tocar esta pantalla. Al crédito el dinero
+  // aún no entró, así que el banco se pide recién al cobrar (Cuentas por cobrar).
+  const exigeBanco =
+    !esCredito &&
+    ((mediosPagoQuery.data ?? []).find((m) => m.id === medioPagoId)?.requiereBanco ?? false);
+
+  // Talonarios que ESTE usuario puede usar para el comprobante elegido — el backend ya
+  // descarta los ajenos, los inactivos y los agotados (`talonario.service.ts`). Se consulta
+  // recién al elegir el comprobante, porque la serie y el correlativo dependen de él.
+  const talonariosQuery = useQuery({
+    queryKey: ['talonarios-mios', tipoComprobanteId],
+    queryFn: () => talonariosService.listarMisTalonarios(tipoComprobanteId),
+    enabled: modalAbierto && Boolean(tipoComprobanteId),
+  });
+  const talonariosDisponibles = talonariosQuery.data ?? [];
+  const talonarioSeleccionado = talonariosDisponibles.find((t) => t.id === talonarioId);
+
+  /** Número que el formulario está mostrando como "el que se va a emitir". Se compara con el
+   * que devuelve el backend para detectar que otro cajero se adelantó. */
+  const numeroPrevisto = talonarioSeleccionado?.siguienteNumero ?? null;
+
+  const opcionesTalonarios: OpcionCombobox[] = talonariosDisponibles.map((t) => ({
+    valor: t.id,
+    etiqueta: t.serie,
+    descripcion: `${t.almacen.nombre} · próximo ${t.siguienteNumeroFormateado}`,
+  }));
+
+  // Con un solo talonario no hay nada que elegir: se selecciona solo. Si el elegido deja de
+  // estar disponible (cambió el comprobante), se limpia para no mandar uno ajeno a la serie.
+  useEffect(() => {
+    if (talonariosDisponibles.length === 1) {
+      crearForm.setValue('talonarioId', talonariosDisponibles[0]!.id);
+      return;
+    }
+    if (talonarioId && !talonariosDisponibles.some((t) => t.id === talonarioId)) {
+      crearForm.setValue('talonarioId', undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al cambiar la lista disponible
+  }, [talonariosQuery.data]);
 
   const pedidoSeleccionado = pedidosFacturables.find((p) => p.id === pedidoIdSeleccionado);
   // `pedido.cliente` solo trae id/nombre; el registro completo (documento, dirección) se
@@ -274,9 +328,22 @@ export function Ventas() {
 
   const crearMutation = useMutation({
     mutationFn: ventasService.crearVenta,
-    onSuccess: () => {
+    onSuccess: (venta) => {
+      // El correlativo definitivo lo asigna el backend al guardar. Si no coincide con el que
+      // este formulario venía mostrando, es que otro cajero emitió antes con la misma serie:
+      // su venta se quedó con ese número y esta recibió el siguiente libre. Hay que decirlo,
+      // porque el comprobante impreso ya no lleva el número que el cajero tenía a la vista.
+      if (numeroPrevisto !== null && venta.numero !== numeroPrevisto) {
+        setAvisoCorrelativo(
+          `El número ${numeroComprobante(venta.serie, numeroPrevisto)} fue tomado por otra venta registrada antes. Esta venta se emitió como ${numeroComprobante(venta.serie, venta.numero)}.`,
+        );
+      }
       queryClient.invalidateQueries({ queryKey: ['ventas'] });
       queryClient.invalidateQueries({ queryKey: ['pedidos'] });
+      // El talonario avanzó: refrescar su correlativo aquí y en la pantalla de Talonarios.
+      queryClient.invalidateQueries({ queryKey: ['talonarios-mios'] });
+      queryClient.invalidateQueries({ queryKey: ['talonarios'] });
+      queryClient.invalidateQueries({ queryKey: ['cuentas-por-cobrar'] });
       cerrarCrear();
     },
   });
@@ -333,6 +400,20 @@ export function Ventas() {
   }
 
   function alEnviar(values: CrearVentaInput) {
+    // Campos que solo aplican en su escenario: enviarlos fuera de él haría que el backend
+    // los validara contra un medio de pago o una forma de pago que ya no corresponde.
+    if (!exigeBanco) {
+      values.bancoId = undefined;
+      values.numeroOperacion = undefined;
+    }
+    if (!esCredito) {
+      values.fechaPrimerVencimiento = undefined;
+      values.numeroCuotas = undefined;
+    } else {
+      values.numeroCuotas = Number(values.numeroCuotas) || 1;
+      values.fechaPrimerVencimiento = values.fechaPrimerVencimiento || undefined;
+    }
+
     if (modo === 'directa') {
       if (!values.detalles || values.detalles.length === 0) {
         setErrorCarrito('Agrega al menos un producto antes de registrar la venta');
@@ -362,11 +443,23 @@ export function Ventas() {
           </p>
         </div>
         {tienePermiso('ventas.crear') && (
-          <Button icono={<Receipt className="h-4 w-4" />} onClick={() => setModalAbierto(true)}>
+          <Button
+            icono={<Receipt className="h-4 w-4" />}
+            onClick={() => {
+              setAvisoCorrelativo(null);
+              setModalAbierto(true);
+            }}
+          >
             Nueva venta
           </Button>
         )}
       </div>
+
+      {avisoCorrelativo && (
+        <div className="mb-5">
+          <Alert tipo="advertencia" mensaje={avisoCorrelativo} />
+        </div>
+      )}
 
       <div className="mb-5 flex flex-wrap gap-2">
         {(['todas', 'emitida', 'anulada'] as const).map((valor) => (
@@ -395,7 +488,7 @@ export function Ventas() {
                 onClick={() => setVentaViendo(v)}
                 className="font-medium text-orange-600 hover:text-orange-700 hover:underline"
               >
-                {v.tipoComprobante.nombre} {numeroComprobante(v)}
+                {v.tipoComprobante.nombre} {numeroComprobante(v.serie, v.numero)}
               </button>
             ),
           },
@@ -466,241 +559,382 @@ export function Ventas() {
             />
           )}
 
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <TarjetaOpcion
-              activo={modo === 'pedido'}
-              icono={ClipboardList}
-              titulo="Desde un pedido"
-              descripcion="Factura el consumo de una mesa o pedido cerrado"
-              onClick={() => elegirModo('pedido')}
-            />
-            <TarjetaOpcion
-              activo={modo === 'directa'}
-              icono={ShoppingCart}
-              titulo="Venta directa"
-              descripcion="Agrega productos sin depender de un pedido"
-              onClick={() => elegirModo('directa')}
-            />
-          </div>
+          <SeccionFormulario
+            titulo="Origen de la venta"
+            descripcion="De dónde salen los productos que se van a facturar."
+            icono={ShoppingCart}
+          >
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <TarjetaOpcion
+                activo={modo === 'pedido'}
+                icono={ClipboardList}
+                titulo="Desde un pedido"
+                descripcion="Factura el consumo de una mesa o pedido cerrado"
+                onClick={() => elegirModo('pedido')}
+              />
+              <TarjetaOpcion
+                activo={modo === 'directa'}
+                icono={ShoppingCart}
+                titulo="Venta directa"
+                descripcion="Agrega productos sin depender de un pedido"
+                onClick={() => elegirModo('directa')}
+              />
+            </div>
 
-          {modo === 'pedido' ? (
-            <>
+            {modo === 'pedido' ? (
+              <>
+                <Controller
+                  control={crearForm.control}
+                  name="pedidoId"
+                  rules={{
+                    required: modo === 'pedido' ? 'Selecciona el pedido a facturar' : false,
+                  }}
+                  render={({ field, fieldState }) => (
+                    <FormField
+                      id="venta-pedido"
+                      label="Pedido a facturar"
+                      ayuda="Solo aparecen los pedidos cerrados que aún no tienen comprobante."
+                      error={fieldState.error?.message}
+                    >
+                      <Combobox
+                        id="venta-pedido"
+                        opciones={opcionesPedidos}
+                        valor={field.value}
+                        onCambiar={field.onChange}
+                        placeholder="Buscar mesa o pedido…"
+                        vacio="No hay pedidos cerrados pendientes de facturar"
+                      />
+                    </FormField>
+                  )}
+                />
+
+                {pedidoSeleccionado && (
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-zinc-900">
+                        {nombreMesa(pedidoSeleccionado.mesa)}
+                      </span>
+                      <span className="font-semibold text-zinc-900">
+                        {formatearPrecio(pedidoSeleccionado.total)}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 border-t border-zinc-200 pt-2 text-xs">
+                      <p className="text-zinc-400">Cliente</p>
+                      {pedidoSeleccionado.cliente ? (
+                        <>
+                          <p className="font-medium text-zinc-700">
+                            {nombreCliente(pedidoSeleccionado.cliente)}
+                          </p>
+                          <p className="mt-0.5 text-zinc-500">
+                            {clienteDelPedido?.tipoDocumentoIdentidad
+                              ? `${clienteDelPedido.tipoDocumentoIdentidad.nombre}: ${clienteDelPedido.numeroDocumento}`
+                              : 'Sin documento registrado'}
+                          </p>
+                          {clienteDelPedido?.direccion && (
+                            <p className="mt-0.5 flex items-center gap-1 text-zinc-500">
+                              <MapPin className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{clienteDelPedido.direccion}</span>
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="mt-0.5 text-zinc-500">
+                          Sin cliente asociado — selecciona uno abajo si el comprobante lo necesita.
+                        </p>
+                      )}
+                    </div>
+
+                    <ul className="mt-2 space-y-1 border-t border-zinc-200 pt-2 text-xs text-zinc-500">
+                      {pedidoSeleccionado.detalles.map((detalle) => (
+                        <li key={detalle.id} className="flex justify-between gap-2">
+                          <span className="min-w-0 truncate">
+                            {detalle.cantidad}× {detalle.producto.nombre}
+                          </span>
+                          <span className="shrink-0">{formatearPrecio(detalle.subtotal)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_100px_auto]">
+                  <FormField id="venta-producto" label="Producto">
+                    <Combobox
+                      id="venta-producto"
+                      opciones={opcionesProductos}
+                      valor={productoStaging}
+                      onCambiar={setProductoStaging}
+                      placeholder="Buscar producto…"
+                      vacio="No se encontraron productos"
+                    />
+                  </FormField>
+                  <Input
+                    label="Cantidad"
+                    type="number"
+                    min="1"
+                    value={cantidadStaging}
+                    onChange={(evento) => setCantidadStaging(Number(evento.target.value))}
+                  />
+                  <Button
+                    type="button"
+                    icono={<Plus className="h-4 w-4" />}
+                    onClick={agregarLinea}
+                    disabled={!productoStaging}
+                  >
+                    Agregar
+                  </Button>
+                </div>
+
+                {carrito.fields.length === 0 ? (
+                  <EmptyState icono={ShoppingCart} titulo="Aún no agregaste productos" />
+                ) : (
+                  <div className="overflow-hidden rounded-lg border border-zinc-200">
+                    <ul className="divide-y divide-zinc-100">
+                      {carrito.fields.map((linea, indice) => {
+                        const producto = productoDe(linea.productoId);
+                        return (
+                          <li key={linea.id} className="flex items-center gap-3 px-3 py-2.5">
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
+                              {producto?.nombre ?? 'Producto'}
+                            </span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={linea.cantidad}
+                              onChange={(evento) =>
+                                cambiarCantidadLinea(indice, Number(evento.target.value))
+                              }
+                              aria-label={`Cantidad de ${producto?.nombre ?? 'producto'}`}
+                              className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-center text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
+                            />
+                            <span className="w-24 shrink-0 text-right text-sm text-zinc-500">
+                              {producto && formatearPrecio(producto.precio)}
+                            </span>
+                            <span className="w-24 shrink-0 text-right text-sm font-semibold text-zinc-900">
+                              {producto && formatearPrecio(producto.precio * linea.cantidad)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => carrito.remove(indice)}
+                              aria-label={`Quitar ${producto?.nombre ?? 'producto'}`}
+                              className="shrink-0 text-zinc-400 hover:text-red-600"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    <div className="flex justify-end border-t border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-900">
+                      Total estimado&nbsp;{formatearPrecio(totalDirecta)}
+                    </div>
+                  </div>
+                )}
+
+                {errorCarrito && <p className="text-xs font-medium text-red-600">{errorCarrito}</p>}
+              </div>
+            )}
+          </SeccionFormulario>
+
+          <SeccionFormulario
+            titulo="Comprobante"
+            descripcion="Serie y correlativo con los que se emitirá esta venta."
+            icono={BookMarked}
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Select
+                label="Tipo de comprobante"
+                error={crearForm.formState.errors.tipoComprobanteId?.message}
+                {...crearForm.register('tipoComprobanteId', {
+                  required: 'Selecciona el tipo de comprobante',
+                })}
+              >
+                <option value="">Seleccionar…</option>
+                {tiposComprobanteFacturables.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </Select>
+
+              {/* Con más de un talonario hay que elegir; con uno solo se muestra cuál es. */}
+              {talonariosDisponibles.length > 1 ? (
+                <Controller
+                  control={crearForm.control}
+                  name="talonarioId"
+                  rules={{ required: 'Elige el talonario desde el que vas a emitir' }}
+                  render={({ field, fieldState }) => (
+                    <FormField
+                      id="venta-talonario"
+                      label="Talonario *"
+                      ayuda="Tienes varias series asignadas para este comprobante."
+                      error={fieldState.error?.message}
+                    >
+                      <Combobox
+                        id="venta-talonario"
+                        opciones={opcionesTalonarios}
+                        valor={field.value}
+                        onCambiar={field.onChange}
+                        placeholder="Seleccionar serie…"
+                        vacio="No tienes talonarios para este comprobante"
+                      />
+                    </FormField>
+                  )}
+                />
+              ) : (
+                <FormField id="venta-talonario-fijo" label="Talonario">
+                  <div
+                    id="venta-talonario-fijo"
+                    className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700"
+                  >
+                    {!tipoComprobanteId
+                      ? 'Elige primero el tipo de comprobante'
+                      : talonariosQuery.isLoading
+                        ? 'Cargando…'
+                        : talonarioSeleccionado
+                          ? `${talonarioSeleccionado.serie} · ${talonarioSeleccionado.almacen.nombre}`
+                          : 'Sin talonario asignado — se usará la serie por defecto'}
+                  </div>
+                </FormField>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-orange-200 bg-orange-50/60 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-orange-700">Número del comprobante</p>
+                <p className="mt-0.5 text-xs text-orange-600/80">
+                  {talonarioSeleccionado
+                    ? `Quedan ${talonarioSeleccionado.numerosDisponibles} números en esta serie.`
+                    : 'Se asigna al registrar la venta.'}
+                </p>
+              </div>
+              <span className="shrink-0 font-mono text-xl font-bold tracking-tight text-orange-700 tabular-nums">
+                {talonarioSeleccionado?.siguienteNumeroFormateado ?? '————-————————'}
+              </span>
+            </div>
+          </SeccionFormulario>
+
+          <SeccionFormulario
+            titulo="Cliente"
+            descripcion="Obligatorio (con RUC) cuando el comprobante es una factura."
+            icono={UserRound}
+          >
+            <Controller
+              control={crearForm.control}
+              name="clienteId"
+              rules={{ required: esFactura ? 'Una factura requiere un cliente con RUC' : false }}
+              render={({ field, fieldState }) => (
+                <BuscadorCliente
+                  clienteId={field.value}
+                  onCambiar={field.onChange}
+                  requerido={esFactura}
+                  error={fieldState.error?.message}
+                  ayuda={
+                    esFactura ? 'Una factura requiere un cliente con RUC registrado.' : undefined
+                  }
+                />
+              )}
+            />
+          </SeccionFormulario>
+
+          <SeccionFormulario titulo="Pago" icono={CreditCard}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Select label="Forma de pago" {...crearForm.register('formaPago')}>
+                <option value="contado">Contado</option>
+                <option value="credito">Crédito</option>
+              </Select>
+
               <Controller
                 control={crearForm.control}
-                name="pedidoId"
-                rules={{ required: modo === 'pedido' ? 'Selecciona el pedido a facturar' : false }}
+                name="medioPagoId"
+                rules={{
+                  required:
+                    formaPago === 'contado' ? 'Indica con qué se pagó (efectivo, tarjeta…)' : false,
+                }}
                 render={({ field, fieldState }) => (
                   <FormField
-                    id="venta-pedido"
-                    label="Pedido a facturar"
-                    ayuda="Solo aparecen los pedidos cerrados que aún no tienen comprobante."
+                    id="venta-medio-pago"
+                    label={formaPago === 'contado' ? 'Medio de pago *' : 'Medio de pago'}
                     error={fieldState.error?.message}
                   >
                     <Combobox
-                      id="venta-pedido"
-                      opciones={opcionesPedidos}
+                      id="venta-medio-pago"
+                      opciones={opcionesMediosPago}
                       valor={field.value}
                       onCambiar={field.onChange}
-                      placeholder="Buscar mesa o pedido…"
-                      vacio="No hay pedidos cerrados pendientes de facturar"
+                      placeholder="Seleccionar…"
+                      vacio="No hay medios de pago"
                     />
                   </FormField>
                 )}
               />
-
-              {pedidoSeleccionado && (
-                <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-zinc-900">
-                      {nombreMesa(pedidoSeleccionado.mesa)}
-                    </span>
-                    <span className="font-semibold text-zinc-900">
-                      {formatearPrecio(pedidoSeleccionado.total)}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 border-t border-zinc-200 pt-2 text-xs">
-                    <p className="text-zinc-400">Cliente</p>
-                    {pedidoSeleccionado.cliente ? (
-                      <>
-                        <p className="font-medium text-zinc-700">
-                          {nombreCliente(pedidoSeleccionado.cliente)}
-                        </p>
-                        <p className="mt-0.5 text-zinc-500">
-                          {clienteDelPedido?.tipoDocumentoIdentidad
-                            ? `${clienteDelPedido.tipoDocumentoIdentidad.nombre}: ${clienteDelPedido.numeroDocumento}`
-                            : 'Sin documento registrado'}
-                        </p>
-                        {clienteDelPedido?.direccion && (
-                          <p className="mt-0.5 flex items-center gap-1 text-zinc-500">
-                            <MapPin className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{clienteDelPedido.direccion}</span>
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="mt-0.5 text-zinc-500">
-                        Sin cliente asociado — selecciona uno abajo si el comprobante lo necesita.
-                      </p>
-                    )}
-                  </div>
-
-                  <ul className="mt-2 space-y-1 border-t border-zinc-200 pt-2 text-xs text-zinc-500">
-                    {pedidoSeleccionado.detalles.map((detalle) => (
-                      <li key={detalle.id} className="flex justify-between gap-2">
-                        <span className="min-w-0 truncate">
-                          {detalle.cantidad}× {detalle.producto.nombre}
-                        </span>
-                        <span className="shrink-0">{formatearPrecio(detalle.subtotal)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_100px_auto]">
-                <FormField id="venta-producto" label="Producto">
-                  <Combobox
-                    id="venta-producto"
-                    opciones={opcionesProductos}
-                    valor={productoStaging}
-                    onCambiar={setProductoStaging}
-                    placeholder="Buscar producto…"
-                    vacio="No se encontraron productos"
-                  />
-                </FormField>
-                <Input
-                  label="Cantidad"
-                  type="number"
-                  min="1"
-                  value={cantidadStaging}
-                  onChange={(evento) => setCantidadStaging(Number(evento.target.value))}
-                />
-                <Button
-                  type="button"
-                  icono={<Plus className="h-4 w-4" />}
-                  onClick={agregarLinea}
-                  disabled={!productoStaging}
-                >
-                  Agregar
-                </Button>
-              </div>
-
-              {carrito.fields.length === 0 ? (
-                <EmptyState icono={ShoppingCart} titulo="Aún no agregaste productos" />
-              ) : (
-                <div className="overflow-hidden rounded-lg border border-zinc-200">
-                  <ul className="divide-y divide-zinc-100">
-                    {carrito.fields.map((linea, indice) => {
-                      const producto = productoDe(linea.productoId);
-                      return (
-                        <li key={linea.id} className="flex items-center gap-3 px-3 py-2.5">
-                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">
-                            {producto?.nombre ?? 'Producto'}
-                          </span>
-                          <input
-                            type="number"
-                            min="1"
-                            value={linea.cantidad}
-                            onChange={(evento) =>
-                              cambiarCantidadLinea(indice, Number(evento.target.value))
-                            }
-                            aria-label={`Cantidad de ${producto?.nombre ?? 'producto'}`}
-                            className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-center text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20 focus:outline-none"
-                          />
-                          <span className="w-24 shrink-0 text-right text-sm text-zinc-500">
-                            {producto && formatearPrecio(producto.precio)}
-                          </span>
-                          <span className="w-24 shrink-0 text-right text-sm font-semibold text-zinc-900">
-                            {producto && formatearPrecio(producto.precio * linea.cantidad)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => carrito.remove(indice)}
-                            aria-label={`Quitar ${producto?.nombre ?? 'producto'}`}
-                            className="shrink-0 text-zinc-400 hover:text-red-600"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  <div className="flex justify-end border-t border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-900">
-                    Total estimado&nbsp;{formatearPrecio(totalDirecta)}
-                  </div>
-                </div>
-              )}
-
-              {errorCarrito && <p className="text-xs font-medium text-red-600">{errorCarrito}</p>}
             </div>
-          )}
 
-          <Select
-            label="Comprobante"
-            error={crearForm.formState.errors.tipoComprobanteId?.message}
-            {...crearForm.register('tipoComprobanteId', {
-              required: 'Selecciona el tipo de comprobante',
-            })}
-          >
-            <option value="">Seleccionar…</option>
-            {tiposComprobanteFacturables.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.nombre}
-              </option>
-            ))}
-          </Select>
-
-          <Controller
-            control={crearForm.control}
-            name="clienteId"
-            rules={{ required: esFactura ? 'Una factura requiere un cliente con RUC' : false }}
-            render={({ field, fieldState }) => (
-              <BuscadorCliente
-                clienteId={field.value}
-                onCambiar={field.onChange}
-                requerido={esFactura}
-                error={fieldState.error?.message}
-                ayuda={
-                  esFactura ? 'Una factura requiere un cliente con RUC registrado.' : undefined
-                }
-              />
-            )}
-          />
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Select label="Forma de pago" {...crearForm.register('formaPago')}>
-              <option value="contado">Contado</option>
-              <option value="credito">Crédito</option>
-            </Select>
-
-            <Controller
-              control={crearForm.control}
-              name="medioPagoId"
-              rules={{
-                required:
-                  formaPago === 'contado' ? 'Indica con qué se pagó (efectivo, tarjeta…)' : false,
-              }}
-              render={({ field, fieldState }) => (
-                <FormField
-                  id="venta-medio-pago"
-                  label={formaPago === 'contado' ? 'Medio de pago *' : 'Medio de pago'}
-                  error={fieldState.error?.message}
+            {/* Solo si el cobro entró por el sistema financiero: en efectivo no hay banco
+                que consignar. Ley 28194 (bancarización). */}
+            {exigeBanco && (
+              <div className="grid grid-cols-1 gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-2">
+                <Select
+                  label="Banco *"
+                  ayuda="Entidad por la que entró el dinero."
+                  error={crearForm.formState.errors.bancoId?.message}
+                  {...crearForm.register('bancoId', {
+                    required: exigeBanco ? 'Indica el banco' : false,
+                  })}
                 >
-                  <Combobox
-                    id="venta-medio-pago"
-                    opciones={opcionesMediosPago}
-                    valor={field.value}
-                    onCambiar={field.onChange}
-                    placeholder="Seleccionar…"
-                    vacio="No hay medios de pago"
+                  <option value="">Seleccionar…</option>
+                  {(bancosQuery.data ?? []).map((banco) => (
+                    <option key={banco.id} value={banco.id}>
+                      {banco.nombre}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  label="Número de operación *"
+                  placeholder="Ej. 00123456"
+                  error={crearForm.formState.errors.numeroOperacion?.message}
+                  {...crearForm.register('numeroOperacion', {
+                    required: exigeBanco ? 'Indica el número de operación' : false,
+                  })}
+                />
+              </div>
+            )}
+
+            {/* Un comprobante al crédito debe llevar su cronograma de cuotas
+                (RS 193-2020/SUNAT). El cobro se registra después en Cuentas por cobrar. */}
+            {esCredito && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                <p className="mb-3 flex items-center gap-1.5 text-xs font-medium text-amber-800">
+                  <Landmark className="h-3.5 w-3.5" />
+                  Esta venta queda como documento por cobrar. SUNAT exige el cronograma de cuotas en
+                  el comprobante.
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Input
+                    label="Primer vencimiento"
+                    type="date"
+                    ayuda="Si lo dejas vacío, se toma a 30 días."
+                    {...crearForm.register('fechaPrimerVencimiento')}
                   />
-                </FormField>
-              )}
-            />
-          </div>
+                  <Input
+                    label="Número de cuotas"
+                    type="number"
+                    min="1"
+                    max="36"
+                    ayuda="Mensuales, desde el primer vencimiento."
+                    error={crearForm.formState.errors.numeroCuotas?.message}
+                    {...crearForm.register('numeroCuotas', {
+                      min: { value: 1, message: 'Mínimo 1 cuota' },
+                      max: { value: 36, message: 'Máximo 36 cuotas' },
+                    })}
+                  />
+                </div>
+              </div>
+            )}
+          </SeccionFormulario>
 
           <FormActions
             enviar="Registrar venta"
@@ -716,7 +950,7 @@ export function Ventas() {
       <ConfirmDialog
         abierto={ventaAnulando !== null}
         titulo="Anular venta"
-        mensaje={`¿Seguro que deseas anular el comprobante ${ventaAnulando ? numeroComprobante(ventaAnulando) : ''}? Esta acción no se puede deshacer.`}
+        mensaje={`¿Seguro que deseas anular el comprobante ${ventaAnulando ? numeroComprobante(ventaAnulando.serie, ventaAnulando.numero) : ''}? Esta acción no se puede deshacer.`}
         confirmando={anularMutation.isPending}
         error={
           anularMutation.isError

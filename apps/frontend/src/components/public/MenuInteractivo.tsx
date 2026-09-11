@@ -20,6 +20,10 @@ interface MenuInteractivoProps {
   onVerDetalle: (producto: Producto) => void;
   /** Registra el nodo de cada categoría para el scrollspy de la barra superior. */
   registrarSeccion: (id: string) => (elemento: HTMLElement | null) => void;
+  /** Si el restaurante acepta pedidos por WhatsApp desde la carta (Configuración, FASE 21).
+   * Cuando no, la carta sigue mostrando el menú completo pero sin los controles para armar
+   * un pedido: hay locales que solo atienden en salón y publican la carta como referencia. */
+  permitirPedidos: boolean;
   /** Bloque de cierre bajo la lista. Con una carta corta, la columna de la lista queda mucho
    * más baja que el visor y sobra un hueco: acá va algo útil en vez de aire. */
   pie?: React.ReactNode;
@@ -44,6 +48,7 @@ export function MenuInteractivo({
   onQuitarUna,
   onVerDetalle,
   registrarSeccion,
+  permitirPedidos,
   pie,
 }: MenuInteractivoProps) {
   const todos = grupos.flatMap((grupo) => grupo.productos);
@@ -110,33 +115,44 @@ export function MenuInteractivo({
                         type="button"
                         onFocus={() => setActivoId(producto.id)}
                         onClick={() => onVerDetalle(producto)}
-                        className="group flex min-w-0 flex-1 items-baseline gap-4 text-left focus-visible:outline-none"
+                        className="group min-w-0 flex-1 text-left focus-visible:outline-none"
                       >
-                        <span
-                          className={`truncate text-xl font-semibold tracking-tight transition-all duration-300 sm:text-2xl ${
-                            enFoco ? 'lg:translate-x-1.5 lg:text-(--carta-acento)' : ''
-                          }`}
-                        >
-                          {producto.nombre}
+                        <span className="flex items-baseline gap-4">
+                          <span
+                            className={`truncate text-xl font-semibold tracking-tight transition-all duration-300 sm:text-2xl ${
+                              enFoco ? 'lg:translate-x-1.5 lg:text-(--carta-acento)' : ''
+                            }`}
+                          >
+                            {producto.nombre}
+                          </span>
+                          <ArrowUpRight
+                            className={`hidden h-4 w-4 shrink-0 text-(--carta-acento) transition-all duration-300 lg:block ${
+                              enFoco ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'
+                            }`}
+                            strokeWidth={2.5}
+                          />
+                          {/* Filete de puntos: el recurso clásico de una carta impresa para
+                              llevar la vista del nombre hasta su precio. */}
+                          <span
+                            aria-hidden="true"
+                            className="hidden min-w-8 flex-1 translate-y-[-0.3em] border-b border-dotted border-(--carta-borde) sm:block"
+                          />
+                          <span className="shrink-0 text-lg font-semibold tabular-nums sm:text-xl">
+                            {formatearPrecio(producto.precio)}
+                          </span>
                         </span>
-                        <ArrowUpRight
-                          className={`hidden h-4 w-4 shrink-0 text-(--carta-acento) transition-all duration-300 lg:block ${
-                            enFoco ? 'translate-x-0 opacity-100' : '-translate-x-2 opacity-0'
-                          }`}
-                          strokeWidth={2.5}
-                        />
-                        {/* Filete de puntos: el recurso clásico de una carta impresa para
-                            llevar la vista del nombre hasta su precio. */}
-                        <span
-                          aria-hidden="true"
-                          className="hidden min-w-8 flex-1 translate-y-[-0.3em] border-b border-dotted border-(--carta-borde) sm:block"
-                        />
-                        <span className="shrink-0 text-lg font-semibold tabular-nums sm:text-xl">
-                          {formatearPrecio(producto.precio)}
-                        </span>
+
+                        {/* La descripción bajo el nombre es lo que hace que esto se lea como
+                            una carta y no como una lista de precios. Se recorta a dos líneas:
+                            el texto completo está en el detalle del plato. */}
+                        {producto.descripcion && (
+                          <span className="mt-2 line-clamp-2 max-w-prose text-sm leading-relaxed text-(--carta-suave)">
+                            {producto.descripcion}
+                          </span>
+                        )}
                       </button>
 
-                      {cantidad > 0 ? (
+                      {!permitirPedidos ? null : cantidad > 0 ? (
                         <div className="flex shrink-0 items-center gap-1 rounded-xl border border-(--carta-borde) p-1">
                           <button
                             type="button"

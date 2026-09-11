@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Empresa } from '../empresa/empresa.entity';
 import { Proveedor } from '../proveedores/proveedor.entity';
 import { Almacen } from '../almacenes/almacen.entity';
 import { TipoComprobante } from '../catalogos/tipo-comprobante.entity';
@@ -32,6 +33,13 @@ export enum EstadoCompra {
 export class Compra {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /** Empresa dueña de esta fila. Es la columna sobre la que actúan las políticas RLS de
+   * Postgres: sin ella, una consulta de la Empresa A podría alcanzar filas de la B. Ver
+   * `database/tenant-context.ts`. */
+  @ManyToOne(() => Empresa, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'empresa_id' })
+  empresa!: Empresa;
 
   @ManyToOne(() => Proveedor, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'proveedor_id' })

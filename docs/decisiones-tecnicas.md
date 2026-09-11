@@ -345,3 +345,197 @@ El usuario cuestionó la tasa de IGV hardcodeada de FASE 14 (18%) y pidió verif
 **Detalle de arquitectura, no de negocio:** enlazar el costo dentro de `receta.service.ts` habría creado un ciclo de imports (`existencia.service.ts` ya importa `receta.service.ts` para descontar stock según receta; importar en sentido contrario habría cerrado el ciclo). Se resolvió en `receta.controller.ts`, la única capa que puede depender de ambos services sin problema.
 
 **Impacto:** si en el futuro aparece una razón de negocio real para unificar (ej. reportes de costo que necesiten tratar insumos y mercadería exactamente igual), se puede reconsiderar entonces — hoy no hay una necesidad concreta que lo justifique, solo la similitud superficial de "ambos tienen IGV", que ya quedó resuelta sin fusionar.
+
+## Costeo: costo neto de IGV, calculado al vuelo, y `resolverTasaIgv` extraído a Empresa (FASE 18, 2026-09-10)
+
+**Problema.** FASE 16 dejó `Insumo.ultimoCosto`, que es el `costo_unitario` del movimiento de entrada más reciente — es decir, **el monto tal como se tipeó en la compra**. Con `Compra.incluyeIgv = true` (el caso normal en Perú: el proveedor factura con IGV incluido), ese número trae el IGV adentro. Usarlo como costo para calcular margen contra un valor de venta que sí está sin IGV compara peras con manzanas: infla el costo ~18% y subestima el margen.
+
+**Opciones evaluadas.**
+
+1. Cambiar `existencias.costo_unitario` para que guarde el valor neto. Descartada: rompe el significado del kardex (que debe registrar lo que efectivamente se pagó) y exigiría migrar datos ya registrados.
+2. Usar el bruto y advertirlo en la interfaz. Descartada: el margen sería sistemáticamente incorrecto, y "incorrecto pero avisado" no es aceptable en el número con el que se fijan precios.
+3. **Elegida:** derivar un costo neto propio para costeo, sin tocar lo existente. `obtenerCostosNetos()` toma `detalle_compras.valor_compra / cantidad` cuando el movimiento vino de una `Compra` (ya desglosado según el `tipoAfectacionIgv` del ítem y el `incluyeIgv` de esa compra), y cae a `existencias.costo_unitario` solo en movimientos manuales, marcándolos con `origenCosto: 'manual'` para que la interfaz advierta que ese costo no pasó por un comprobante.
+
+**Impacto.** Ninguno sobre módulos existentes: `obtenerUltimosCostosInsumos()` (bruto) queda intacto y sigue alimentando la sugerencia de costo al registrar una compra. Conviven dos números con nombres distintos y visibles: "último costo de compra" (lo que se pagó, en Insumos/Compras) y "costo neto" (la base del margen, en Costos).
+
+**El costeo no se persiste.** No hay tabla de costos ni columna `costo` en `productos`: se recalcula en cada consulta. Un costo congelado quedaría desactualizado en silencio con la siguiente compra, y la foto histórica de lo que costó una venta concreta ya la tiene el kardex, que sí guarda el costo del momento.
+
+**Extracción de `resolverTasaIgv`.** Vivía privada dentro de `venta.service.ts`. El costeo necesita exactamente la misma tasa (para descontarle el IGV al precio de carta), y duplicarla habría creado dos fuentes de verdad de un valor tributario — el peor tipo de duplicación posible. Se movió a `modules/empresa/igv.service.ts` junto con `CODIGO_AFECTACION_GRAVADO` y el helper `esGravado()`, porque la tasa es un atributo de la empresa, no de la venta. `venta.service.ts` y `compra.service.ts` ahora la importan de ahí; el cálculo no cambió en ninguno de los dos.
+
+## Carta pública: metadatos por JavaScript, no renderizado en servidor (2026-09-10)
+
+**Problema.** El enlace de `/carta` se comparte por WhatsApp, y la vista previa mostraba el título genérico del `index.html` ("Restaurant ERP"), sin descripción ni foto. El nombre real del restaurante vive en la base de datos: el HTML estático no puede traerlo.
+
+**Decisión.** Un hook (`useMetaDocumento`) fija `document.title` y las etiquetas Open Graph cuando llegan los datos de Empresa. **No se agregó renderizado en servidor ni prerenderizado**, que habría significado cambiar la arquitectura del frontend (hoy una SPA con Vite, sección 2 de `CLAUDE.md`) sin autorización.
+
+**Límite conocido y aceptado.** Los rastreadores que no ejecutan JavaScript siguen viendo el `index.html`. Para una carta que se comparte de persona a persona por chat es suficiente; si en algún momento se busca posicionamiento en Google, ahí sí habría que evaluar SSR o prerenderizado — y eso es una decisión de arquitectura que requiere autorización previa.
+
+## Multi-empresa: aislamiento con RLS de Postgres, no solo con filtros en los services (FASE 25, 2026-09-10)
+
+**Problema.** El usuario pidió convertir el sistema en un producto que se pueda publicar: cada uso de demo es una empresa nueva, y la Empresa A no puede ver nada de la B. El sistema era mono-empresa: de 42 tablas, solo 3 tenían `empresa_id`, y varias restricciones únicas globales hacían **imposible** que dos empresas convivieran (una sola caja abierta en todo el sistema, un solo `B001`, un cliente por documento en toda la base, nombres de categoría únicos globalmente).
+
+**Opciones evaluadas para el aislamiento.**
+
+1. **Filtro por `empresa_id` en cada service.** Menos trabajo inicial. Descartada como única defensa: protege exactamente las consultas donde alguien se acordó de ponerlo. Con 32 services, SQL crudo en Reportes/Costeo/Kardex, y módulos que se siguen agregando, un olvido no es un bug cualquiera — es un restaurante viendo las ventas de otro.
+2. **Base de datos por empresa.** Aislamiento máximo. Descartada: cada demo exigiría crear y migrar una base entera, y el panel del proveedor tendría que consultar N bases para un solo reporte de uso. Demasiado caro para pruebas de 15 días.
+3. **Elegida (con el usuario): `empresa_id` en cada tabla + Row-Level Security de Postgres.** El filtrado lo hace la base de datos. Un filtro olvidado devuelve cero filas en vez de las de otro cliente.
+
+**Cómo funciona.** Cada petición a `/api` abre una transacción (`middlewares/tenant.middleware.ts`) y fija `app.empresa_id` con `set_config(..., true)` — local a la transacción. `requireAuth` toma la empresa **del token firmado**, nunca de una cabecera o del cuerpo: si viniera del cliente, cambiar un valor bastaría para leer los datos de otro. Las políticas comparan `empresa_id` contra ese ajuste y **fallan cerrado**: sin ajuste no se ve ninguna fila.
+
+**Por qué toda la petición es una transacción.** `set_config(..., true)` vive en la transacción. Con el pool de conexiones de TypeORM, dos consultas de la misma petición pueden tocar conexiones distintas; sin una transacción compartida, una correría sin empresa fijada. Un `SET` de sesión en lugar de `SET LOCAL` sería peor: quedaría pegado en la conexión y la siguiente petición vería los datos de otra empresa. Efecto lateral bienvenido: una escritura de varios pasos que falla a la mitad ya no deja el resultado incompleto.
+
+**El hallazgo que hacía inútil todo lo anterior.** Con las políticas ya creadas, se verificó contra la base real y **el aislamiento no se aplicaba**: una consulta con `app.empresa_id` apuntando a otra empresa seguía devolviendo todas las filas. La causa es que el rol que crea la imagen oficial de Postgres desde `POSTGRES_USER` es superusuario, y **un superusuario se salta RLS siempre**, incluso con `FORCE ROW LEVEL SECURITY`. Sin ese hallazgo, el sistema habría quedado con el aparato completo de aislamiento y cero aislamiento real. Se resolvió separando dos roles: el dueño (`DB_USER`, superusuario) solo ejecuta migraciones; la aplicación se conecta con `DB_APP_USER`, sin `SUPERUSER` ni `BYPASSRLS`. Verificado después: sin contexto, 0 filas; con otra empresa, 0 filas; con la propia, sus datos.
+
+**Desnormalización deliberada.** Las tablas hijas (`detalle_ventas`, `movimientos_caja`, `cuotas_venta`…) llevan `empresa_id` propio aunque podrían deducirlo del padre. Una política que tenga que buscar el `empresa_id` del padre con un `EXISTS` es más lenta y mucho más fácil de escribir mal; con la columna en cada tabla, la política es la misma línea en todas.
+
+**El bypass es explícito y acotado.** `conBypassRls()` desactiva las políticas dentro de una transacción concreta. Lo usan tres lugares, cada uno por una razón transversal por definición: el login (busca un usuario por correo sin saber aún a qué empresa pertenece), el alta de una demo (verifica que el RUC y el correo no estén tomados por **ninguna** empresa) y el panel del proveedor. Concentrarlo en una función hace que auditar "¿qué código puede ver datos de todos los clientes?" sea leer un archivo, no revisar treinta services.
+
+**`usuarios.email` sigue siendo único globalmente.** El login es solo correo + contraseña, sin selector de empresa: si un mismo correo pudiera pertenecer a dos empresas, no habría forma de decidir a cuál entrar. Es un límite conocido y aceptado — una persona que administre dos restaurantes necesita un correo por cuenta.
+
+**`refresh_tokens` queda fuera de RLS.** Se consulta por el hash del token durante la renovación, cuando todavía no se sabe de qué empresa es la petición. El hash es un secreto de 256 bits, no un identificador adivinable; incluirla obligaría a ampliar el uso del bypass, que conviene mantener al mínimo.
+
+## Cuentas de prueba, bloqueo por vencimiento y panel del proveedor (FASE 26, 2026-09-10)
+
+**Alta autoservicio.** El usuario eligió que cualquiera pueda registrarse desde una página pública y obtener sus días de prueba al instante. `POST /api/demo/registrar` aprovisiona la empresa entera —rol Administrador con todos los permisos, personal, usuario y almacén principal— e inicia sesión de una vez: pedirle la contraseña otra vez a quien acaba de registrarse es fricción gratuita en el momento más frágil del embudo.
+
+**Se exige RUC aunque sea una prueba.** Es un ERP peruano: sin RUC no se puede facturar, que es la mitad del sistema. Y al ser único, limita naturalmente el registro a una prueba por negocio real. Es la defensa principal contra el abuso; el límite de 5 registros por hora y por IP solo frena el ritmo de intentos.
+
+**El vencimiento se deriva, no se almacena.** No hay columna "estado" que mantener al día: se compara `demoExpiraEn` contra el reloj en cada petición. Así no hace falta una tarea programada que marque las demos vencidas cada noche, y no existe la ventana en la que una demo ya venció pero la columna todavía dice que está activa.
+
+**Al vencer queda en solo lectura, no bloqueada (decisión del usuario).** Se responde `402 Pago requerido` a las escrituras —distinto de `403`, que significaría "no tienes permiso"— y se deja pasar la lectura. El restaurante conserva lo que cargó, que es justamente el argumento para que contrate; bloquear todo solo lograría que perdiera su trabajo.
+
+**El control vive dentro de `requireAuth`.** Es el único punto por el que pasan todas las rutas protegidas. Una comprobación que hay que acordarse de montar en 30 routers es una que tarde o temprano falta en alguno.
+
+**Registro de uso agregado por día, no por petición.** La pregunta que responde es "¿esta demo se usa de verdad o la abrieron una vez?". Para eso basta con peticiones, escrituras y último acceso por día. Una bitácora petición por petición respondería lo mismo ocupando miles de veces más espacio — y la traza fina de quién hizo qué ya la lleva `registros_auditoria` desde FASE 20.
+
+**El proveedor es un eje aparte del RBAC.** `usuarios.es_proveedor` solo se activa por migración, nunca por la API: si fuera editable desde la gestión de usuarios, el administrador de cualquier restaurante podría ascenderse y leer los datos de todos los demás. El panel responde `404` (no `403`) a quien no lo es: a quien no corresponde no se le confirma siquiera que exista.
+
+**La carta pública pasó a `/carta/:slug`.** `GET /api/empresas/publico` devolvía "la empresa activa más antigua", una respuesta que dejó de tener sentido con más de un restaurante. El slug se deriva del nombre comercial porque ese enlace se comparte por WhatsApp y se dicta por teléfono: `/carta/el-fogon` se lee, un UUID no.
+
+## Pruebas integrales contra un Postgres real, no contra mocks (FASE 22, 2026-09-11)
+
+**Problema.** El proyecto llegó a la FASE 22 sin una sola prueba automatizada. Toda la
+verificación había sido manual, y ya había suficiente lógica acumulada (IGV, kardex,
+correlativos, costeo, aislamiento) como para que una regresión pasara inadvertida.
+
+**Nueva dependencia: Vitest** (más `supertest`, `@types/supertest` y `@types/pg`). Se eligió
+sobre Jest porque el frontend ya corre sobre Vite: no es un ecosistema nuevo, es el mismo
+motor, y entiende TypeScript sin configuración extra. `supertest` ejerce la API a nivel HTTP
+contra la propia `app` de Express, sin levantar un servidor.
+
+**Decisión central: las pruebas corren contra una base de datos real.** Las garantías más
+importantes de este sistema **viven dentro de Postgres**, no en el código: las políticas RLS
+que aíslan una empresa de otra, el índice único del correlativo de comprobantes, el índice
+parcial de la caja abierta, el `CHECK` del food cost. Una prueba con el repositorio simulado
+verificaría que el código llama a TypeORM — no que un restaurante no puede leer las ventas de
+otro, que es lo que en realidad hay que garantizar.
+
+La evidencia es directa: los tres errores encontrados al construir las FASES 25-26 —el rol
+superusuario que se saltaba RLS, la transacción que confirmaba después de responder, la
+migración que no marcaba a ningún proveedor— eran **todos invisibles para un mock**.
+
+**Las pruebas se conectan con el rol restringido** (`DB_APP_USER`), igual que la aplicación en
+producción. Si usaran el rol dueño, las pruebas de aislamiento pasarían siempre, incluso con
+las políticas rotas, porque un superusuario lo ve todo. Ese detalle es lo único que hace que
+signifiquen algo.
+
+**La base se recrea y se migra en cada ejecución**, con el comando real (`pnpm
+migration:run`). Limpiar tablas habría sido más rápido, pero entonces las migraciones nunca
+se probarían: un índice o una política que solo existieran en la base de desarrollo —porque
+alguien los creó a mano— pasarían desapercibidos para siempre.
+
+**Tres obstáculos técnicos y por qué se resolvieron así:**
+
+1. `global-setup.ts` **no importa nada de `src/`**. Vitest lo carga en el proceso principal,
+   fuera de la canalización que transforma el código, y el grafo de entidades con decoradores
+   revienta ahí.
+2. Las migraciones se aplican **en un subproceso**. TypeORM carga los archivos de migración
+   con `require`, y ese proceso no interpreta TypeScript: falla al primer `public async up`.
+   Delegar en el comando real resuelve eso y, de paso, verifica en cada ejecución que ese
+   comando sigue funcionando.
+3. `setup.ts` vacía la lista de migraciones antes de `initialize()`, por el mismo motivo:
+   TypeORM las carga al conectar aunque no vaya a ejecutarlas.
+
+**Los limitadores de peticiones se desactivan con `NODE_ENV=test`** (login y registro de
+demos). Las pruebas inician sesión y crean empresas decenas de veces desde la misma "IP": con
+los límites activos, a mitad de la suite todo empezaría a fallar con 429, hablando de algo
+que no es lo que se pretende probar.
+
+**Hallazgo de la fase: la auditoría había dejado de registrar.** La bitácora se escribe en
+`res.on('finish')`, y al pasar el sistema a una transacción por petición esa escritura empezó
+a fallar con "Driver not Connected" — la conexión ya había vuelto al pool. Como el middleware
+se traga el error a propósito (que la auditoría esté caída no puede tumbar una venta), **la
+bitácora quedaba vacía sin que nada lo avisara**. Se corrigió con
+`ejecutarFueraDeLaPeticion()`, que abre una conexión propia con la empresa fijada; además es
+lo semánticamente correcto, porque una entrada de auditoría debe sobrevivir aunque la
+operación auditada haya fallado y revertido. Quedó fijada con una prueba que comprueba el
+**resultado en la base**, no la ausencia de excepción: el modo de fallo de ese módulo es
+precisamente no dejar rastro.
+
+## Preparación para producción: fallar temprano y ruidosamente (FASE 23, 2026-09-11)
+
+El criterio de toda la fase: **un servicio que no arranca se arregla en minutos; uno que
+arranca mal configurado puede estar meses filtrando datos sin que nadie lo note.** De ahí que
+las comprobaciones sean bloqueantes en producción y solo avisos fuera de ella.
+
+**Verificación al arrancar (`config/verificar-entorno.ts`).** Antes de aceptar tráfico se
+comprueba que los secretos no sean los del `.env.example`, que tengan largo suficiente, que el
+de acceso y el de refresco sean distintos (con el mismo, un token de acceso caducado sirve
+como token de refresco y su corta duración deja de significar algo), y que `CORS_ORIGIN` no
+apunte a localhost ni a `*`.
+
+La comprobación más importante consulta `pg_roles`: **si el rol de la aplicación es
+`SUPERUSER` o tiene `BYPASSRLS`, el servidor se niega a arrancar en producción.** Un
+superusuario se salta las políticas RLS siempre, y el sistema seguiría funcionando con
+normalidad mientras cualquier restaurante lee los datos de los demás — sin un solo síntoma
+visible. Es exactamente el error que apareció al construir la FASE 25 y que solo se detectó
+comprobándolo contra la base. Verificado: apuntando la aplicación al rol dueño, el arranque
+falla con el mensaje y la referencia al documento.
+
+**Registro propio en vez de `pino`/`winston` (`utils/logger.ts`).** Lo único que hace falta es
+emitir una línea JSON por evento, y eso cabe en un archivo. Si algún día hay que enviar los
+registros a un servicio externo, rotarlos o muestrearlos, ese es el momento de cambiar a
+`pino` — y este módulo es la única superficie a reemplazar. Se eligió así para no sumar una
+dependencia por algo que no la necesita todavía (regla 5 de `CLAUDE.md`). Detalle no obvio:
+los errores se serializan a mano porque `JSON.stringify(error)` devuelve `{}` — `message` y
+`stack` no son enumerables, y ese descuido deja los registros de producción con errores
+vacíos.
+
+**Identificador de traza por petición.** Cada petición recibe un `x-request-id` que viaja de
+vuelta en la respuesta y aparece tanto en el registro de la petición como en el del error. Un
+usuario puede reportar "me salió esta referencia" en vez de "me falló hace un rato", y el
+registro aparece de inmediato. La respuesta de error 500 lo incluye en `details`.
+
+**Dos health checks distintos, a propósito.** `/health` (vida) **no** consulta la base: si el
+orquestador reiniciara la instancia cada vez que Postgres tiene un hipo, convertiría una
+interrupción de la base en una tormenta de reinicios que la empeora. `/health/listo`
+(disponibilidad) sí la consulta, porque sin base **ninguna** ruta funciona — con el
+aislamiento apoyado en RLS, una consulta sin conexión no devuelve datos parciales, no devuelve
+nada. Esa es la que hay que configurar en el proveedor de hosting.
+
+**Apagado ordenado.** Cada despliegue envía `SIGTERM` al proceso anterior. Sin manejarlo, las
+peticiones en vuelo se cortan y sus transacciones quedan abiertas hasta que Postgres las
+descarta — y con una transacción por petición, eso es una venta a medio grabar. El orden
+importa: primero `/health/listo` pasa a 503 (para que el balanceador deje de mandar tráfico),
+después se dejan de aceptar conexiones, luego se espera a que terminen las en curso y recién
+al final se cierra el pool. **Bug encontrado al probarlo:** `server.close()` devuelve
+`ERR_SERVER_NOT_RUNNING` cuando ya había dejado de escuchar, y tratarlo como fallo hacía que
+el proceso saliera con código 1 en **cada** apagado; un contenedor que siempre "falla" al
+detenerse ensucia los registros y puede disparar alertas falsas.
+
+**Nota de entorno:** el apagado ordenado no se puede probar con `kill -TERM` en Windows, que
+no implementa señales POSIX y mata el proceso de golpe. Se verificó emitiendo la señal dentro
+del proceso; en los contenedores Linux donde se despliega, la señal es real.
+
+**Respaldos que se verifican restaurando (`scripts/respaldo-bd.sh`).** Un respaldo que nunca
+se restauró no es un respaldo. El subcomando `verificar` lo restaura en una base temporal,
+cuenta tablas y **políticas RLS**, y falla si faltan: un volcado sin ellas restauraría un
+sistema que funciona pero con los datos de todos los clientes visibles entre sí, y eso no se
+nota a simple vista. Funciona con el cliente de Postgres instalado o, si no está, a través del
+contenedor de Docker — que es el caso en Windows. Verificado de punta a punta: 44 tablas y 33
+políticas restauradas.
+
+**Dockerfile en dos etapas.** La imagen final no lleva TypeScript, Vitest ni los `@types`, y
+corre como el usuario `node` sin privilegios. Las migraciones **no** se ejecutan al arrancar,
+a propósito: con dos instancias, dos migraciones simultáneas sobre la misma base es la forma
+más rápida de corromperla.

@@ -69,3 +69,11 @@ export async function mediosPago(_req: Request, res: Response, next: NextFunctio
     next(error);
   }
 }
+
+export async function bancos(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(res, await catalogosService.listarBancos());
+  } catch (error) {
+    next(error);
+  }
+}

@@ -1,4 +1,4 @@
-import { AppDataSource } from '../../database/data-source';
+import { tenantRepository } from '../../database/tenant-repository';
 import { RefreshToken } from './refresh-token.entity';
 
-export const refreshTokenRepository = AppDataSource.getRepository(RefreshToken);
+export const refreshTokenRepository = tenantRepository(RefreshToken);

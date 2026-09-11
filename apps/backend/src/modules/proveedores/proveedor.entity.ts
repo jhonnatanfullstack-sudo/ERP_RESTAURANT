@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Empresa } from '../empresa/empresa.entity';
 import { TipoDocumentoIdentidad } from '../catalogos/tipo-documento-identidad.entity';
 
 /**
@@ -16,10 +17,17 @@ import { TipoDocumentoIdentidad } from '../catalogos/tipo-documento-identidad.en
  * fiscal hace falta poder identificar formalmente a quién se le compró.
  */
 @Entity('proveedores')
-@Index(['tipoDocumentoIdentidad', 'numeroDocumento'], { unique: true })
+@Index(['empresa', 'tipoDocumentoIdentidad', 'numeroDocumento'], { unique: true })
 export class Proveedor {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /** Empresa dueña de esta fila. Es la columna sobre la que actúan las políticas RLS de
+   * Postgres: sin ella, una consulta de la Empresa A podría alcanzar filas de la B. Ver
+   * `database/tenant-context.ts`. */
+  @ManyToOne(() => Empresa, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'empresa_id' })
+  empresa!: Empresa;
 
   @Column({ type: 'varchar', length: 150, nullable: true })
   nombres!: string | null;

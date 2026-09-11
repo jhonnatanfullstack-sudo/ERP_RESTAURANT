@@ -23,3 +23,10 @@ export async function logout() {
 export async function cambiarPassword(passwordActual: string, passwordNuevo: string) {
   await api.post('/api/auth/cambiar-password', { passwordActual, passwordNuevo });
 }
+
+/** Usuario de la sesión en curso. Se usa tras el alta de una demo, donde ya hay tokens
+ * emitidos pero todavía no se cargó el usuario. */
+export async function obtenerUsuarioActual() {
+  const res = await api.get<ApiSuccess<UsuarioAutenticado>>('/api/auth/me');
+  return res.data.data;
+}
