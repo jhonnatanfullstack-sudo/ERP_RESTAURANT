@@ -20,8 +20,18 @@ export function marcarApagado(): void {
  * reinicios que la empeora. Un proceso vivo con la base caída no hay que matarlo: hay que
  * dejar de mandarle tráfico, y de eso se encarga `/health/listo`.
  */
-saludRouter.get('/health', (_req, res) => {
-  res.json({ success: true, message: 'OK', data: { estado: 'vivo' } });
+saludRouter.get('/health', (req, res) => {
+  // DIAGNÓSTICO TEMPORAL — revertir apenas se lea. Ver por qué el rate limiter no identifica
+  // un cliente consistente detrás del proxy de Railway: hace falta ver el X-Forwarded-For
+  // real que llega, no adivinar el número de saltos.
+  res.json({
+    success: true,
+    message: 'OK',
+    data: {
+      estado: 'vivo',
+      _diag: { ip: req.ip, ips: req.ips, xForwardedFor: req.headers['x-forwarded-for'] },
+    },
+  });
 });
 
 /**
