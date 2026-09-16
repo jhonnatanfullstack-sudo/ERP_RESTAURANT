@@ -18,6 +18,9 @@ import { consultarTipoCambio } from '../catalogos/tipo-cambio.service';
 import { reservarNumero, resolverTalonarioParaVenta } from '../talonario/talonario.service';
 import { guardarCuotas } from '../cobranzas/cobranza.service';
 import { registrarConsumoVenta } from '../inventario/existencia.service';
+import { comprobanteElectronicoRepository } from '../facturacion/facturacion.repository';
+import { EstadoComprobante } from '../facturacion/comprobante-electronico.entity';
+import { acreditarPuntosPorVenta } from '../fidelizacion/fidelizacion.service';
 import { ventaRepository, detalleVentaRepository } from './venta.repository';
 import { EstadoVenta, FormaPago, Venta } from './venta.entity';
 import { DetalleVenta } from './detalle-venta.entity';
@@ -33,6 +36,7 @@ import type { Banco } from '../catalogos/banco.entity';
 import type { Talonario } from '../talonario/talonario.entity';
 
 const RELACIONES = {
+  empresa: true,
   pedido: { mesa: { salon: true } },
   talonario: true,
   cliente: { tipoDocumentoIdentidad: true },
@@ -466,6 +470,7 @@ export async function crearVenta(usuarioId: string, dto: CrearVentaDto): Promise
         subtotal: lineas.subtotal,
         igv: lineas.igv,
         total: lineas.total,
+        propina: dto.propina ?? 0,
         tipoCambio: tipoCambio?.venta ?? null,
       });
       const ventaGuardada = await manager.save(Venta, venta);
@@ -496,6 +501,10 @@ export async function crearVenta(usuarioId: string, dto: CrearVentaDto): Promise
   // directa, o líneas de un pedido que nunca pasaron por cocina) — ver existencia.service.ts.
   await registrarConsumoVenta(guardada, pedido, dto.pedidoId ? null : (dto.detalles ?? null));
 
+  // Acumula puntos de fidelización si el programa está activo y la venta tiene cliente
+  // identificado — ver fidelizacion.service.ts.
+  await acreditarPuntosPorVenta(guardada);
+
   return obtenerVenta(guardada.id);
 }
 
@@ -504,6 +513,23 @@ export async function anularVenta(id: string): Promise<void> {
   if (venta.estado === EstadoVenta.ANULADA) {
     throw new HttpError(400, 'La venta ya está anulada');
   }
+
+  // Una vez que SUNAT aceptó (u observó) el comprobante, ya no se puede "borrar" el hecho de
+  // haberlo emitido: la única forma legal de corregirlo es una Nota de Crédito que lo
+  // referencie (ver `modules/notas-venta/nota-venta.service.ts: crearNotaCredito`), que además
+  // dejará la venta en `anulada` como parte del mismo paso.
+  const comprobante = await comprobanteElectronicoRepository.findOneBy({ venta: { id } });
+  if (
+    comprobante &&
+    (comprobante.estado === EstadoComprobante.ACEPTADO ||
+      comprobante.estado === EstadoComprobante.OBSERVADO)
+  ) {
+    throw new HttpError(
+      409,
+      'Esta venta ya tiene un comprobante electrónico aceptado por SUNAT: no puede anularse directamente. Registra una Nota de Crédito en su lugar.',
+    );
+  }
+
   venta.estado = EstadoVenta.ANULADA;
   await ventaRepository.save(venta);
 }

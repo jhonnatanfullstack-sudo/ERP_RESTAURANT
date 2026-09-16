@@ -35,6 +35,8 @@ export const crearVentaSchema = z
       .regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha debe tener el formato YYYY-MM-DD')
       .optional(),
     numeroCuotas: z.coerce.number().int().min(1).max(36).optional(),
+    /** Propina voluntaria — no paga IGV, se suma al monto a cobrar por fuera del comprobante. */
+    propina: z.coerce.number().min(0).max(9999.99).optional(),
   })
   .refine((data) => Boolean(data.pedidoId) !== Boolean(data.detalles?.length), {
     message: 'Indica un pedido cerrado a facturar o una lista de productos, no ambos',

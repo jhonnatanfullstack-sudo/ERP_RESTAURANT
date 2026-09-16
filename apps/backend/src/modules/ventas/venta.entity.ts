@@ -108,6 +108,13 @@ export class Venta {
   @Column({ type: 'numeric', precision: 10, scale: 2, transformer: numericTransformer })
   total!: number;
 
+  /** Propina voluntaria del cliente. No es parte del precio de venta ni paga IGV —queda fuera
+   * de `subtotal`/`igv`/`total` a propósito, así el comprobante SUNAT (`ubl/factura.builder`)
+   * sigue reflejando solo lo vendido— pero si se cobró en efectivo sí es plata física que
+   * entra a la caja (ver `caja.service.ts: calcularVentasEfectivo`). */
+  @Column({ type: 'numeric', precision: 10, scale: 2, default: 0, transformer: numericTransformer })
+  propina!: number;
+
   /** Tipo de cambio USD/PEN (venta) publicado por SUNAT en la fecha de emisión, solo de
    * referencia contable — esta venta siempre se cobra en soles. Nullable: si la consulta al
    * proveedor externo falla, la venta igual se registra (ver tipo-cambio.service.ts). */

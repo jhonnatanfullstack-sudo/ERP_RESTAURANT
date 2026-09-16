@@ -72,7 +72,9 @@ async function calcularVentasEfectivo(desde: Date, hasta: Date): Promise<number>
       creadoEn: Between(desde, hasta),
     },
   });
-  return ventas.reduce((suma, venta) => suma + venta.total, 0);
+  // La propina no es parte de `venta.total` (no paga IGV, ver `venta.entity.ts`), pero si se
+  // cobró en efectivo es plata física que entró a la caja igual que el resto de la venta.
+  return ventas.reduce((suma, venta) => suma + venta.total + venta.propina, 0);
 }
 
 export async function abrirCaja(usuarioId: string, dto: AbrirCajaDto): Promise<Caja> {

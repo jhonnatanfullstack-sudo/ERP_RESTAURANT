@@ -24,6 +24,8 @@ export interface CrearVentaInput {
   /** Venta al crédito: cronograma exigido por SUNAT (RS 193-2020). */
   fechaPrimerVencimiento?: string;
   numeroCuotas?: number;
+  /** Propina voluntaria — no paga IGV, queda fuera del total facturado. */
+  propina?: number;
 }
 
 export async function listarVentas(estado?: EstadoVenta) {
