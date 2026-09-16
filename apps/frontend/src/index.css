@@ -359,6 +359,60 @@ body {
   }
 }
 
+/* --- Profundidad 3D de la carta pública ---
+   Las tarjetas se inclinan siguiendo al puntero, con el contenido separado en capas a
+   distinta altura para que la profundidad se lea de verdad al girar (una foto plana con
+   sombra no produce paralaje; separar las capas en Z, sí). Los ángulos los escribe
+   `useTilt3D` como custom properties, así que el movimiento no pasa por React.
+
+   Todo el efecto está condicionado a `hover: hover` —un dedo no tiene posición sobre la
+   pantalla, y en táctil el giro se quedaría congelado donde ocurrió el último toque— y a que
+   el sistema no pida menos movimiento. Fuera de esos casos la tarjeta es la de siempre. */
+.escena-3d {
+  perspective: 1100px;
+}
+
+.tarjeta-3d {
+  transform-style: preserve-3d;
+}
+
+.tarjeta-3d__capa,
+.tarjeta-3d__brillo {
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  @media (prefers-reduced-motion: no-preference) {
+    .tarjeta-3d {
+      transform: rotateX(var(--giro-x, 0deg)) rotateY(var(--giro-y, 0deg)) scale(var(--acercar, 1));
+      transition: transform 450ms cubic-bezier(0.16, 1, 0.3, 1);
+      will-change: transform;
+    }
+
+    /* Cada capa se despega del plano de la foto: el texto y el botón quedan flotando por
+       delante, y al girar la tarjeta se desplazan respecto al fondo. */
+    .tarjeta-3d__capa {
+      transform: translateZ(var(--profundidad, 0px));
+      transform-style: preserve-3d;
+    }
+
+    /* Reflejo especular que sigue al puntero, como la luz sobre una superficie satinada. */
+    .tarjeta-3d__brillo {
+      background: radial-gradient(
+        circle at var(--luz-x, 50%) var(--luz-y, 50%),
+        rgba(255, 255, 255, 0.4),
+        transparent 55%
+      );
+      opacity: 0;
+      transition: opacity 350ms ease-out;
+    }
+
+    .tarjeta-3d:hover .tarjeta-3d__brillo {
+      opacity: 1;
+    }
+  }
+}
+
 @keyframes revelar-arriba {
   from {
     opacity: 0;
