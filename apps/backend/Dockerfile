@@ -42,9 +42,14 @@ COPY --from=build --chown=node:node /app/apps/backend/dist ./apps/backend/dist
 COPY --from=build --chown=node:node /app/apps/backend/package.json ./apps/backend/
 
 # Punto de montaje del disco persistente. Sin un volumen montado aquí, las fotos de los
-# productos se pierden en cada despliegue (ver docs/despliegue.md, sección 1.2).
+# productos se pierden en cada despliegue (ver docs/despliegue.md, sección 1.2). Se deja la
+# carpeta creada con los permisos correctos, pero sin la instrucción `VOLUME`: Railway
+# rechaza el build si la imagen la declara ("use Railway Volumes" — el volumen se monta desde
+# su panel, no desde la imagen). No hace falta para que un volumen real funcione acá: en
+# Railway, Fly.io o un VPS con `docker run -v`, montar algo en esta ruta sigue funcionando
+# igual, con o sin esta instrucción — es solo documentación para quien corra la imagen con
+# `docker run` a secas, y ese caso no es el de este proyecto.
 RUN mkdir -p /app/apps/backend/uploads && chown -R node:node /app/apps/backend/uploads
-VOLUME ["/app/apps/backend/uploads"]
 
 USER node
 EXPOSE 4000
