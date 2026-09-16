@@ -4,6 +4,7 @@ import { app } from './app';
 import { env } from './config/env';
 import { verificarEntorno } from './config/verificar-entorno';
 import { marcarApagado } from './routes/salud.routes';
+import { initSocket } from './realtime/socket';
 import { logger } from './utils/logger';
 import type { Server } from 'node:http';
 
@@ -76,6 +77,7 @@ async function bootstrap(): Promise<void> {
   const server = app.listen(env.port, () => {
     logger.info('Servidor escuchando', { puerto: env.port, entorno: env.nodeEnv });
   });
+  initSocket(server);
 
   configurarApagado(server);
 }

@@ -1,11 +1,28 @@
 import { In } from 'typeorm';
 import { HttpError } from '../../utils/http-error';
+import { empresaIdActual } from '../../database/tenant-context';
+import { emitirAEmpresa } from '../../realtime/socket';
 import { detallePedidoRepository, pedidoRepository } from '../pedidos/pedido.repository';
 import { EstadoPedido } from '../pedidos/pedido.entity';
 import { registrarConsumoComanda } from '../inventario/existencia.service';
+import { crearNotificacion } from '../notificaciones/notificacion.service';
+import { TipoNotificacion } from '../notificaciones/notificacion.entity';
 import { comandaRepository } from './comanda.repository';
 import { Comanda, EstadoComanda } from './comanda.entity';
 import type { ActualizarEstadoComandaDto, CrearComandaDto } from './comanda.dto';
+
+/** Avisa a las pantallas de cocina de esta empresa que algo cambió, para que se actualicen al
+ * instante en vez de esperar el próximo sondeo. Ver `realtime/socket.ts`. */
+function notificarCambio(comanda: Comanda): void {
+  emitirAEmpresa(empresaIdActual(), 'cocina:comanda-actualizada', comanda);
+}
+
+/** "Salón — Mesa 5" o "Para llevar" — mismo criterio que `nombreMesa` del frontend
+ * (`utils/formato.ts`), pero del lado del servidor para el texto de la notificación. */
+function nombreMesa(comanda: Comanda): string {
+  const mesa = comanda.pedido.mesa;
+  return mesa ? `${mesa.salon.nombre} — Mesa ${mesa.numero}` : 'Para llevar';
+}
 
 const RELACIONES = { pedido: { mesa: { salon: true } }, detalles: { producto: true } } as const;
 
@@ -84,7 +101,9 @@ export async function crearComanda(dto: CrearComandaDto): Promise<Comanda> {
   });
   await detallePedidoRepository.save(detalles);
 
-  return obtenerComanda(guardada.id);
+  const comandaCompleta = await obtenerComanda(guardada.id);
+  notificarCambio(comandaCompleta);
+  return comandaCompleta;
 }
 
 export async function actualizarEstadoComanda(
@@ -105,7 +124,20 @@ export async function actualizarEstadoComanda(
     await registrarConsumoComanda(comanda);
   }
 
-  return obtenerComanda(id);
+  const comandaActualizada = await obtenerComanda(id);
+  notificarCambio(comandaActualizada);
+
+  if (dto.estado === EstadoComanda.LISTO) {
+    await crearNotificacion({
+      tipo: TipoNotificacion.COMANDA_LISTA,
+      titulo: 'Comanda lista',
+      mensaje: `${nombreMesa(comandaActualizada)} — lista para entregar`,
+      entidadTipo: 'comanda',
+      entidadId: comandaActualizada.id,
+    });
+  }
+
+  return comandaActualizada;
 }
 
 export async function cancelarComanda(id: string): Promise<void> {
@@ -123,4 +155,6 @@ export async function cancelarComanda(id: string): Promise<void> {
     .set({ comanda: null })
     .where('comanda_id = :id', { id })
     .execute();
+
+  notificarCambio(comanda);
 }
