@@ -28,3 +28,15 @@ plataformaRouter.post(
   validateBody(accionEmpresaSchema),
   proveedorController.accion,
 );
+
+plataformaRouter.get('/solicitudes', proveedorController.solicitudesPendientes);
+plataformaRouter.post(
+  '/solicitudes/:solicitudId/confirmar',
+  validateUuidParam('solicitudId'),
+  proveedorController.confirmarSolicitud,
+);
+plataformaRouter.post(
+  '/solicitudes/:solicitudId/rechazar',
+  validateUuidParam('solicitudId'),
+  proveedorController.rechazarSolicitud,
+);

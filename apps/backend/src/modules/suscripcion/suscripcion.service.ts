@@ -1,10 +1,17 @@
 import { env } from '../../config/env';
+import { empresaIdActual } from '../../database/tenant-context';
+import { HttpError } from '../../utils/http-error';
 import { empresaRepository } from '../empresa/empresa.repository';
 import { registroUsoRepository } from './registro-uso.repository';
+import { solicitudSuscripcionRepository } from './solicitud-suscripcion.repository';
 import { PlanEmpresa } from '../empresa/empresa.entity';
+import { MESES_POR_CICLO, calcularMonto } from './planes';
 import type { Empresa } from '../empresa/empresa.entity';
+import type { CrearSolicitudDto } from './solicitud-suscripcion.dto';
+import type { SolicitudSuscripcion } from './solicitud-suscripcion.entity';
 
-export type EstadoSuscripcion = 'activa' | 'demo' | 'demo_vencida' | 'suspendida';
+export type EstadoSuscripcion =
+  'activa' | 'demo' | 'demo_vencida' | 'suscripcion_vencida' | 'suspendida';
 
 export interface ResumenSuscripcion {
   estado: EstadoSuscripcion;
@@ -46,7 +53,35 @@ export function calcularSuscripcion(empresa: Empresa): ResumenSuscripcion {
     };
   }
 
-  if (empresa.plan === PlanEmpresa.ACTIVO || !empresa.demoExpiraEn) {
+  if (empresa.plan === PlanEmpresa.ACTIVO) {
+    // Una cuenta contratada sin `suscripcionExpiraEn` es la activación manual de siempre
+    // (botón "Activar" del panel): sin plazo, como antes de que existiera la página de
+    // precios. Con `suscripcionExpiraEn` puesta, vence igual que una demo, solo que por un
+    // plazo pagado en vez de una prueba.
+    if (!empresa.suscripcionExpiraEn) {
+      return {
+        estado: 'activa',
+        plan: empresa.plan,
+        diasRestantes: null,
+        expiraEn: null,
+        puedeEscribir: true,
+        contactoProveedor,
+      };
+    }
+
+    const restanteMs = empresa.suscripcionExpiraEn.getTime() - Date.now();
+    const vencida = restanteMs <= 0;
+    return {
+      estado: vencida ? 'suscripcion_vencida' : 'activa',
+      plan: empresa.plan,
+      diasRestantes: vencida ? 0 : Math.ceil(restanteMs / MS_POR_DIA),
+      expiraEn: empresa.suscripcionExpiraEn.toISOString(),
+      puedeEscribir: !vencida,
+      contactoProveedor,
+    };
+  }
+
+  if (!empresa.demoExpiraEn) {
     return {
       estado: 'activa',
       plan: empresa.plan,
@@ -102,4 +137,33 @@ export async function registrarUso(empresaId: string, escritura: boolean): Promi
            "actualizado_en" = now()`,
     [empresaId, escritura ? 1 : 0],
   );
+}
+
+/**
+ * Pide contratar (o renovar) un plan. Queda `pendiente` hasta que el proveedor confirme el
+ * pago desde `/plataforma` (ver `plataforma.service.ts::confirmarSolicitud`) — esta función
+ * solo dejar constancia de qué se pidió y a qué precio, nunca activa nada por sí sola.
+ */
+export async function solicitarSuscripcion(dto: CrearSolicitudDto): Promise<SolicitudSuscripcion> {
+  const empresa = await empresaRepository.findOneBy({ id: empresaIdActual() });
+  if (!empresa) {
+    throw new HttpError(404, 'Empresa no encontrada');
+  }
+
+  const solicitud = solicitudSuscripcionRepository.create({
+    empresa,
+    plan: dto.plan,
+    ciclo: dto.ciclo,
+    meses: MESES_POR_CICLO[dto.ciclo],
+    monto: calcularMonto(dto.plan, dto.ciclo),
+    mensajeContacto: dto.mensajeContacto ?? null,
+  });
+  return solicitudSuscripcionRepository.save(solicitud);
+}
+
+export async function listarMisSolicitudes(): Promise<SolicitudSuscripcion[]> {
+  return solicitudSuscripcionRepository.find({
+    where: { empresa: { id: empresaIdActual() } },
+    order: { creadoEn: 'DESC' },
+  });
 }

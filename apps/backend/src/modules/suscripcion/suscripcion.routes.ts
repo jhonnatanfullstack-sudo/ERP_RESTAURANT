@@ -1,6 +1,10 @@
 import { Router } from 'express';
-import { requireAuth } from '../../middlewares/auth.middleware';
+import { requireAuth, requirePermission } from '../../middlewares/auth.middleware';
+import { validateBody } from '../../middlewares/validate.middleware';
 import { sendSuccess } from '../../utils/api-response';
+import { crearSolicitudSchema } from './solicitud-suscripcion.dto';
+import { listarPlanesPublico } from './planes';
+import * as suscripcionService from './suscripcion.service';
 
 export const suscripcionRouter = Router();
 
@@ -14,4 +18,34 @@ export const suscripcionRouter = Router();
  */
 suscripcionRouter.get('/', requireAuth, (req, res) => {
   sendSuccess(res, req.suscripcion);
+});
+
+/** Catálogo de planes con precio por ciclo — público, lo consume `/precios` sin sesión. */
+suscripcionRouter.get('/planes', (_req, res) => {
+  sendSuccess(res, listarPlanesPublico());
+});
+
+/** Pedir contratar/renovar un plan. Requiere `empresa.editar`: es un compromiso de pago, no
+ * una simple consulta — mismo permiso que ya gobierna los datos legales de la empresa. */
+suscripcionRouter.post(
+  '/solicitar',
+  requireAuth,
+  requirePermission('empresa.editar'),
+  validateBody(crearSolicitudSchema),
+  async (req, res, next) => {
+    try {
+      const solicitud = await suscripcionService.solicitarSuscripcion(req.body);
+      sendSuccess(res, solicitud, 'Solicitud enviada', 201);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+suscripcionRouter.get('/solicitudes', requireAuth, async (_req, res, next) => {
+  try {
+    sendSuccess(res, await suscripcionService.listarMisSolicitudes());
+  } catch (error) {
+    next(error);
+  }
 });

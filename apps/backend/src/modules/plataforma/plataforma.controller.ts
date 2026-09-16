@@ -27,3 +27,41 @@ export async function accion(req: Request, res: Response, next: NextFunction): P
     next(error);
   }
 }
+
+export async function solicitudesPendientes(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, await plataformaService.listarSolicitudesPendientes());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function confirmarSolicitud(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const solicitud = await plataformaService.confirmarSolicitud(getParam(req, 'solicitudId'));
+    sendSuccess(res, solicitud, 'Suscripción confirmada y cuenta activada');
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function rechazarSolicitud(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const solicitud = await plataformaService.rechazarSolicitud(getParam(req, 'solicitudId'));
+    sendSuccess(res, solicitud, 'Solicitud rechazada');
+  } catch (error) {
+    next(error);
+  }
+}

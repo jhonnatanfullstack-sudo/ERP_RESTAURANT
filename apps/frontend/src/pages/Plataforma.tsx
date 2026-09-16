@@ -5,11 +5,13 @@ import {
   Building2,
   CalendarClock,
   CheckCircle2,
+  CreditCard,
   ExternalLink,
   Pause,
   Play,
   ShieldOff,
   Timer,
+  XCircle,
 } from 'lucide-react';
 import * as plataformaService from '../services/plataforma.service';
 import { KpiCard } from '../components/ui/KpiCard';
@@ -21,7 +23,126 @@ import { Alert } from '../components/ui/Alert';
 import { EmptyState } from '../components/ui/EmptyState';
 import { formatearFechaHora, formatearNumero } from '../utils/formato';
 import { mensajeError } from '../utils/errores';
-import type { AccionEmpresa, EmpresaEnPanel, EstadoSuscripcion } from '../types/api';
+import type {
+  AccionEmpresa,
+  CicloFacturacion,
+  EmpresaEnPanel,
+  EstadoSuscripcion,
+  PlanContratado,
+} from '../types/api';
+
+const ETIQUETA_PLAN: Record<PlanContratado, string> = {
+  operativo: 'Operativo',
+  facturacion: 'Facturación electrónica',
+  completo: 'Completo',
+};
+
+const ETIQUETA_CICLO: Record<CicloFacturacion, string> = {
+  mensual: 'Mensual',
+  trimestral: 'Trimestral',
+  anual: 'Anual',
+};
+
+function formatearMonto(valor: number): string {
+  return `S/ ${Number(valor).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Solicitudes de contratación/renovación pendientes de confirmar (FASE 29). Sin pasarela de
+ * pago conectada, este es el punto donde el proveedor confirma a mano que el dinero llegó
+ * (Yape/transferencia) y con eso activa la cuenta por los meses pagados — ver
+ * `decisiones-tecnicas.md`. */
+function SolicitudesSuscripcion() {
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const solicitudesQuery = useQuery({
+    queryKey: ['plataforma-solicitudes'],
+    queryFn: plataformaService.listarSolicitudesPendientes,
+  });
+
+  function alExito() {
+    setError(null);
+    void queryClient.invalidateQueries({ queryKey: ['plataforma-solicitudes'] });
+    void queryClient.invalidateQueries({ queryKey: ['plataforma-panel'] });
+  }
+
+  const confirmarMutation = useMutation({
+    mutationFn: plataformaService.confirmarSolicitud,
+    onSuccess: alExito,
+    onError: (excepcion) => setError(mensajeError(excepcion, 'No se pudo confirmar el pago')),
+  });
+  const rechazarMutation = useMutation({
+    mutationFn: plataformaService.rechazarSolicitud,
+    onSuccess: alExito,
+    onError: (excepcion) => setError(mensajeError(excepcion, 'No se pudo rechazar la solicitud')),
+  });
+
+  const solicitudes = solicitudesQuery.data ?? [];
+  if (!solicitudesQuery.isLoading && solicitudes.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center gap-2">
+        <CreditCard className="h-4.5 w-4.5 text-orange-600" />
+        <h2 className="text-base font-bold text-zinc-900">Solicitudes de suscripción</h2>
+        {solicitudes.length > 0 && <Badge tono="neutral">{solicitudes.length} pendientes</Badge>}
+      </div>
+
+      {error && (
+        <div className="mb-3">
+          <Alert tipo="error" mensaje={error} />
+        </div>
+      )}
+
+      {solicitudesQuery.isLoading ? (
+        <p className="text-sm text-zinc-500">Cargando…</p>
+      ) : (
+        <ul className="flex flex-col gap-3">
+          {solicitudes.map((s) => (
+            <li
+              key={s.id}
+              className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <p className="font-medium text-zinc-900">
+                  {s.empresa.nombreComercial ?? s.empresa.razonSocial}
+                  <span className="ml-2 text-xs font-normal text-zinc-400">{s.empresa.ruc}</span>
+                </p>
+                <p className="text-sm text-zinc-600">
+                  Plan {ETIQUETA_PLAN[s.plan]} · {ETIQUETA_CICLO[s.ciclo]} ·{' '}
+                  <span className="font-semibold text-zinc-900">{formatearMonto(s.monto)}</span>
+                </p>
+                {s.mensajeContacto && (
+                  <p className="mt-1 text-xs text-zinc-500">"{s.mensajeContacto}"</p>
+                )}
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Button
+                  variante="secondary"
+                  className="px-2.5 py-1.5 text-xs"
+                  icono={<CheckCircle2 className="h-3.5 w-3.5" />}
+                  cargando={confirmarMutation.isPending}
+                  onClick={() => confirmarMutation.mutate(s.id)}
+                >
+                  Confirmar pago
+                </Button>
+                <Button
+                  variante="ghost"
+                  className="px-2.5 py-1.5 text-xs text-red-600"
+                  icono={<XCircle className="h-3.5 w-3.5" />}
+                  cargando={rechazarMutation.isPending}
+                  onClick={() => rechazarMutation.mutate(s.id)}
+                >
+                  Rechazar
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 const DIAS_EXTENSION = 15;
 
@@ -32,6 +153,7 @@ const ETIQUETA_ESTADO: Record<
   activa: { texto: 'Cliente activo', tono: 'exito' },
   demo: { texto: 'En prueba', tono: 'neutral' },
   demo_vencida: { texto: 'Prueba vencida', tono: 'peligro' },
+  suscripcion_vencida: { texto: 'Suscripción vencida', tono: 'peligro' },
   suspendida: { texto: 'Suspendida', tono: 'peligro' },
 };
 
@@ -161,6 +283,8 @@ export function Plataforma() {
       </header>
 
       {error && <Alert tipo="error" mensaje={error} />}
+
+      <SolicitudesSuscripcion />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard

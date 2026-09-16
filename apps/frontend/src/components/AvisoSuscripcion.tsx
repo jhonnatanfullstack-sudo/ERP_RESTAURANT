@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Clock, Lock, Mail, Phone } from 'lucide-react';
+import { AlertTriangle, Clock, CreditCard, Lock, Mail, Phone } from 'lucide-react';
 import * as suscripcionService from '../services/suscripcion.service';
 import type { ResumenSuscripcion } from '../types/api';
 
@@ -70,8 +70,28 @@ export function AvisoSuscripcion() {
         <AlertTriangle className="h-4 w-4 shrink-0" strokeWidth={2.25} />
         <span className="font-semibold">Tu prueba terminó.</span>
         <span>
-          Puedes seguir consultando lo que cargaste, pero para volver a registrar activa el sistema
-          con {suscripcion.contactoProveedor.nombre}:
+          Puedes seguir consultando lo que cargaste, pero para volver a registrar{' '}
+          <a href="/precios" className="font-semibold underline underline-offset-2">
+            elige un plan
+          </a>{' '}
+          o escribe a {suscripcion.contactoProveedor.nombre}:
+        </span>
+        <Contacto contacto={suscripcion.contactoProveedor} />
+      </div>
+    );
+  }
+
+  if (suscripcion.estado === 'suscripcion_vencida') {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-red-200 bg-red-50 px-5 py-3 text-sm text-red-800 sm:px-8">
+        <CreditCard className="h-4 w-4 shrink-0" strokeWidth={2.25} />
+        <span className="font-semibold">Tu suscripción venció.</span>
+        <span>
+          Puedes seguir consultando lo que cargaste, pero para volver a registrar{' '}
+          <a href="/precios" className="font-semibold underline underline-offset-2">
+            renueva tu plan
+          </a>{' '}
+          o escribe a {suscripcion.contactoProveedor.nombre}:
         </span>
         <Contacto contacto={suscripcion.contactoProveedor} />
       </div>

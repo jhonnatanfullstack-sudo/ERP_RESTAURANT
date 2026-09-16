@@ -3,7 +3,10 @@ import { conBypassRls } from '../../database/tenant-context';
 import { empresaRepository } from '../empresa/empresa.repository';
 import { PlanEmpresa } from '../empresa/empresa.entity';
 import { calcularSuscripcion } from '../suscripcion/suscripcion.service';
+import { solicitudSuscripcionRepository } from '../suscripcion/solicitud-suscripcion.repository';
+import { EstadoSolicitudSuscripcion } from '../suscripcion/solicitud-suscripcion.entity';
 import type { EstadoSuscripcion } from '../suscripcion/suscripcion.service';
+import type { SolicitudSuscripcion } from '../suscripcion/solicitud-suscripcion.entity';
 
 export interface EmpresaEnPanel {
   id: string;
@@ -174,5 +177,73 @@ export async function aplicarAccion(empresaId: string, accion: AccionSobreEmpres
 
     await empresaRepository.save(empresa);
     return calcularSuscripcion(empresa);
+  });
+}
+
+const MS_POR_DIA_SOLICITUDES = 24 * 60 * 60 * 1000;
+const DIAS_POR_MES = 30;
+
+/** Solicitudes de suscripción pendientes de revisar, de todas las empresas — mismo criterio
+ * de `conBypassRls` que el resto del panel (ver comentario de `obtenerPanel`). */
+export async function listarSolicitudesPendientes(): Promise<SolicitudSuscripcion[]> {
+  return conBypassRls(() =>
+    solicitudSuscripcionRepository.find({
+      where: { estado: EstadoSolicitudSuscripcion.PENDIENTE },
+      relations: { empresa: true },
+      order: { creadoEn: 'ASC' },
+    }),
+  );
+}
+
+/**
+ * Confirma que el pago de una solicitud llegó (hoy, revisado a mano por el proveedor — Yape,
+ * transferencia; no hay pasarela conectada todavía) y activa la empresa por los meses
+ * pagados. Es el mismo punto donde, el día que se conecte un webhook real de Culqi/Mercado
+ * Pago, se llamaría esta función en vez del botón del panel — el resto del flujo no cambia.
+ *
+ * Los meses se suman desde `max(hoy, lo que la empresa ya tenía)`: pagar una renovación antes
+ * de que venza no "pierde" los días que le quedaban, y pagar tarde no le regala los días ya
+ * vencidos de más.
+ */
+export async function confirmarSolicitud(solicitudId: string): Promise<SolicitudSuscripcion> {
+  return conBypassRls(async () => {
+    const solicitud = await solicitudSuscripcionRepository.findOne({
+      where: { id: solicitudId },
+      relations: { empresa: true },
+    });
+    if (!solicitud) {
+      throw new HttpError(404, 'Solicitud no encontrada');
+    }
+    if (solicitud.estado !== EstadoSolicitudSuscripcion.PENDIENTE) {
+      throw new HttpError(409, 'Esta solicitud ya fue revisada');
+    }
+
+    const empresa = solicitud.empresa;
+    const base = Math.max(empresa.suscripcionExpiraEn?.getTime() ?? 0, Date.now());
+    empresa.plan = PlanEmpresa.ACTIVO;
+    empresa.planContratado = solicitud.plan;
+    empresa.suscripcionExpiraEn = new Date(
+      base + solicitud.meses * DIAS_POR_MES * MS_POR_DIA_SOLICITUDES,
+    );
+    empresa.suspendida = false;
+    await empresaRepository.save(empresa);
+
+    solicitud.estado = EstadoSolicitudSuscripcion.CONFIRMADA;
+    solicitud.confirmadoEn = new Date();
+    return solicitudSuscripcionRepository.save(solicitud);
+  });
+}
+
+export async function rechazarSolicitud(solicitudId: string): Promise<SolicitudSuscripcion> {
+  return conBypassRls(async () => {
+    const solicitud = await solicitudSuscripcionRepository.findOneBy({ id: solicitudId });
+    if (!solicitud) {
+      throw new HttpError(404, 'Solicitud no encontrada');
+    }
+    if (solicitud.estado !== EstadoSolicitudSuscripcion.PENDIENTE) {
+      throw new HttpError(409, 'Esta solicitud ya fue revisada');
+    }
+    solicitud.estado = EstadoSolicitudSuscripcion.RECHAZADA;
+    return solicitudSuscripcionRepository.save(solicitud);
   });
 }
