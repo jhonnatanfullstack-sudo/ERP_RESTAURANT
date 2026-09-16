@@ -111,7 +111,7 @@ describe('Pedidos: ciclo de vida', () => {
     expect(cierre.status).toBe(400);
   });
 
-  it('cierra un pedido con productos y no permite reabrirlo', async () => {
+  it('cierra un pedido con productos y lo reabre para corregir el cierre por error', async () => {
     const ctx = await empresaConProducto();
     const pedido = await api.post('/api/pedidos', ctx.sesion, {}).expect(201);
     await api
@@ -126,10 +126,69 @@ describe('Pedidos: ciclo de vida', () => {
       .expect(200);
     expect(cierre.body.data.estado).toBe('cerrado');
 
+    const reapertura = await api
+      .put(`/api/pedidos/${pedido.body.data.id}`, ctx.sesion, { estado: 'abierto' })
+      .expect(200);
+    expect(reapertura.body.data.estado).toBe('abierto');
+    expect(reapertura.body.data.fechaCierre).toBeNull();
+
+    // Reabierto, vuelve a aceptar líneas nuevas — es exactamente el caso que motiva reabrir.
+    await api
+      .post(`/api/pedidos/${pedido.body.data.id}/detalles`, ctx.sesion, {
+        productoId: ctx.productoId,
+        cantidad: 1,
+      })
+      .expect(201);
+  });
+
+  it('no reabre un pedido que ya tiene una venta registrada', async () => {
+    const ctx = await empresaConProducto();
+    const pedido = await api.post('/api/pedidos', ctx.sesion, {}).expect(201);
+    await api
+      .post(`/api/pedidos/${pedido.body.data.id}/detalles`, ctx.sesion, {
+        productoId: ctx.productoId,
+        cantidad: 1,
+      })
+      .expect(201);
+    await api
+      .put(`/api/pedidos/${pedido.body.data.id}`, ctx.sesion, { estado: 'cerrado' })
+      .expect(200);
+    await api
+      .post('/api/ventas', ctx.sesion, {
+        pedidoId: pedido.body.data.id,
+        tipoComprobanteId: ctx.catalogos.boletaId,
+        formaPago: 'contado',
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
     const reapertura = await api.put(`/api/pedidos/${pedido.body.data.id}`, ctx.sesion, {
       estado: 'abierto',
     });
-    expect(reapertura.status).toBe(400);
+    expect(reapertura.status).toBe(409);
+  });
+
+  it('no reabre un pedido si su mesa ya tiene otro pedido abierto mientras tanto', async () => {
+    const ctx = await empresaConProducto();
+    const mesaId = await crearMesa(ctx.sesion);
+    const primero = await api.post('/api/pedidos', ctx.sesion, { mesaId }).expect(201);
+    await api
+      .post(`/api/pedidos/${primero.body.data.id}/detalles`, ctx.sesion, {
+        productoId: ctx.productoId,
+        cantidad: 1,
+      })
+      .expect(201);
+    await api
+      .put(`/api/pedidos/${primero.body.data.id}`, ctx.sesion, { estado: 'cerrado' })
+      .expect(200);
+
+    // La mesa quedó libre en la vista derivada: alguien más se sentó y abrió un pedido nuevo.
+    await api.post('/api/pedidos', ctx.sesion, { mesaId }).expect(201);
+
+    const reapertura = await api.put(`/api/pedidos/${primero.body.data.id}`, ctx.sesion, {
+      estado: 'abierto',
+    });
+    expect(reapertura.status).toBe(409);
   });
 
   it('una línea enviada a cocina queda bloqueada para editar o eliminar, la otra sigue libre', async () => {
@@ -247,22 +306,72 @@ describe('Comandas: máquina de estados', () => {
     expect(entregada.body.data.estado).toBe('entregado');
   });
 
-  it('no permite retroceder de estado', async () => {
+  it('retrocede un paso para corregir un toque de más, pero no más allá', async () => {
     const ctx = await prepararComandaPendiente();
     await api
       .put(`/api/comandas/${ctx.comandaId}`, ctx.sesion, { estado: 'en_preparacion' })
       .expect(200);
+
+    // Un paso atrás: corrige haber avanzado por error.
     const retroceso = await api.put(`/api/comandas/${ctx.comandaId}`, ctx.sesion, {
       estado: 'pendiente',
+    });
+    expect(retroceso.status).toBe(200);
+    expect(retroceso.body.data.estado).toBe('pendiente');
+
+    // Pero no dos pasos de una: desde "pendiente" no hay un estado anterior al que volver.
+    const masAlla = await api.put(`/api/comandas/${ctx.comandaId}`, ctx.sesion, {
+      estado: 'entregado',
+    });
+    expect(masAlla.status).toBe(400);
+  });
+
+  it('no se puede retroceder desde "entregado": ahí ya se descontó el insumo', async () => {
+    const ctx = await prepararConReceta();
+    const pedido = await api.post('/api/pedidos', ctx.sesion, {}).expect(201);
+    const detalle = await api
+      .post(`/api/pedidos/${pedido.body.data.id}/detalles`, ctx.sesion, {
+        productoId: ctx.productoId,
+        cantidad: 1,
+      })
+      .expect(201);
+    const comanda = await api
+      .post('/api/comandas', ctx.sesion, {
+        pedidoId: pedido.body.data.id,
+        detalleIds: [detalle.body.data.id],
+      })
+      .expect(201);
+    await api
+      .put(`/api/comandas/${comanda.body.data.id}`, ctx.sesion, { estado: 'en_preparacion' })
+      .expect(200);
+    await api
+      .put(`/api/comandas/${comanda.body.data.id}`, ctx.sesion, { estado: 'listo' })
+      .expect(200);
+    await api
+      .put(`/api/comandas/${comanda.body.data.id}`, ctx.sesion, { estado: 'entregado' })
+      .expect(200);
+
+    const retroceso = await api.put(`/api/comandas/${comanda.body.data.id}`, ctx.sesion, {
+      estado: 'listo',
     });
     expect(retroceso.status).toBe(400);
   });
 
-  it('solo se puede cancelar una comanda que aún no empezó a prepararse', async () => {
+  it('se puede cancelar una comanda que ya empezó a prepararse (antes de estar lista)', async () => {
     const ctx = await prepararComandaPendiente();
     await api
       .put(`/api/comandas/${ctx.comandaId}`, ctx.sesion, { estado: 'en_preparacion' })
       .expect(200);
+    const cancelacion = await api.delete(`/api/comandas/${ctx.comandaId}`, ctx.sesion);
+    expect(cancelacion.status).toBe(200);
+  });
+
+  it('ya no se puede cancelar una comanda que está lista para entregar', async () => {
+    const ctx = await prepararComandaPendiente();
+    await api
+      .put(`/api/comandas/${ctx.comandaId}`, ctx.sesion, { estado: 'en_preparacion' })
+      .expect(200);
+    await api.put(`/api/comandas/${ctx.comandaId}`, ctx.sesion, { estado: 'listo' }).expect(200);
     const cancelacion = await api.delete(`/api/comandas/${ctx.comandaId}`, ctx.sesion);
     expect(cancelacion.status).toBe(400);
   });
@@ -323,6 +432,95 @@ describe('Comandas: máquina de estados', () => {
       .put(`/api/pedidos/${pedido.body.data.id}`, ctx.sesion, { estado: 'cerrado' })
       .expect(200);
     expect(cierre.body.data.estado).toBe('cerrado');
+  });
+
+  it('anular la venta de un pedido entregado NO devuelve el insumo: la comida ya se sirvió', async () => {
+    const ctx = await prepararConReceta();
+    const pedido = await api.post('/api/pedidos', ctx.sesion, {}).expect(201);
+    const detalle = await api
+      .post(`/api/pedidos/${pedido.body.data.id}/detalles`, ctx.sesion, {
+        productoId: ctx.productoId,
+        cantidad: 2,
+      })
+      .expect(201);
+    const comanda = await api
+      .post('/api/comandas', ctx.sesion, {
+        pedidoId: pedido.body.data.id,
+        detalleIds: [detalle.body.data.id],
+      })
+      .expect(201);
+    await api
+      .put(`/api/comandas/${comanda.body.data.id}`, ctx.sesion, { estado: 'en_preparacion' })
+      .expect(200);
+    await api
+      .put(`/api/comandas/${comanda.body.data.id}`, ctx.sesion, { estado: 'listo' })
+      .expect(200);
+    await api
+      .put(`/api/comandas/${comanda.body.data.id}`, ctx.sesion, { estado: 'entregado' })
+      .expect(200);
+
+    // El consumo ya ocurrió al entregar, antes de que existiera ningún comprobante.
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBeCloseTo(19.4, 3);
+
+    await api
+      .put(`/api/pedidos/${pedido.body.data.id}`, ctx.sesion, { estado: 'cerrado' })
+      .expect(200);
+    const venta = await api
+      .post('/api/ventas', ctx.sesion, {
+        pedidoId: pedido.body.data.id,
+        tipoComprobanteId: ctx.catalogos.boletaId,
+        formaPago: 'contado',
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
+    // Facturar un pedido ya entregado no vuelve a descontar (ver 'al entregar la comanda...').
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBeCloseTo(19.4, 3);
+
+    await api.delete(`/api/ventas/${venta.body.data.id}`, ctx.sesion).expect(200);
+
+    // Anular la venta tampoco lo devuelve: el plato realmente se sirvió, anular la venta
+    // corrige un error de cobro, no "deshace" que el cliente se lo comió.
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBeCloseTo(19.4, 3);
+  });
+
+  it('?activas=true deja fuera las entregadas y canceladas, sin filtrarlo pide todo', async () => {
+    const ctx = await prepararComandaPendiente();
+    // Una segunda comanda que sí llega a entregado.
+    const otro = await api.post('/api/pedidos', ctx.sesion, {}).expect(201);
+    const detalleOtro = await api
+      .post(`/api/pedidos/${otro.body.data.id}/detalles`, ctx.sesion, {
+        productoId: ctx.productoId,
+        cantidad: 1,
+      })
+      .expect(201);
+    const comandaEntregada = await api
+      .post('/api/comandas', ctx.sesion, {
+        pedidoId: otro.body.data.id,
+        detalleIds: [detalleOtro.body.data.id],
+      })
+      .expect(201);
+    await api
+      .put(`/api/comandas/${comandaEntregada.body.data.id}`, ctx.sesion, {
+        estado: 'en_preparacion',
+      })
+      .expect(200);
+    await api
+      .put(`/api/comandas/${comandaEntregada.body.data.id}`, ctx.sesion, { estado: 'listo' })
+      .expect(200);
+    await api
+      .put(`/api/comandas/${comandaEntregada.body.data.id}`, ctx.sesion, { estado: 'entregado' })
+      .expect(200);
+
+    const soloActivas = await api.get('/api/comandas?activas=true', ctx.sesion).expect(200);
+    const estados = soloActivas.body.data.map((c: { estado: string }) => c.estado).sort();
+    expect(estados).toEqual(['pendiente']); // la comanda de prepararComandaPendiente()
+
+    const todas = await api.get('/api/comandas', ctx.sesion).expect(200);
+    expect(todas.body.data.map((c: { estado: string }) => c.estado).sort()).toEqual([
+      'entregado',
+      'pendiente',
+    ]);
   });
 });
 

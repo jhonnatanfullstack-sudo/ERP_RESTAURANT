@@ -5,6 +5,7 @@ import { pedidoRepository } from '../pedidos/pedido.repository';
 import { EstadoPedido } from '../pedidos/pedido.entity';
 import { clienteRepository } from '../clientes/cliente.repository';
 import { productoRepository } from '../productos/producto.repository';
+import { usuarioRepository } from '../usuarios/usuario.repository';
 import { esGravado, resolverTasaIgv } from '../empresa/igv.service';
 import { obtenerConfiguracion } from '../configuracion/configuracion.service';
 import {
@@ -17,10 +18,13 @@ import { CODIGO_BOLETA, CODIGO_FACTURA } from '../catalogos/codigos-sunat';
 import { consultarTipoCambio } from '../catalogos/tipo-cambio.service';
 import { reservarNumero, resolverTalonarioParaVenta } from '../talonario/talonario.service';
 import { guardarCuotas } from '../cobranzas/cobranza.service';
-import { registrarConsumoVenta } from '../inventario/existencia.service';
+import { registrarConsumoVenta, anularSalidasVenta } from '../inventario/existencia.service';
 import { comprobanteElectronicoRepository } from '../facturacion/facturacion.repository';
 import { EstadoComprobante } from '../facturacion/comprobante-electronico.entity';
-import { acreditarPuntosPorVenta } from '../fidelizacion/fidelizacion.service';
+import {
+  acreditarPuntosPorVenta,
+  revertirPuntosPorVenta,
+} from '../fidelizacion/fidelizacion.service';
 import { ventaRepository, detalleVentaRepository } from './venta.repository';
 import { EstadoVenta, FormaPago, Venta } from './venta.entity';
 import { DetalleVenta } from './detalle-venta.entity';
@@ -508,7 +512,7 @@ export async function crearVenta(usuarioId: string, dto: CrearVentaDto): Promise
   return obtenerVenta(guardada.id);
 }
 
-export async function anularVenta(id: string): Promise<void> {
+export async function anularVenta(usuarioId: string, id: string): Promise<void> {
   const venta = await obtenerVenta(id);
   if (venta.estado === EstadoVenta.ANULADA) {
     throw new HttpError(400, 'La venta ya está anulada');
@@ -532,4 +536,16 @@ export async function anularVenta(id: string): Promise<void> {
 
   venta.estado = EstadoVenta.ANULADA;
   await ventaRepository.save(venta);
+
+  // Devuelve el stock y los puntos que esta venta había generado. No corre dentro de un
+  // `enTransaccion` explícito porque no hace falta: toda la petición HTTP ya corre en una
+  // única transacción de Postgres (ver `middlewares/tenant.middleware.ts`), así que si
+  // cualquiera de los dos pasos de abajo falla, el cambio de estado de arriba también se
+  // revierte — la venta nunca queda "anulada" a medias.
+  const usuario = await usuarioRepository.findOneBy({ id: usuarioId });
+  if (!usuario) {
+    throw new HttpError(401, 'Usuario no encontrado');
+  }
+  await anularSalidasVenta(venta, usuario);
+  await revertirPuntosPorVenta(venta);
 }

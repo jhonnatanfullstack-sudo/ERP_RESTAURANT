@@ -32,7 +32,7 @@ export async function crear(req: Request, res: Response, next: NextFunction): Pr
 
 export async function anular(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    await ventaService.anularVenta(getIdParam(req));
+    await ventaService.anularVenta(req.usuarioAuth!.sub, getIdParam(req));
     sendSuccess(res, null, 'Venta anulada');
   } catch (error) {
     next(error);

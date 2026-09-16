@@ -7,7 +7,8 @@ import type { EstadoComanda } from './comanda.entity';
 export async function listar(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const estado = req.query.estado as EstadoComanda | undefined;
-    sendSuccess(res, await comandaService.listarComandas(estado));
+    const soloActivas = req.query.activas === 'true';
+    sendSuccess(res, await comandaService.listarComandas({ estado, soloActivas }));
   } catch (error) {
     next(error);
   }

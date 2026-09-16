@@ -18,6 +18,9 @@ export interface ContextoTenant {
    * dejan ver algo. Todo acceso a datos de la petición tiene que pasar por aquí. */
   manager: EntityManager;
   queryRunner: QueryRunner;
+  /** Callbacks en espera de que la transacción de la petición se confirme — ver `alConfirmar`
+   * más abajo. `middlewares/tenant.middleware.ts` es quien los dispara. */
+  pendientesTrasConfirmar: Array<() => void>;
 }
 
 const almacen = new AsyncLocalStorage<ContextoTenant>();
@@ -64,7 +67,7 @@ export async function ejecutarFueraDeLaPeticion<T>(
   try {
     await queryRunner.query(`SELECT set_config('app.empresa_id', $1, true)`, [empresaId]);
     const resultado = await almacen.run(
-      { empresaId, manager: queryRunner.manager, queryRunner },
+      { empresaId, manager: queryRunner.manager, queryRunner, pendientesTrasConfirmar: [] },
       fn,
     );
     await queryRunner.commitTransaction();
@@ -79,6 +82,29 @@ export async function ejecutarFueraDeLaPeticion<T>(
 
 export function ejecutarEnContexto<T>(contexto: ContextoTenant, fn: () => T): T {
   return almacen.run(contexto, fn);
+}
+
+/**
+ * Encola `fn` para que corra recién cuando la transacción de la petición se haya confirmado
+ * de verdad en Postgres — nunca antes.
+ *
+ * Pensado para notificaciones en tiempo real (WebSocket, ver `realtime/socket.ts`): emitirlas
+ * ni bien se guarda la fila, todavía dentro de la transacción de la petición, le contaría a
+ * los clientes conectados (una pantalla de cocina, por ejemplo) un cambio que un error más
+ * adelante en esa misma petición podría hacer desaparecer con un rollback — el cliente ya
+ * actualizó su pantalla con algo que nunca llegó a existir. `tenant.middleware.ts` dispara
+ * esta cola justo después de `commitTransaction()` y antes de enviar la respuesta.
+ *
+ * Fuera de una petición (scripts, pruebas que no levantan el servidor de sockets) no hay
+ * "después del commit" que esperar: se ejecuta de inmediato.
+ */
+export function alConfirmar(fn: () => void): void {
+  const contexto = almacen.getStore();
+  if (!contexto) {
+    fn();
+    return;
+  }
+  contexto.pendientesTrasConfirmar.push(fn);
 }
 
 export function contextoActual(): ContextoTenant | undefined {

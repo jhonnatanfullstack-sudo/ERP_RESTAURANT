@@ -26,10 +26,20 @@ export function Button({
   className = '',
   disabled,
   children,
+  // Por defecto 'button', no 'submit': el default nativo de HTML para un <button> sin `type`
+  // dentro de un <form> es "submit", así que un botón secundario (ej. "Confirmar" fuera del
+  // flujo normal, o cualquier acción con onClick propio) que olvide pasar `type="button"`
+  // dispara el submit del formulario además de su propio onClick — dos acciones a la vez, y
+  // si el submit vuelve a montar el bloque que contiene al botón, se ve como un parpadeo o
+  // una recarga (así se encontró: ver Propinas.tsx, "Confirmar reparto"). Quien de verdad
+  // necesita enviar el formulario sigue pasando `type="submit"` explícito (ver
+  // FormActions.tsx), así que este cambio no le quita nada a nadie y cierra la clase de bug.
+  type = 'button',
   ...props
 }: ButtonProps) {
   return (
     <button
+      type={type}
       className={`${estilosBase} ${estilosVariante[variante]} ${className}`}
       disabled={disabled || cargando}
       aria-busy={cargando || undefined}

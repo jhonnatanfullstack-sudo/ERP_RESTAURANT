@@ -84,6 +84,42 @@ describe('Fidelización — acumulación automática', () => {
   });
 });
 
+describe('Fidelización — anular una venta revierte lo ganado', () => {
+  it('anular la venta que ganó puntos los descuenta del saldo', async () => {
+    const { sesion, productoId } = await empresaConProducto(59);
+    await activarFidelizacion(sesion, 10);
+    const clienteId = await crearCliente(sesion);
+
+    const venta = await venderA(sesion, productoId, clienteId); // 5 puntos (59/10 redondeado)
+    const saldoTrasVenta = await api
+      .get(`/api/fidelizacion/clientes/${clienteId}`, sesion)
+      .expect(200);
+    expect(saldoTrasVenta.body.data.saldo).toBe(5);
+
+    await api.delete(`/api/ventas/${venta.body.data.id}`, sesion).expect(200);
+
+    const saldoTrasAnular = await api
+      .get(`/api/fidelizacion/clientes/${clienteId}`, sesion)
+      .expect(200);
+    expect(saldoTrasAnular.body.data.saldo).toBe(0);
+    // Dos movimientos, no uno editado: "ganado" original + "ajuste" de reversa — el kardex
+    // nunca reescribe (mismo criterio que existencias).
+    expect(saldoTrasAnular.body.data.movimientos).toHaveLength(2);
+  });
+
+  it('anular una venta que nunca ganó puntos no genera ningún movimiento', async () => {
+    const { sesion, productoId } = await empresaConProducto(59);
+    // Fidelización sigue apagada: la venta no acredita nada.
+    const clienteId = await crearCliente(sesion);
+    const venta = await venderA(sesion, productoId, clienteId);
+
+    await api.delete(`/api/ventas/${venta.body.data.id}`, sesion).expect(200);
+
+    const saldo = await api.get(`/api/fidelizacion/clientes/${clienteId}`, sesion).expect(200);
+    expect(saldo.body.data.movimientos).toHaveLength(0);
+  });
+});
+
 describe('Fidelización — canje y ajuste', () => {
   it('canjea puntos hasta el saldo disponible y no permite pasarse', async () => {
     const { sesion, productoId } = await empresaConProducto(100);

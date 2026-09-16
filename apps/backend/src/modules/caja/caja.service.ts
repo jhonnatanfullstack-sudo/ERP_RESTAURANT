@@ -4,6 +4,7 @@ import { usuarioRepository } from '../usuarios/usuario.repository';
 import { medioPagoRepository } from '../catalogos/catalogos.repository';
 import { ventaRepository } from '../ventas/venta.repository';
 import { EstadoVenta } from '../ventas/venta.entity';
+import { pagoVentaRepository } from '../cobranzas/cobranza.repository';
 import { cajaRepository, movimientoCajaRepository } from './caja.repository';
 import { Caja, EstadoCaja } from './caja.entity';
 import { TipoMovimientoCaja } from './movimiento-caja.entity';
@@ -77,6 +78,48 @@ async function calcularVentasEfectivo(desde: Date, hasta: Date): Promise<number>
   return ventas.reduce((suma, venta) => suma + venta.total + venta.propina, 0);
 }
 
+/**
+ * Suma de cobros en efectivo de ventas al crédito (`PagoVenta`) dentro del rango de una
+ * sesión de caja. Sin esto, un cliente que paga su deuda en efectivo mete plata física al
+ * cajón que el arqueo nunca contaba — el cierre siempre daba sobrante por esa diferencia.
+ * Mismo criterio de "por rango de fecha, sin `caja_id`" que `calcularVentasEfectivo`, y misma
+ * razón (Regla 3 de CLAUDE.md: no tocar Cobranzas para agregarle esa columna).
+ */
+async function calcularPagosCreditoEfectivo(desde: Date, hasta: Date): Promise<number> {
+  const medioEfectivo = await medioPagoRepository.findOneBy({
+    codigo: CODIGO_MEDIO_PAGO_EFECTIVO,
+  });
+  if (!medioEfectivo) return 0;
+
+  const pagos = await pagoVentaRepository.find({
+    where: {
+      anulado: false,
+      medioPago: { id: medioEfectivo.id },
+      creadoEn: Between(desde, hasta),
+    },
+  });
+  return pagos.reduce((suma, pago) => suma + pago.monto, 0);
+}
+
+/** Efectivo que debería haber en el cajón en este momento — mismo cálculo que congela
+ * `cerrarCaja`, reusado también por `registrarMovimiento` para no dejar registrar un egreso
+ * mayor a lo que físicamente hay. Necesita `caja.movimientos` cargado. */
+async function calcularEfectivoDisponible(caja: Caja, hasta: Date): Promise<number> {
+  const ventasEfectivo = await calcularVentasEfectivo(caja.creadoEn, hasta);
+  const pagosCreditoEfectivo = await calcularPagosCreditoEfectivo(caja.creadoEn, hasta);
+  const ingresos = caja.movimientos
+    .filter((m) => m.tipo === TipoMovimientoCaja.INGRESO)
+    .reduce((suma, m) => suma + m.monto, 0);
+  const egresos = caja.movimientos
+    .filter((m) => m.tipo === TipoMovimientoCaja.EGRESO)
+    .reduce((suma, m) => suma + m.monto, 0);
+  return (
+    Math.round(
+      (caja.montoApertura + ventasEfectivo + pagosCreditoEfectivo + ingresos - egresos) * 100,
+    ) / 100
+  );
+}
+
 export async function abrirCaja(usuarioId: string, dto: AbrirCajaDto): Promise<Caja> {
   const existente = await cajaRepository.findOneBy({ estado: EstadoCaja.ABIERTA });
   if (existente) {
@@ -99,12 +142,25 @@ export async function registrarMovimiento(
   usuarioId: string,
   dto: RegistrarMovimientoDto,
 ): Promise<Caja> {
-  const caja = await cajaRepository.findOneBy({ id: cajaId });
+  const caja = await cajaRepository.findOne({
+    where: { id: cajaId },
+    relations: { movimientos: true },
+  });
   if (!caja) {
     throw new HttpError(404, 'Caja no encontrada');
   }
   if (caja.estado !== EstadoCaja.ABIERTA) {
     throw new HttpError(400, 'Solo se pueden registrar movimientos en una caja abierta');
+  }
+
+  if (dto.tipo === 'egreso') {
+    const disponible = await calcularEfectivoDisponible(caja, new Date());
+    if (dto.monto > disponible) {
+      throw new HttpError(
+        400,
+        `El egreso (${dto.monto.toFixed(2)}) supera el efectivo disponible en caja (${disponible.toFixed(2)})`,
+      );
+    }
   }
 
   const usuario = await resolverUsuario(usuarioId);
@@ -130,16 +186,7 @@ export async function cerrarCaja(id: string, usuarioId: string, dto: CerrarCajaD
 
   const usuario = await resolverUsuario(usuarioId);
   const fechaCierre = new Date();
-  const ventasEfectivo = await calcularVentasEfectivo(caja.creadoEn, fechaCierre);
-  const ingresos = caja.movimientos
-    .filter((m) => m.tipo === TipoMovimientoCaja.INGRESO)
-    .reduce((suma, m) => suma + m.monto, 0);
-  const egresos = caja.movimientos
-    .filter((m) => m.tipo === TipoMovimientoCaja.EGRESO)
-    .reduce((suma, m) => suma + m.monto, 0);
-
-  const montoEsperado =
-    Math.round((caja.montoApertura + ventasEfectivo + ingresos - egresos) * 100) / 100;
+  const montoEsperado = await calcularEfectivoDisponible(caja, fechaCierre);
   const diferencia = Math.round((dto.montoDeclarado - montoEsperado) * 100) / 100;
 
   caja.usuarioCierre = usuario;

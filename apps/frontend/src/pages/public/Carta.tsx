@@ -21,6 +21,7 @@ import { BotonCompartir } from '../../components/public/BotonCompartir';
 import { useBandejaPedido } from '../../hooks/useBandejaPedido';
 import { useMetaDocumento } from '../../hooks/useMetaDocumento';
 import { useMovimientoReducido } from '../../hooks/animacion';
+import { useTilt3D } from '../../hooks/useTilt3D';
 import { enlaceWhatsApp } from '../../utils/whatsapp';
 import { urlImagen } from '../../utils/formato';
 import type { GrupoCategoria } from '../../components/public/SeccionCategoriaBento';
@@ -65,6 +66,13 @@ export function Carta() {
   const [platilloAbierto, setPlatilloAbierto] = useState<Producto | null>(null);
   const bandeja = useBandejaPedido();
   const movimientoReducido = useMovimientoReducido();
+  // Giro 3D del clúster de fotos del hero. Un poco menos marcado que el de las teselas:
+  // es una pieza grande y el mismo ángulo ahí se ve exagerado.
+  const {
+    ref: refHero,
+    alMover: moverHero,
+    alSalir: salirHero,
+  } = useTilt3D({ grados: 6, acercar: 1 });
 
   // Parallax sutil de la foto del hero: se mueve un poco más lento que el scroll, así se lee
   // con algo de profundidad en vez de ir pegada al resto de la página (ambient layer de la
@@ -260,8 +268,11 @@ export function Carta() {
             </p>
             <h1
               // Tope en 6xl: a 7xl "Pide por WhatsApp." no entra en esta columna y el titular
-              // parte en tres líneas, cortando la frase por la mitad.
-              className="animar-revelar mt-6 text-[2.6rem] leading-[1.02] font-semibold tracking-tight sm:text-5xl lg:text-6xl"
+              // parte en tres líneas, cortando la frase por la mitad. En móvil arranca más
+              // chico porque la palabra rotativa reserva el ancho de la más larga
+              // ("almuerzo."): a 2.6rem ya no cabía junto a "Elige tu" y la línea se partía,
+              // dejando un hueco del ancho de la palabra.
+              className="animar-revelar mt-6 text-[2.05rem] leading-[1.05] font-semibold tracking-tight sm:text-5xl sm:leading-[1.02] lg:text-6xl"
               style={{ animationDelay: '150ms' }}
             >
               Elige tu <PalabraRotativa palabras={['almuerzo.', 'antojo.', 'cena.', 'menú.']} />
@@ -330,63 +341,79 @@ export function Carta() {
                 className="animar-flotar absolute -top-10 -left-10 h-40 w-40 rounded-full bg-(--carta-acento)/15 blur-3xl sm:h-56 sm:w-56"
               />
 
-              {/* Clúster bento: la foto principal más dos teselas chicas al lado (solo desde
-                  `sm`, donde hay ancho para las tres) — el mismo lenguaje de tamaños mixtos que
-                  usa la grilla de la carta, ya desde la portada. En móvil queda solo la
-                  principal, apaisada bajo el titular. */}
-              <div className="relative grid grid-cols-3 gap-3 sm:gap-4">
-                <div className="relative col-span-3 overflow-hidden rounded-3xl sm:col-span-2">
-                  <motion.img
-                    src={fotoHero.url}
-                    alt={fotoHero.nombre}
-                    style={{ y: desplazamientoFotoHero }}
-                    className="aspect-16/10 w-full object-cover sm:aspect-4/3"
-                  />
+              {/* Clúster bento montado como una escena 3D: el conjunto entero se inclina
+                  siguiendo al puntero y cada pieza vive a distinta altura, así que al girar se
+                  desplazan unas respecto a otras (paralaje real, no una sombra que lo simula).
+                  La foto principal más dos teselas chicas al lado solo desde `sm`, donde hay
+                  ancho para las tres; en móvil queda la principal, apaisada bajo el titular. */}
+              <div
+                className="escena-3d relative"
+                onPointerMove={moverHero}
+                onPointerLeave={salirHero}
+              >
+                <div ref={refHero} className="tarjeta-3d relative grid grid-cols-3 gap-3 sm:gap-4">
+                  <div className="group relative col-span-3 overflow-hidden rounded-3xl shadow-xl shadow-black/10 transition-shadow duration-500 hover:shadow-2xl hover:shadow-black/25 sm:col-span-2">
+                    <motion.img
+                      src={fotoHero.url}
+                      alt={fotoHero.nombre}
+                      style={{ y: desplazamientoFotoHero }}
+                      className="aspect-16/10 w-full object-cover transition-transform duration-700 group-hover:scale-105 sm:aspect-4/3"
+                    />
 
-                  {/* Insignia flotante con un dato real (nunca inventado): cuántos platos
-                      tiene la carta hoy. */}
-                  {productos.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.85, y: 10 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      transition={{ duration: 0.5, delay: 0.9, ease: [0.4, 0, 0.2, 1] }}
-                      className="absolute bottom-4 left-4 flex items-center gap-2.5 rounded-2xl bg-(--carta-superficie)/90 px-4 py-3 shadow-xl backdrop-blur-sm sm:bottom-6 sm:left-6"
-                    >
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--carta-acento) text-sm font-bold text-(--carta-acento-contraste)">
-                        {productos.length}
-                      </span>
-                      <span className="text-xs leading-tight font-semibold text-(--carta-texto)">
-                        platos
-                        <br />
-                        en la carta
-                      </span>
-                    </motion.div>
+                    <div className="tarjeta-3d__brillo absolute inset-0" />
+
+                    {/* Insignia flotante con un dato real (nunca inventado): cuántos platos
+                        tiene la carta hoy. Es la capa que más se despega de la foto. */}
+                    {productos.length > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.85, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.9, ease: [0.4, 0, 0.2, 1] }}
+                        style={{ '--profundidad': '42px' } as React.CSSProperties}
+                        className="tarjeta-3d__capa absolute bottom-4 left-4 flex items-center gap-2.5 rounded-2xl bg-(--carta-superficie)/90 px-4 py-3 shadow-xl backdrop-blur-sm sm:bottom-6 sm:left-6"
+                      >
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--carta-acento) text-sm font-bold text-(--carta-acento-contraste)">
+                          {productos.length}
+                        </span>
+                        <span className="text-xs leading-tight font-semibold text-(--carta-texto)">
+                          platos
+                          <br />
+                          en la carta
+                        </span>
+                      </motion.div>
+                    )}
+                  </div>
+
+                  {fotosAcompanantes.length > 0 && (
+                    <div className="hidden flex-col gap-3 sm:col-span-1 sm:flex sm:gap-4">
+                      {fotosAcompanantes.map((foto, indice) => (
+                        <motion.div
+                          key={foto.url}
+                          initial={{ opacity: 0, scale: 0.94 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{
+                            duration: 0.5,
+                            delay: 0.55 + indice * 0.1,
+                            ease: [0.4, 0, 0.2, 1],
+                          }}
+                          // Las dos acompañantes flotan a alturas distintas entre sí y por
+                          // delante de la foto principal: es lo que separa el clúster en
+                          // planos en vez de dejarlo como un collage pegado.
+                          style={
+                            { '--profundidad': `${30 + indice * 22}px` } as React.CSSProperties
+                          }
+                          className="tarjeta-3d__capa flex-1 overflow-hidden rounded-2xl shadow-lg shadow-black/10"
+                        >
+                          <img
+                            src={foto.url}
+                            alt={foto.nombre}
+                            className="h-full w-full object-cover"
+                          />
+                        </motion.div>
+                      ))}
+                    </div>
                   )}
                 </div>
-
-                {fotosAcompanantes.length > 0 && (
-                  <div className="hidden flex-col gap-3 sm:col-span-1 sm:flex sm:gap-4">
-                    {fotosAcompanantes.map((foto, indice) => (
-                      <motion.div
-                        key={foto.url}
-                        initial={{ opacity: 0, scale: 0.94 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{
-                          duration: 0.5,
-                          delay: 0.55 + indice * 0.1,
-                          ease: [0.4, 0, 0.2, 1],
-                        }}
-                        className="flex-1 overflow-hidden rounded-2xl"
-                      >
-                        <img
-                          src={foto.url}
-                          alt={foto.nombre}
-                          className="h-full w-full object-cover"
-                        />
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           )}

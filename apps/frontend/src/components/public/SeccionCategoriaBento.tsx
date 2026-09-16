@@ -40,10 +40,13 @@ export function SeccionCategoriaBento({
       data-categoria-id={grupo.categoria.id}
       className="scroll-mt-40"
     >
-      <SeccionRevelada className="flex items-baseline gap-4 border-b border-(--carta-borde) pb-4">
+      {/* El número pasa del gris del borde al naranja de la carta: ordena las categorías y de
+          paso repite el acento de la página. Va en fila con el nombre, no detrás: montado
+          sobre él a este cuerpo de letra, "02" y "BEBIDAS" se leían pegados. */}
+      <SeccionRevelada className="flex items-center gap-4 border-b border-(--carta-borde) pb-4 sm:gap-5">
         <span
           aria-hidden="true"
-          className="text-4xl font-bold text-(--carta-borde) tabular-nums sm:text-5xl"
+          className="text-5xl font-bold text-(--carta-acento)/25 tabular-nums select-none sm:text-6xl"
         >
           {String(indice + 1).padStart(2, '0')}
         </span>

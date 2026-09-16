@@ -70,7 +70,7 @@ export async function listarStockConsolidado(): Promise<ItemStock[]> {
       almacen_id,
       insumo_id,
       producto_id,
-      SUM(CASE WHEN tipo IN ('inicial', 'compra', 'ajuste_entrada') THEN cantidad ELSE -cantidad END) AS stock
+      SUM(CASE WHEN tipo IN ('inicial', 'compra', 'ajuste_entrada', 'anulacion_venta') THEN cantidad ELSE -cantidad END) AS stock
     FROM existencias
     GROUP BY almacen_id, insumo_id, producto_id
   `);
@@ -147,6 +147,10 @@ export async function obtenerCostosNetos(): Promise<CostosNetos> {
      AND dc.insumo_id IS NOT DISTINCT FROM e.insumo_id
      AND dc.producto_id IS NOT DISTINCT FROM e.producto_id
     WHERE e.costo_unitario IS NOT NULL
+      -- No incluye 'anulacion_venta': es una entrada real (devuelve stock), pero no un evento
+      -- de costeo — no trae costo_unitario propio (ver anularSalidasVenta), así que igual
+      -- quedaría fuera del filtro de arriba. Se deja explícito para que la lista siga leyéndose
+      -- como "tipos de entrada con costo", no "todos los tipos de entrada".
       AND e.tipo IN ('inicial', 'compra', 'ajuste_entrada')
     ORDER BY e.insumo_id, e.producto_id, e.creado_en DESC
   `);
@@ -166,7 +170,7 @@ export async function calcularStock(
   item: { insumoId: string } | { productoId: string },
 ): Promise<number> {
   const resultado: Array<{ stock: string | null }> = await existenciaRepository.query(
-    `SELECT SUM(CASE WHEN tipo IN ('inicial', 'compra', 'ajuste_entrada') THEN cantidad ELSE -cantidad END) AS stock
+    `SELECT SUM(CASE WHEN tipo IN ('inicial', 'compra', 'ajuste_entrada', 'anulacion_venta') THEN cantidad ELSE -cantidad END) AS stock
      FROM existencias
      WHERE almacen_id = $1 AND ${'insumoId' in item ? 'insumo_id' : 'producto_id'} = $2`,
     [almacenId, 'insumoId' in item ? item.insumoId : item.productoId],
@@ -406,5 +410,41 @@ export async function anularEntradasCompra(
       observacion,
     });
     await repositorio.save(reversa);
+  }
+}
+
+/**
+ * Reversa el stock que se descontó al emitir una venta anulada — llamado desde
+ * `venta.service.ts: anularVenta`.
+ *
+ * Solo revierte movimientos `venta_directa`: los que existen únicamente porque esa venta se
+ * emitió (una línea sin pedido, o una línea de un pedido que nunca pasó por cocina). Un
+ * `consumo_cocina` **nunca** se revierte acá aunque tenga esta misma `venta_id` enlazada
+ * (`registrarConsumoVenta` los enlaza para trazabilidad): ese descuento ocurrió cuando el
+ * platillo físicamente se sirvió, antes de que existiera ningún comprobante — anular la
+ * venta típicamente corrige un error de cobro, no deshace que el cliente se comió el plato.
+ * Mismo criterio de "nunca se borra el original" que `anularEntradasCompra`.
+ */
+export async function anularSalidasVenta(
+  venta: Venta,
+  usuario: Usuario,
+  observacion = 'Reversa por anulación de venta',
+): Promise<void> {
+  const originales = await existenciaRepository.find({
+    where: { venta: { id: venta.id }, tipo: TipoMovimientoExistencia.VENTA_DIRECTA },
+    relations: { almacen: true, insumo: true, producto: true },
+  });
+  for (const original of originales) {
+    const reversa = existenciaRepository.create({
+      almacen: original.almacen,
+      insumo: original.insumo,
+      producto: original.producto,
+      tipo: TipoMovimientoExistencia.ANULACION_VENTA,
+      cantidad: original.cantidad,
+      venta,
+      usuario,
+      observacion,
+    });
+    await existenciaRepository.save(reversa);
   }
 }

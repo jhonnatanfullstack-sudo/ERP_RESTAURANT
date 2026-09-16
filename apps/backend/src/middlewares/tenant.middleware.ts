@@ -1,6 +1,7 @@
 import { AppDataSource } from '../database/data-source';
 import { ejecutarEnContexto } from '../database/tenant-context';
 import { logger } from '../utils/logger';
+import type { ContextoTenant } from '../database/tenant-context';
 import type { NextFunction, Request, Response } from 'express';
 
 /** Un error al cerrar la transacción no puede tumbar el proceso: la respuesta ya salió. */
@@ -52,19 +53,45 @@ export function transaccionPorPeticionMiddleware(
       return;
     }
 
+    const contexto: ContextoTenant = {
+      empresaId: null,
+      manager: queryRunner.manager,
+      queryRunner,
+      pendientesTrasConfirmar: [],
+    };
+
     let cerrada = false;
     async function cerrar(exitosa: boolean): Promise<void> {
       if (cerrada) return;
       cerrada = true;
+      let confirmada = false;
       try {
         if (queryRunner.isTransactionActive) {
-          if (exitosa) await queryRunner.commitTransaction();
-          else await queryRunner.rollbackTransaction();
+          if (exitosa) {
+            await queryRunner.commitTransaction();
+            confirmada = true;
+          } else {
+            await queryRunner.rollbackTransaction();
+          }
         }
       } catch (error) {
         registrarFallo(exitosa ? 'confirmar' : 'revertir', error);
       } finally {
         await queryRunner.release().catch((error) => registrarFallo('liberar', error));
+      }
+
+      // Recién acá es seguro avisar por WebSocket u otro canal en vivo: lo que se guardó ya
+      // es durable, no algo que un rollback pudiera hacer desaparecer. Ver
+      // `tenant-context.ts: alConfirmar`. Un fallo en una notificación individual no debe
+      // impedir que corran las demás ni afectar la respuesta, que ya está en camino.
+      if (confirmada) {
+        for (const pendiente of contexto.pendientesTrasConfirmar) {
+          try {
+            pendiente();
+          } catch (error) {
+            registrarFallo('ejecutar una notificación en vivo tras', error);
+          }
+        }
       }
     }
 
@@ -82,6 +109,6 @@ export function transaccionPorPeticionMiddleware(
     // transacción quedaría abierta reteniendo una conexión del pool.
     res.on('close', () => void cerrar(false));
 
-    ejecutarEnContexto({ empresaId: null, manager: queryRunner.manager, queryRunner }, next);
+    ejecutarEnContexto(contexto, next);
   })();
 }

@@ -178,8 +178,10 @@ export function Dashboard() {
     enabled: tienePermiso('pedidos.ver'),
   });
   const comandasQuery = useQuery({
-    queryKey: ['comandas'],
-    queryFn: comandasService.listarComandas,
+    // El widget de "cola de cocina" solo mira comandasEnCurso(...) (ni entregadas ni
+    // canceladas): pedir solo las activas trae exactamente lo mismo con menos datos.
+    queryKey: ['comandas', 'activas'],
+    queryFn: () => comandasService.listarComandas(true),
     enabled: tienePermiso('cocina.ver'),
   });
   const mesasQuery = useQuery({

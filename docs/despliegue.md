@@ -264,20 +264,14 @@ La aplicación usa rutas del lado del cliente (`/carta/:slug`, `/registro`, `/pl
 reescritura, **entrar directamente a una URL o recargar da 404** — y el caso más visible es
 justo el peor: el enlace de la carta que el restaurante comparte por WhatsApp.
 
-- **Vercel** — `vercel.json` en la raíz:
+**Ya están en el repositorio** (2026-09-16), no hay que crearlos:
 
-  ```json
-  { "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
-  ```
-
-- **Netlify** — `apps/frontend/public/_redirects`:
-
-  ```
-  /*  /index.html  200
-  ```
-
-- **Cloudflare Pages** — `apps/frontend/public/_redirects`, mismo contenido.
-- **Render Static** — regla de reescritura `/*` → `/index.html` en el panel.
+- **Vercel** — `vercel.json` en la raíz (también trae `buildCommand`/`outputDirectory`, así
+  que conectar el repo alcanza sin tocar nada en el panel).
+- **Netlify / Cloudflare Pages** — `apps/frontend/public/_redirects` (Vite lo copia a
+  `dist/_redirects` en cada build; verificado).
+- **Render Static** — no lee `_redirects`: hay que cargar la regla `/*` → `/index.html` a mano
+  en el panel (Settings → Redirects/Rewrites).
 
 ---
 
@@ -332,9 +326,10 @@ tomaron:
   guardar además una copia propia fuera del proveedor.
 - **Fotos en almacenamiento de objetos** si se quiere escalar a más de una instancia
   (sección 1.2, opción 2). No implementado.
-- **Pruebas del frontend.** El backend ya tiene 40 pruebas integrales (FASE 22,
-  `pnpm --filter @restaurant-erp/backend test`), pero el frontend no tiene ninguna. Antes de
-  desplegar con frecuencia conviene cubrir al menos el flujo de login y la carta pública.
+- **Pruebas del frontend, siguiente tramo** (ya no es "ninguna": desde 2026-09-16 hay 8
+  pruebas en 2 archivos — login y carta pública, `pnpm --filter @restaurant-erp/frontend
+test`). El backend tiene 161 pruebas integrales (`pnpm --filter @restaurant-erp/backend
+test`). Falta cubrir el resto de páginas administrativas del frontend.
 - **Envío de registros a un servicio externo.** La aplicación ya emite una línea JSON por
   evento con identificador de traza (`utils/logger.ts`), que cualquier panel de hosting sabe
   leer. Lo que falta es retenerlos más allá del reinicio del contenedor: ahí entra Sentry,

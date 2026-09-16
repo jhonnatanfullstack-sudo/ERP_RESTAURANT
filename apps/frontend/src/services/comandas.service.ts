@@ -7,8 +7,13 @@ export interface CrearComandaInput {
   notas?: string | null;
 }
 
-export async function listarComandas() {
-  const res = await api.get<ApiSuccess<Comanda[]>>('/api/comandas');
+/** `soloActivas` filtra en el servidor a pendiente/en_preparación/listo — lo que de verdad
+ * necesita el tablero en vivo, que sondea este endpoint cada pocos segundos (ver
+ * Cocina.tsx). Sin filtro trae también entregadas/canceladas, para la vista "Todas". */
+export async function listarComandas(soloActivas = false) {
+  const res = await api.get<ApiSuccess<Comanda[]>>('/api/comandas', {
+    params: soloActivas ? { activas: 'true' } : undefined,
+  });
   return res.data.data;
 }
 

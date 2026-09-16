@@ -9,11 +9,13 @@ import {
   Eye,
   Lock,
   Plus,
+  Printer,
   Unlock,
   Wallet,
 } from 'lucide-react';
 import * as cajaService from '../services/caja.service';
 import * as ventasService from '../services/ventas.service';
+import * as cobranzasService from '../services/cobranzas.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
@@ -27,7 +29,12 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { KpiCard } from '../components/ui/KpiCard';
 import { Panel } from '../components/ui/Panel';
 import { GraficoDona } from '../components/charts/GraficoDona';
-import { segmentosMedioPago } from '../utils/metricas';
+import {
+  CODIGO_MEDIO_PAGO_EFECTIVO,
+  pagosEfectivoEnPeriodo,
+  segmentosMedioPago,
+  ventasEnPeriodo,
+} from '../utils/metricas';
 import {
   formatearFechaHora,
   formatearHora,
@@ -42,12 +49,6 @@ import type {
 } from '../services/caja.service';
 import type { Caja as SesionCaja, EstadoCaja, TipoMovimientoCaja, Venta } from '../types/api';
 
-/** Código del medio de pago "Efectivo" (ver catálogo de Ventas) — el único que mueve el
- * efectivo físico de la caja. Mismo criterio que usa el backend al cerrar (caja.service.ts),
- * recalculado aquí en vivo solo para la vista previa: el número que realmente queda guardado
- * lo calcula y congela el backend en el momento del cierre. */
-const CODIGO_MEDIO_PAGO_EFECTIVO = 'efectivo';
-
 const ETIQUETA_ESTADO: Record<EstadoCaja, string> = { abierta: 'Abierta', cerrada: 'Cerrada' };
 const TONO_ESTADO: Record<EstadoCaja, 'exito' | 'neutral'> = {
   abierta: 'exito',
@@ -58,20 +59,6 @@ const ETIQUETA_TIPO_MOVIMIENTO: Record<TipoMovimientoCaja, string> = {
   ingreso: 'Ingreso',
   egreso: 'Egreso',
 };
-
-/** Ventas emitidas dentro del período de una sesión de caja (abierta o ya cerrada) — base
- * tanto para el estimado de efectivo como para el desglose por medio de pago (`segmentosMedioPago`,
- * ya usado por el Dashboard) que muestra cuánto entró en Yape, Plin, tarjeta o al crédito, no
- * solo en efectivo. */
-function ventasEnPeriodo(ventas: Venta[], desde: string, hasta: string | null): Venta[] {
-  const inicio = new Date(desde).getTime();
-  const fin = hasta ? new Date(hasta).getTime() : Date.now();
-  return ventas.filter((v) => {
-    if (v.estado !== 'emitida') return false;
-    const momento = new Date(v.creadoEn).getTime();
-    return momento >= inicio && momento <= fin;
-  });
-}
 
 function badgeDiferencia(diferencia: number | null) {
   if (diferencia === null) return <span className="text-zinc-400">—</span>;
@@ -291,7 +278,8 @@ function CerrarCajaModal({
           <p className="text-zinc-500">Efectivo esperado en caja</p>
           <p className="text-xl font-bold text-zinc-900">{formatearPrecio(efectivoEsperado)}</p>
           <p className="mt-1 text-xs text-zinc-400">
-            Apertura + ventas en efectivo del turno + ingresos − egresos manuales.
+            Apertura + ventas en efectivo + cobros de crédito en efectivo + ingresos − egresos
+            manuales.
           </p>
         </div>
 
@@ -366,6 +354,16 @@ function CajaDetalleModal({
     >
       {caja && (
         <div className="flex flex-col gap-4">
+          <div className="flex justify-end">
+            <Button
+              variante="secondary"
+              icono={<Printer className="h-4 w-4" />}
+              onClick={() => window.open(`/imprimir/caja/${caja.id}`, '_blank')}
+            >
+              Imprimir arqueo
+            </Button>
+          </div>
+
           <div className="grid grid-cols-2 gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm">
             <div>
               <p className="text-zinc-500">Abierta por</p>
@@ -487,6 +485,14 @@ export function Caja() {
     queryKey: ['ventas'],
     queryFn: () => ventasService.listarVentas(),
   });
+  // Mismo shape de queryKey que usa CuentasPorCobrar.tsx (comparten caché si esa pantalla
+  // también está mostrando "todas"). Se trae TODO (no solo lo pendiente): un cobro hecho en
+  // esta sesión cuenta para el arqueo aunque la venta haya quedado saldada y ya no aparezca
+  // en la lista de pendientes.
+  const cobranzasQuery = useQuery({
+    queryKey: ['cuentas-por-cobrar', false],
+    queryFn: () => cobranzasService.listarCuentasPorCobrar(false),
+  });
 
   const cajaActual = cajaActualQuery.data ?? null;
 
@@ -500,6 +506,12 @@ export function Caja() {
     .filter((v) => v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO)
     .reduce((suma, v) => suma + v.total, 0);
   const segmentosPagoSesion = segmentosMedioPago(ventasSesion);
+  // Cobros de deudas (ventas al crédito) pagados en efectivo durante la sesión: mismo criterio
+  // que `efectivoVentasTurno`, pero mirando `cobranzasQuery` en vez de `ventasQuery` — es
+  // dinero que entra al cajón por un pago, no por una venta al contado.
+  const pagosCreditoEfectivoTurno = cajaActual
+    ? pagosEfectivoEnPeriodo(cobranzasQuery.data ?? [], cajaActual.creadoEn, null)
+    : 0;
   const ingresosManuales =
     cajaActual?.movimientos
       .filter((m) => m.tipo === 'ingreso')
@@ -510,7 +522,12 @@ export function Caja() {
       .reduce((suma, m) => suma + m.monto, 0) ?? 0;
   const efectivoEsperadoAhora = cajaActual
     ? Math.round(
-        (cajaActual.montoApertura + efectivoVentasTurno + ingresosManuales - egresosManuales) * 100,
+        (cajaActual.montoApertura +
+          efectivoVentasTurno +
+          pagosCreditoEfectivoTurno +
+          ingresosManuales -
+          egresosManuales) *
+          100,
       ) / 100
     : 0;
 
@@ -523,21 +540,32 @@ export function Caja() {
             Apertura, cierre y movimientos de efectivo del turno
           </p>
         </div>
-        {cajaActual
-          ? tienePermiso('caja.cerrar') && (
-              <Button
-                variante="danger"
-                icono={<Lock className="h-4 w-4" />}
-                onClick={() => setModalCerrar(true)}
-              >
-                Cerrar caja
-              </Button>
-            )
-          : tienePermiso('caja.abrir') && (
-              <Button icono={<Unlock className="h-4 w-4" />} onClick={() => setModalAbrir(true)}>
-                Abrir caja
-              </Button>
-            )}
+        <div className="flex gap-2">
+          {cajaActual && (
+            <Button
+              variante="secondary"
+              icono={<Printer className="h-4 w-4" />}
+              onClick={() => window.open(`/imprimir/caja/${cajaActual.id}`, '_blank')}
+            >
+              Imprimir corte
+            </Button>
+          )}
+          {cajaActual
+            ? tienePermiso('caja.cerrar') && (
+                <Button
+                  variante="danger"
+                  icono={<Lock className="h-4 w-4" />}
+                  onClick={() => setModalCerrar(true)}
+                >
+                  Cerrar caja
+                </Button>
+              )
+            : tienePermiso('caja.abrir') && (
+                <Button icono={<Unlock className="h-4 w-4" />} onClick={() => setModalAbrir(true)}>
+                  Abrir caja
+                </Button>
+              )}
+        </div>
       </div>
 
       {cajaActualQuery.isLoading ? (

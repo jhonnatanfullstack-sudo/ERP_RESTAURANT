@@ -4,6 +4,7 @@ import { productoRepository } from '../productos/producto.repository';
 import { clienteRepository } from '../clientes/cliente.repository';
 import { reservaRepository } from '../reservas/reserva.repository';
 import { EstadoReserva } from '../reservas/reserva.entity';
+import { ventaRepository } from '../ventas/venta.repository';
 import { existeComandaActivaParaPedido } from '../cocina/comanda.service';
 import { crearNotificacion } from '../notificaciones/notificacion.service';
 import { TipoNotificacion } from '../notificaciones/notificacion.entity';
@@ -242,6 +243,46 @@ export async function crearPedidoPublico(dto: CrearPedidoPublicoDto): Promise<Pe
   return pedidoCompleto;
 }
 
+/**
+ * Reabre un pedido cerrado por error (ej. faltaba agregar un plato). Dos condiciones lo
+ * bloquean, cada una porque dejaría una inconsistencia real si se ignorara:
+ *
+ * 1. **Ya tiene una venta.** El comprobante es un snapshot de las líneas del pedido en el
+ *    momento de facturar (`venta.service.ts: construirDesdePedido`); si el pedido volviera a
+ *    `abierto` y alguien le agregara o quitara líneas, ese snapshot dejaría de coincidir con
+ *    lo que el pedido dice tener — la venta ya emitida es la fuente de verdad legal, no el
+ *    pedido.
+ * 2. **Su mesa ya tiene otro pedido abierto.** Cerrar deja la mesa "libre" en la vista
+ *    derivada de ocupación (`Mesas.tsx`), y nada impide que mientras tanto alguien haya
+ *    sentado otra mesa ahí y abierto un pedido nuevo. Reabrir el viejo sin este chequeo
+ *    rompería la regla de "un pedido abierto por mesa" que `crearPedido` sí garantiza.
+ */
+async function reabrirPedido(pedido: Pedido): Promise<void> {
+  const ventaExistente = await ventaRepository.findOneBy({ pedido: { id: pedido.id } });
+  if (ventaExistente) {
+    throw new HttpError(
+      409,
+      'Este pedido ya tiene una venta registrada: no se puede reabrir. Corrígelo con una Nota de Crédito o Débito.',
+    );
+  }
+
+  if (pedido.mesa) {
+    const otroAbierto = await pedidoRepository.findOneBy({
+      mesa: { id: pedido.mesa.id },
+      estado: EstadoPedido.ABIERTO,
+    });
+    if (otroAbierto) {
+      throw new HttpError(
+        409,
+        'La mesa de este pedido ya tiene otro pedido abierto: no se puede reabrir este.',
+      );
+    }
+  }
+
+  pedido.estado = EstadoPedido.ABIERTO;
+  pedido.fechaCierre = null;
+}
+
 export async function actualizarPedido(id: string, dto: ActualizarPedidoDto): Promise<Pedido> {
   const pedido = await obtenerPedido(id);
 
@@ -250,18 +291,25 @@ export async function actualizarPedido(id: string, dto: ActualizarPedidoDto): Pr
   }
 
   if (dto.estado !== undefined && dto.estado !== pedido.estado) {
-    if (dto.estado !== EstadoPedido.CERRADO || pedido.estado !== EstadoPedido.ABIERTO) {
+    if (dto.estado === EstadoPedido.CERRADO && pedido.estado === EstadoPedido.ABIERTO) {
+      const cantidadDetalles = await detallePedidoRepository.countBy({ pedido: { id } });
+      if (cantidadDetalles === 0) {
+        throw new HttpError(400, 'No se puede cerrar un pedido sin productos');
+      }
+      if (await existeComandaActivaParaPedido(id)) {
+        throw new HttpError(400, 'No se puede cerrar un pedido con comandas aún no entregadas');
+      }
+      pedido.estado = EstadoPedido.CERRADO;
+      pedido.fechaCierre = new Date();
+    } else if (dto.estado === EstadoPedido.ABIERTO && pedido.estado === EstadoPedido.CERRADO) {
+      // Reabrir corrige un cierre por error ("se cerró y faltaba agregar algo"). Dos
+      // guardas para que no quede una inconsistencia detrás:
+      await reabrirPedido(pedido);
+    } else {
+      // Un pedido `cancelado` nunca se reabre (a propósito: cancelar es intencional, no un
+      // error de un clic como cerrar), y ninguna otra combinación tiene sentido de negocio.
       throw new HttpError(400, 'Transición de estado no permitida');
     }
-    const cantidadDetalles = await detallePedidoRepository.countBy({ pedido: { id } });
-    if (cantidadDetalles === 0) {
-      throw new HttpError(400, 'No se puede cerrar un pedido sin productos');
-    }
-    if (await existeComandaActivaParaPedido(id)) {
-      throw new HttpError(400, 'No se puede cerrar un pedido con comandas aún no entregadas');
-    }
-    pedido.estado = EstadoPedido.CERRADO;
-    pedido.fechaCierre = new Date();
   }
 
   await pedidoRepository.save(pedido);
