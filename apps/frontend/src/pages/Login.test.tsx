@@ -51,4 +51,29 @@ describe('Login', () => {
 
     expect(await screen.findByText('Credenciales inválidas')).toBeInTheDocument();
   });
+
+  it('alterna entre ocultar y mostrar la contraseña escrita', async () => {
+    const usuario = userEvent.setup();
+    renderLogin();
+
+    const campo = screen.getByLabelText('Contraseña');
+    expect(campo).toHaveAttribute('type', 'password');
+
+    await usuario.click(screen.getByRole('button', { name: 'Mostrar contraseña' }));
+    expect(campo).toHaveAttribute('type', 'text');
+
+    await usuario.click(screen.getByRole('button', { name: 'Ocultar contraseña' }));
+    expect(campo).toHaveAttribute('type', 'password');
+  });
+
+  it('avisa cuando Bloq Mayús está activado al escribir la contraseña', async () => {
+    const usuario = userEvent.setup();
+    renderLogin();
+
+    const campo = screen.getByLabelText('Contraseña');
+    await usuario.click(campo);
+    await usuario.keyboard('{CapsLock}a');
+
+    expect(await screen.findByText('Bloq Mayús está activado')).toBeInTheDocument();
+  });
 });
