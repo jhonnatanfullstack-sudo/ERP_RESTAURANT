@@ -91,6 +91,11 @@ export class ComprobanteElectronico {
   @Column({ name: 'enviado_en', type: 'timestamptz', nullable: true })
   enviadoEn!: Date | null;
 
+  /** Qué OSE tramitó el envío (ej. `nubefact`) — informativo/auditoría, no gobierna nada en
+   * el código: el proveedor real se resuelve desde `ConfiguracionFacturacion` de la empresa. */
+  @Column({ name: 'ose_proveedor', type: 'varchar', length: 20, nullable: true })
+  oseProveedor!: string | null;
+
   @CreateDateColumn({ name: 'creado_en', type: 'timestamptz' })
   creadoEn!: Date;
 

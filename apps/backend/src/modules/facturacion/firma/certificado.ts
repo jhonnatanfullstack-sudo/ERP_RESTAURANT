@@ -6,19 +6,17 @@ export interface CertificadoDigital {
   clavePrivadaPem: string;
   /** Certificado X.509 en PEM, que se incrusta en la firma para que SUNAT pueda validarla. */
   certificadoPem: string;
+  /** Fecha de vencimiento del certificado, tal como viene en el propio X.509 — para poder
+   * avisar antes de que expire (FASE 28), sin tener que volver a parsear el PEM después. */
+  validoHasta: Date;
 }
 
 /**
- * Carga un certificado digital en formato PKCS#12 (`.pfx`/`.p12`), que es como lo entregan
+ * Extrae clave privada + certificado de un PKCS#12 (`.pfx`/`.p12`), que es como lo entregan
  * las entidades certificadoras acreditadas por INDECOPI y también SUNAT con su certificado
- * tributario gratuito.
- *
- * La ruta y la contraseña llegan por variables de entorno y nunca se guardan en el
- * repositorio: el `.pfx` es la identidad tributaria de la empresa y quien lo tenga puede
- * emitir comprobantes a su nombre.
+ * tributario gratuito. `contenido` va en codificación `binary` (1 byte = 1 carácter), no utf8.
  */
-export function cargarPkcs12(ruta: string, contrasena: string): CertificadoDigital {
-  const contenido = readFileSync(ruta, 'binary');
+function extraerDePkcs12(contenido: string, contrasena: string): CertificadoDigital {
   const asn1 = forge.asn1.fromDer(contenido);
   const p12 = forge.pkcs12.pkcs12FromAsn1(asn1, contrasena);
 
@@ -34,7 +32,29 @@ export function cargarPkcs12(ruta: string, contrasena: string): CertificadoDigit
   return {
     clavePrivadaPem: forge.pki.privateKeyToPem(clave),
     certificadoPem: forge.pki.certificateToPem(certificado),
+    validoHasta: certificado.validity.notAfter,
   };
+}
+
+/**
+ * Carga un certificado digital desde una ruta de archivo. La ruta y la contraseña llegan por
+ * variables de entorno y nunca se guardan en el repositorio: el `.pfx` es la identidad
+ * tributaria de quien lo usa y quien lo tenga puede emitir comprobantes a su nombre.
+ *
+ * Sirve para un despliegue de un solo certificado (pruebas locales); en producción
+ * multi-empresa cada empresa trae el suyo, ya en memoria — ver `cargarPkcs12DesdeBuffer`.
+ */
+export function cargarPkcs12(ruta: string, contrasena: string): CertificadoDigital {
+  return extraerDePkcs12(readFileSync(ruta, 'binary'), contrasena);
+}
+
+/**
+ * Igual que `cargarPkcs12`, pero a partir de un `Buffer` ya en memoria (el `.pfx` descifrado
+ * de `configuraciones_facturacion`, FASE 28) — nunca se escribe a disco: por eso el multi-tenant
+ * necesita esta variante en vez de reusar `cargarPkcs12` con un archivo temporal.
+ */
+export function cargarPkcs12DesdeBuffer(contenido: Buffer, contrasena: string): CertificadoDigital {
+  return extraerDePkcs12(contenido.toString('binary'), contrasena);
 }
 
 /**
@@ -69,5 +89,6 @@ export function generarCertificadoPruebas(ruc: string, razonSocial: string): Cer
   return {
     clavePrivadaPem: forge.pki.privateKeyToPem(par.privateKey),
     certificadoPem: forge.pki.certificateToPem(certificado),
+    validoHasta: certificado.validity.notAfter,
   };
 }
