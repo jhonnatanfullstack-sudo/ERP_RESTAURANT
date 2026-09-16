@@ -7,6 +7,7 @@ import {
   Flame,
   Printer,
   Timer,
+  Undo2,
   Utensils,
   Volume2,
   VolumeX,
@@ -48,6 +49,20 @@ const ACCION_SIGUIENTE: Partial<
   en_preparacion: { estado: 'listo', etiqueta: 'Marcar listo' },
   listo: { estado: 'entregado', etiqueta: 'Entregar' },
 };
+
+/** Un paso atrás, para corregir un toque de más — mismo límite que el backend
+ * (`comanda.service.ts: ESTADO_ANTERIOR`): no llega hasta "entregado", porque ahí ya se
+ * descontó el insumo de la receta. */
+const ACCION_ANTERIOR: Partial<Record<EstadoComanda, { estado: EstadoComanda; etiqueta: string }>> =
+  {
+    en_preparacion: { estado: 'pendiente', etiqueta: 'Volver a "En cola"' },
+    listo: { estado: 'en_preparacion', etiqueta: 'Volver a "Preparando"' },
+  };
+
+/** Desde qué estados todavía se puede cancelar — mismo límite que el backend
+ * (`comanda.service.ts: ESTADOS_CANCELABLES`): antes de "listo" no se descontó ningún
+ * insumo, así que cancelar ahí no descuadra el inventario. */
+const ESTADOS_CANCELABLES: EstadoComanda[] = ['pendiente', 'en_preparacion'];
 
 /** Las tres columnas en vivo del tablero. Mismos colores que el resumen de cocina del
  * Dashboard (`ESTADOS_COCINA`), para que un mismo estado se lea igual en toda la app. */
@@ -107,6 +122,8 @@ function TarjetaComanda({
   onCancelar: () => void;
 }) {
   const accion = ACCION_SIGUIENTE[comanda.estado];
+  const accionAnterior = ACCION_ANTERIOR[comanda.estado];
+  const puedeCancelarAqui = ESTADOS_CANCELABLES.includes(comanda.estado) && puedeCancelar;
   const minutos = minutosDesde(comanda.creadoEn, ahora);
   const urgente = comanda.estado !== 'listo' && minutos >= MINUTOS_URGENTE;
   const atencion = comanda.estado !== 'listo' && !urgente && minutos >= MINUTOS_ATENCION;
@@ -166,8 +183,20 @@ function TarjetaComanda({
         ))}
       </ul>
 
-      {(accion || (comanda.estado === 'pendiente' && puedeCancelar)) && (
+      {(accion || accionAnterior || puedeCancelarAqui) && (
         <div className="mt-1 flex items-center gap-2 border-t border-zinc-100 pt-3">
+          {accionAnterior && puedeAvanzar && (
+            <button
+              type="button"
+              title={accionAnterior.etiqueta}
+              aria-label={accionAnterior.etiqueta}
+              onClick={() => onAvanzar(accionAnterior.estado)}
+              disabled={avanzando}
+              className="rounded-lg border border-zinc-200 p-2.5 text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Undo2 className="h-4 w-4" />
+            </button>
+          )}
           {accion && puedeAvanzar && (
             <Button
               icono={
@@ -184,7 +213,7 @@ function TarjetaComanda({
               {accion.etiqueta}
             </Button>
           )}
-          {comanda.estado === 'pendiente' && puedeCancelar && (
+          {puedeCancelarAqui && (
             <Button
               variante="secondary"
               icono={<XCircle className="h-4 w-4" />}
@@ -233,12 +262,24 @@ export function Cocina() {
     staleTime: 10 * 60 * 1000,
   });
 
+  // Solo las comandas activas (pendiente/en_preparación/listo): es lo único que necesita el
+  // tablero y las alertas de sonido, y es lo que sondea cada pocos segundos para siempre — sin
+  // filtrar, cada sondeo traía la historia COMPLETA de comandas del restaurante (meses de
+  // entregadas y canceladas), cada vez más pesado con cada día que pasa.
   const comandasQuery = useQuery({
-    queryKey: ['comandas'],
-    queryFn: comandasService.listarComandas,
+    queryKey: ['comandas', 'activas'],
+    queryFn: () => comandasService.listarComandas(true),
     // Cada restaurante define su propio ritmo en Configuración (FASE 21): antes era un
     // valor fijo de 8 segundos para todos.
     refetchInterval: (configuracionQuery.data?.segundosRefrescoCocina ?? 8) * 1000,
+  });
+
+  // La historia completa (para "Todas") solo se pide cuando alguien la está mirando, y no
+  // entra al sondeo constante: es una vista de consulta, no el tablero de trabajo.
+  const historialQuery = useQuery({
+    queryKey: ['comandas', 'todas'],
+    queryFn: () => comandasService.listarComandas(false),
+    enabled: filtro === 'todas',
   });
 
   // Alerta sonora ante comandas nuevas o que acaban de quedar listas — para que cocina no
@@ -286,10 +327,13 @@ export function Cocina() {
 
   const comandas = comandasQuery.data ?? [];
   // En "Todas" las entregadas/canceladas no entran al tablero de columnas — son historial, no
-  // trabajo pendiente — se listan aparte, más discretas.
+  // trabajo pendiente — se listan aparte, más discretas. Viene de `historialQuery` (la
+  // historia completa), no de `comandas` (que en este momento solo trae las activas).
   const historial =
     filtro === 'todas'
-      ? comandas.filter((c) => c.estado === 'entregado' || c.estado === 'cancelada')
+      ? (historialQuery.data ?? []).filter(
+          (c) => c.estado === 'entregado' || c.estado === 'cancelada',
+        )
       : [];
 
   return (

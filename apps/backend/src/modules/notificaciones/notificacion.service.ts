@@ -1,5 +1,5 @@
 import { HttpError } from '../../utils/http-error';
-import { empresaIdActual } from '../../database/tenant-context';
+import { alConfirmar, empresaIdActual } from '../../database/tenant-context';
 import { emitirAEmpresa } from '../../realtime/socket';
 import { notificacionRepository } from './notificacion.repository';
 import { Notificacion, TipoNotificacion } from './notificacion.entity';
@@ -33,7 +33,10 @@ export async function crearNotificacion(datos: DatosNotificacion): Promise<Notif
   });
   const guardada = await notificacionRepository.save(notificacion);
 
-  emitirAEmpresa(empresaIdActual(), 'notificacion:nueva', guardada);
+  // Encolado con `alConfirmar` (ver `tenant-context.ts`) para no avisar por WebSocket de una
+  // fila que un error más adelante en la misma petición podría revertir con un rollback.
+  const empresaId = empresaIdActual();
+  alConfirmar(() => emitirAEmpresa(empresaId, 'notificacion:nueva', guardada));
 
   return guardada;
 }
