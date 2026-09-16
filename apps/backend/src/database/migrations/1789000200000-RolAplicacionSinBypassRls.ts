@@ -46,11 +46,21 @@ export class RolAplicacionSinBypassRls1789000200000 implements MigrationInterfac
       $$;
     `);
 
+    // Sin `NOSUPERUSER`: tocar ese atributo específico exige que quien ejecuta el ALTER sea
+    // ya superusuario, y en cualquier Postgres gestionado real (Neon, Supabase, RDS...) el
+    // rol dueño con el que corren las migraciones NO lo es — solo tiene CREATEROLE. El rol
+    // ya nace `NOSUPERUSER` (el `CREATE ROLE ... LOGIN` de arriba no pide `SUPERUSER`, y ese
+    // es el valor por defecto de Postgres), así que la cláusula era redundante en local
+    // (Docker, donde el dueño sí es superusuario) y solo rompía en producción. Verificado
+    // contra un Neon real: sin este cambio, la migración fallaba con "permission denied to
+    // alter role" / "Only roles with the SUPERUSER attribute may change the SUPERUSER
+    // attribute" y dejaba el aislamiento entre empresas sin activar.
+    //
     // `format('%L')` cita la contraseña como literal SQL de forma segura: en un `ALTER ROLE`
     // no se pueden usar parámetros ($1), así que se arma la sentencia en la propia base en
     // vez de concatenarla en JavaScript.
     const [{ sentencia }]: Array<{ sentencia: string }> = await queryRunner.query(
-      `SELECT format('ALTER ROLE %I WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD %L', $1::text, $2::text) AS sentencia`,
+      `SELECT format('ALTER ROLE %I WITH LOGIN NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD %L', $1::text, $2::text) AS sentencia`,
       [ROL_APLICACION, password],
     );
     await queryRunner.query(sentencia);
