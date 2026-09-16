@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { CalendarClock, ChefHat, Coins, Share2, UtensilsCrossed } from 'lucide-react';
+import { CalendarClock, ChefHat, Coins, Gift, QrCode, Share2, UtensilsCrossed } from 'lucide-react';
 import * as configuracionService from '../services/configuracion.service';
 import { useAuth } from '../context/AuthContext';
 import { Panel } from '../components/ui/Panel';
@@ -12,7 +12,76 @@ import { Checkbox } from '../components/ui/Checkbox';
 import { Spinner } from '../components/ui/Spinner';
 import { EmptyState } from '../components/ui/EmptyState';
 import { mensajeError } from '../utils/errores';
+import { urlImagen } from '../utils/formato';
 import type { ConfiguracionRestaurante } from '../types/api';
+
+/** Un slot de QR de cobro (Yape o Plin): la miniatura si ya hay uno subido, y el botón para
+ * subir/reemplazarlo. Mismo patrón que la foto de un producto (`Productos.tsx`), pero sin
+ * modal: esta página edita todo en el sitio. */
+function SlotQrPago({
+  medio,
+  etiqueta,
+  url,
+  puedeEditar,
+}: {
+  medio: 'yape' | 'plin';
+  etiqueta: string;
+  url: string | null;
+  puedeEditar: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const subirMutation = useMutation({
+    mutationFn: (archivo: File) => configuracionService.subirQrPago(medio, archivo),
+    onSuccess: (datos) => {
+      queryClient.setQueryData(['configuracion'], datos);
+    },
+  });
+
+  return (
+    <div className="flex items-center gap-4">
+      <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-zinc-100">
+        {urlImagen(url) ? (
+          <img
+            src={urlImagen(url)!}
+            alt={`QR de cobro ${etiqueta}`}
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <QrCode className="h-7 w-7 text-zinc-300" strokeWidth={1.25} />
+        )}
+      </div>
+      <div>
+        <p className="text-sm font-medium text-zinc-700">{etiqueta}</p>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const archivo = e.target.files?.[0];
+            if (archivo) subirMutation.mutate(archivo);
+            e.target.value = '';
+          }}
+        />
+        <Button
+          type="button"
+          variante="secondary"
+          disabled={!puedeEditar || subirMutation.isPending}
+          onClick={() => inputRef.current?.click()}
+        >
+          {subirMutation.isPending ? 'Subiendo…' : url ? 'Cambiar QR' : 'Subir QR'}
+        </Button>
+        {subirMutation.isError && (
+          <p className="mt-1 text-xs text-red-600">
+            {mensajeError(subirMutation.error, 'No se pudo subir el QR')}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * Parámetros operativos del restaurante (FASE 21).
@@ -198,6 +267,51 @@ export function Configuracion() {
         </Panel>
 
         <Panel
+          titulo="Fidelización"
+          descripcion="Puntos que gana un cliente identificado en cada venta"
+          icono={Gift}
+        >
+          <div className="flex flex-col gap-4">
+            <Checkbox
+              label="Programa de fidelización activo"
+              ayuda="Con esto apagado, las ventas no acumulan puntos aunque tengan cliente"
+              disabled={!puedeEditar}
+              {...form.register('fidelizacionActiva')}
+            />
+            <Input
+              label="Soles gastados por cada punto"
+              type="number"
+              step="0.01"
+              ayuda="Ej. 10 = el cliente gana 1 punto por cada S/10 de su compra"
+              disabled={!puedeEditar}
+              error={form.formState.errors.solesPorPunto?.message}
+              {...form.register('solesPorPunto', {
+                valueAsNumber: true,
+                required: 'Indica los soles por punto',
+                min: { value: 1, message: 'Mínimo S/1' },
+                max: { value: 1000, message: 'Máximo S/1000' },
+              })}
+            />
+            <Input
+              label="Valor de un punto al canjear (S/)"
+              type="number"
+              step="0.01"
+              ayuda="No puede superar lo que cuesta ganarlo, o el programa da pérdida"
+              disabled={!puedeEditar}
+              error={form.formState.errors.valorCanjePunto?.message}
+              {...form.register('valorCanjePunto', {
+                valueAsNumber: true,
+                required: 'Indica el valor de canje',
+                min: { value: 0.01, message: 'Mínimo S/0.01' },
+                validate: (valor) =>
+                  valor <= form.getValues('solesPorPunto') ||
+                  'No puede superar los soles por punto',
+              })}
+            />
+          </div>
+        </Panel>
+
+        <Panel
           titulo="Carta pública"
           descripcion="Lo que ve un cliente al abrir tu carta"
           icono={ChefHat}
@@ -222,6 +336,31 @@ export function Configuracion() {
               disabled={!puedeEditar}
               {...form.register('aceptaPedidosWhatsapp')}
             />
+          </div>
+        </Panel>
+
+        <Panel
+          titulo="Pagos digitales"
+          descripcion="El QR que muestras en caja para cobrar con Yape o Plin"
+          icono={QrCode}
+        >
+          <div className="flex flex-col gap-5">
+            <SlotQrPago
+              medio="yape"
+              etiqueta="Yape"
+              url={configuracionQuery.data?.qrPagoYape ?? null}
+              puedeEditar={puedeEditar}
+            />
+            <SlotQrPago
+              medio="plin"
+              etiqueta="Plin"
+              url={configuracionQuery.data?.qrPagoPlin ?? null}
+              puedeEditar={puedeEditar}
+            />
+            <p className="text-xs text-zinc-500">
+              Sube una foto del QR que te muestra tu propia app de Yape o Plin (Cobrar → Mostrar
+              QR). Es estático: al cobrar, el cajero lo exhibe junto con el monto a cobrar.
+            </p>
           </div>
         </Panel>
 

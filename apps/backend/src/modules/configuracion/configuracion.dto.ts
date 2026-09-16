@@ -40,6 +40,13 @@ export const actualizarConfiguracionSchema = z
     facebookUrl: urlOpcional,
     instagramUrl: urlOpcional,
     tiktokUrl: urlOpcional,
+    fidelizacionActiva: z.boolean().optional(),
+    // Menos de S/1 por punto regalaría demasiado rápido; por encima de S/1000 el programa
+    // prácticamente nunca da puntos.
+    solesPorPunto: z.coerce.number().min(1).max(1000).optional(),
+    // El valor de canje no puede superar lo que costó ganarlo, o el restaurante perdería
+    // dinero en cada punto acumulado.
+    valorCanjePunto: z.coerce.number().min(0.01).max(1000).optional(),
   })
   // El umbral crítico tiene que estar por encima del objetivo, o el semáforo de `/costos`
   // quedaría sin franja ámbar y marcaría en rojo platos que están dentro de lo esperado.
@@ -51,6 +58,20 @@ export const actualizarConfiguracionSchema = z
     {
       message: 'El food cost crítico debe ser mayor que el objetivo',
       path: ['foodCostCritico'],
+    },
+  )
+  // El valor de canje de un punto no puede superar lo que costó ganarlo (soles por punto),
+  // o cada punto acumulado le costaría más al restaurante de lo que valió la venta que lo
+  // generó. Solo se valida cuando ambos vienen juntos en la misma actualización, igual que
+  // el food cost de arriba.
+  .refine(
+    (datos) =>
+      datos.solesPorPunto === undefined ||
+      datos.valorCanjePunto === undefined ||
+      datos.valorCanjePunto <= datos.solesPorPunto,
+    {
+      message: 'El valor de canje no puede superar lo que cuesta ganar un punto',
+      path: ['valorCanjePunto'],
     },
   );
 

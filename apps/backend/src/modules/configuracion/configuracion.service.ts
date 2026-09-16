@@ -1,4 +1,7 @@
+import { unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 import { empresaIdActual } from '../../database/tenant-context';
+import { UPLOADS_DIR } from '../../config/uploads';
 import { configuracionRepository } from './configuracion.repository';
 import type { ActualizarConfiguracionDto } from './configuracion.dto';
 import type { Configuracion } from './configuracion.entity';
@@ -15,6 +18,11 @@ export interface ConfiguracionResuelta {
   facebookUrl: string | null;
   instagramUrl: string | null;
   tiktokUrl: string | null;
+  qrPagoYape: string | null;
+  qrPagoPlin: string | null;
+  fidelizacionActiva: boolean;
+  solesPorPunto: number;
+  valorCanjePunto: number;
 }
 
 /** Valores por defecto. Son los mismos que estaban escritos en el código antes de FASE 21,
@@ -31,6 +39,11 @@ export const CONFIGURACION_POR_DEFECTO: ConfiguracionResuelta = {
   facebookUrl: null,
   instagramUrl: null,
   tiktokUrl: null,
+  qrPagoYape: null,
+  qrPagoPlin: null,
+  fidelizacionActiva: false,
+  solesPorPunto: 10,
+  valorCanjePunto: 0.1,
 };
 
 function aResuelta(configuracion: Configuracion | null): ConfiguracionResuelta {
@@ -47,6 +60,11 @@ function aResuelta(configuracion: Configuracion | null): ConfiguracionResuelta {
     facebookUrl: configuracion.facebookUrl,
     instagramUrl: configuracion.instagramUrl,
     tiktokUrl: configuracion.tiktokUrl,
+    qrPagoYape: configuracion.qrPagoYape,
+    qrPagoPlin: configuracion.qrPagoPlin,
+    fidelizacionActiva: configuracion.fidelizacionActiva,
+    solesPorPunto: configuracion.solesPorPunto,
+    valorCanjePunto: configuracion.valorCanjePunto,
   };
 }
 
@@ -106,4 +124,34 @@ export async function obtenerConfiguracionPublica(): Promise<{
     instagramUrl,
     tiktokUrl,
   };
+}
+
+export type MedioQrPago = 'yape' | 'plin';
+
+async function eliminarArchivoQr(url: string | null): Promise<void> {
+  if (!url) return;
+  const nombreArchivo = url.split('/').pop();
+  if (!nombreArchivo) return;
+  await unlink(join(UPLOADS_DIR, 'qr-pago', nombreArchivo)).catch(() => undefined);
+}
+
+/** Guarda el QR estático de cobro de Yape o Plin — el que la propia app le muestra al
+ * restaurante para cobrar, no uno generado por este sistema (eso exigiría una afiliación de
+ * comercio con credenciales que no tenemos). Se exhibe en caja al elegir ese medio de pago. */
+export async function actualizarQrPago(
+  medio: MedioQrPago,
+  archivo: Express.Multer.File,
+): Promise<ConfiguracionResuelta> {
+  const empresaId = empresaIdActual();
+  const existente = await configuracionRepository.findOneBy({ empresa: { id: empresaId } });
+  const url = `/uploads/qr-pago/${archivo.filename}`;
+
+  await eliminarArchivoQr(existente ? (medio === 'yape' ? existente.qrPagoYape : existente.qrPagoPlin) : null);
+
+  const cambios = medio === 'yape' ? { qrPagoYape: url } : { qrPagoPlin: url };
+  const configuracion = existente
+    ? configuracionRepository.merge(existente, cambios)
+    : configuracionRepository.create({ ...CONFIGURACION_POR_DEFECTO, ...cambios });
+
+  return aResuelta(await configuracionRepository.save(configuracion));
 }

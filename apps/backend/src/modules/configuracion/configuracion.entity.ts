@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Empresa } from '../empresa/empresa.entity';
+import { numericTransformer } from '../../utils/numeric-transformer';
 
 /**
  * Parámetros operativos del restaurante (FASE 21).
@@ -90,6 +91,46 @@ export class Configuracion {
 
   @Column({ name: 'tiktok_url', type: 'varchar', length: 255, nullable: true })
   tiktokUrl!: string | null;
+
+  // --- Pagos digitales -----------------------------------------------------------------
+  // QR estático de cobro: el mismo que la app de Yape/Plin le muestra al restaurante para
+  // cobrar (no uno generado por este sistema — eso exigiría una afiliación de comercio con
+  // credenciales que el sistema no tiene). Se exhibe en caja al elegir ese medio de pago.
+
+  @Column({ name: 'qr_pago_yape', type: 'varchar', length: 255, nullable: true })
+  qrPagoYape!: string | null;
+
+  @Column({ name: 'qr_pago_plin', type: 'varchar', length: 255, nullable: true })
+  qrPagoPlin!: string | null;
+
+  // --- Fidelización --------------------------------------------------------------------
+
+  /** Si está apagado, las ventas no acumulan puntos aunque tengan cliente — el restaurante
+   * puede tener el programa configurado y decidir activarlo recién cuando esté listo. */
+  @Column({ name: 'fidelizacion_activa', type: 'boolean', default: false })
+  fidelizacionActiva!: boolean;
+
+  /** Cuánto hay que gastar (en soles, sobre `venta.total`) para ganar 1 punto. */
+  @Column({
+    name: 'soles_por_punto',
+    type: 'numeric',
+    precision: 10,
+    scale: 2,
+    default: 10,
+    transformer: numericTransformer,
+  })
+  solesPorPunto!: number;
+
+  /** Cuánto vale 1 punto (en soles) al canjearlo. */
+  @Column({
+    name: 'valor_canje_punto',
+    type: 'numeric',
+    precision: 10,
+    scale: 2,
+    default: 0.1,
+    transformer: numericTransformer,
+  })
+  valorCanjePunto!: number;
 
   @CreateDateColumn({ name: 'creado_en', type: 'timestamptz' })
   creadoEn!: Date;
