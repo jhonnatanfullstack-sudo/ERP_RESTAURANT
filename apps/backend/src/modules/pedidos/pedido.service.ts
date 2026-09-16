@@ -5,14 +5,17 @@ import { clienteRepository } from '../clientes/cliente.repository';
 import { reservaRepository } from '../reservas/reserva.repository';
 import { EstadoReserva } from '../reservas/reserva.entity';
 import { existeComandaActivaParaPedido } from '../cocina/comanda.service';
+import { crearNotificacion } from '../notificaciones/notificacion.service';
+import { TipoNotificacion } from '../notificaciones/notificacion.entity';
 import { detallePedidoRepository, pedidoRepository } from './pedido.repository';
-import { EstadoPedido, Pedido } from './pedido.entity';
+import { CanalOrigenPedido, EstadoPedido, Pedido } from './pedido.entity';
 import { DetallePedido } from './detalle-pedido.entity';
 import type {
   ActualizarDetalleDto,
   ActualizarPedidoDto,
   AgregarDetalleDto,
   CrearPedidoDto,
+  CrearPedidoPublicoDto,
 } from './pedido.dto';
 import type { Mesa } from '../mesas/mesa.entity';
 import type { Producto } from '../productos/producto.entity';
@@ -155,6 +158,88 @@ export async function crearPedido(dto: CrearPedidoDto): Promise<Pedido> {
   const pedido = pedidoRepository.create({ mesa, cliente, notas: dto.notas ?? null });
   const guardado = await pedidoRepository.save(pedido);
   return obtenerPedido(guardado.id);
+}
+
+/**
+ * Pedido que arma el propio cliente desde la carta pública (autopedido en mesa, delivery o
+ * recojo), sin autenticarse — ver `carta-publica.controller.ts`. Queda tan "abierto" como uno
+ * de salón: un mesero lo revisa y recién ahí lo envía a cocina (`POST /api/comandas`, que
+ * sigue exigiendo sesión), así que un aluvión de autopedidos falsos no llega solo a la cocina.
+ *
+ * En autopedido, si la mesa ya tiene un pedido abierto (alguien pidió antes en la misma
+ * sesión de mesa), las líneas nuevas se agregan a ESE pedido en vez de fallar con "la mesa ya
+ * tiene un pedido abierto": es el caso normal de "pedir algo más" a mitad de la comida, no un
+ * conflicto. Delivery/recojo, al no tener mesa, siempre crean un pedido nuevo.
+ */
+const ETIQUETA_CANAL_ORIGEN: Record<CanalOrigenPedido, string> = {
+  [CanalOrigenPedido.SALON]: 'Salón',
+  [CanalOrigenPedido.AUTOPEDIDO]: 'Autopedido',
+  [CanalOrigenPedido.DELIVERY]: 'Delivery',
+  [CanalOrigenPedido.RECOJO]: 'Recojo',
+};
+
+export async function crearPedidoPublico(dto: CrearPedidoPublicoDto): Promise<Pedido> {
+  let pedido: Pedido;
+  // Solo se avisa al equipo cuando nace un pedido de verdad: agregar un plato más a un
+  // autopedido que ya estaba abierto es "pedir algo más", no una orden nueva que alguien deba
+  // notar y atender (ver el comentario grande más abajo sobre por qué se reusa el abierto).
+  let esPedidoNuevo = true;
+
+  if (dto.canalOrigen === CanalOrigenPedido.AUTOPEDIDO) {
+    const mesa = await resolverMesa(dto.mesaId!);
+    const abierto = await pedidoRepository.findOneBy({
+      mesa: { id: mesa.id },
+      estado: EstadoPedido.ABIERTO,
+    });
+    esPedidoNuevo = !abierto;
+    pedido =
+      abierto ??
+      (await pedidoRepository.save(
+        pedidoRepository.create({
+          mesa,
+          canalOrigen: dto.canalOrigen,
+          contactoNombre: dto.contactoNombre ?? null,
+          medioPagoPreferido: dto.medioPagoPreferido ?? null,
+          vueltoPara: dto.vueltoPara ?? null,
+          notas: dto.notas ?? null,
+        }),
+      ));
+  } else {
+    pedido = await pedidoRepository.save(
+      pedidoRepository.create({
+        mesa: null,
+        canalOrigen: dto.canalOrigen,
+        contactoNombre: dto.contactoNombre ?? null,
+        contactoTelefono: dto.contactoTelefono ?? null,
+        direccionEntrega:
+          dto.canalOrigen === CanalOrigenPedido.DELIVERY ? (dto.direccionEntrega ?? null) : null,
+        medioPagoPreferido: dto.medioPagoPreferido ?? null,
+        vueltoPara: dto.vueltoPara ?? null,
+        notas: dto.notas ?? null,
+      }),
+    );
+  }
+
+  for (const linea of dto.detalles) {
+    await agregarDetalle(pedido.id, linea);
+  }
+
+  const pedidoCompleto = await obtenerPedido(pedido.id);
+
+  if (esPedidoNuevo) {
+    const origen = pedidoCompleto.mesa
+      ? `${pedidoCompleto.mesa.salon.nombre} — Mesa ${pedidoCompleto.mesa.numero}`
+      : ETIQUETA_CANAL_ORIGEN[dto.canalOrigen];
+    await crearNotificacion({
+      tipo: TipoNotificacion.PEDIDO_NUEVO,
+      titulo: `Nuevo pedido — ${ETIQUETA_CANAL_ORIGEN[dto.canalOrigen]}`,
+      mensaje: origen,
+      entidadTipo: 'pedido',
+      entidadId: pedidoCompleto.id,
+    });
+  }
+
+  return pedidoCompleto;
 }
 
 export async function actualizarPedido(id: string, dto: ActualizarPedidoDto): Promise<Pedido> {

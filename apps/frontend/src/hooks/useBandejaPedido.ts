@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { DatosEntrega, ModoEntrega } from '../utils/whatsapp';
 
 const CLAVE_ALMACENAMIENTO = 'restaurant-erp:carta-bandeja';
@@ -12,7 +12,13 @@ export interface ItemBandeja {
   nota?: string;
 }
 
-const ENTREGA_VACIA: DatosEntrega = { modo: 'recojo', nombre: '', direccion: '', referencia: '' };
+const ENTREGA_VACIA: DatosEntrega = {
+  modo: 'recojo',
+  nombre: '',
+  direccion: '',
+  referencia: '',
+  montoEfectivo: '',
+};
 
 function leerAlmacenamiento(): ItemBandeja[] {
   try {
@@ -43,11 +49,16 @@ function leerEntrega(): DatosEntrega {
     if (typeof datos !== 'object' || datos === null) return ENTREGA_VACIA;
     const modo: ModoEntrega = datos.modo === 'delivery' ? 'delivery' : 'recojo';
     const texto = (valor: unknown) => (typeof valor === 'string' ? valor : '');
+    const medioPagoValido = ['efectivo', 'yape', 'plin', 'tarjeta'].includes(
+      datos.medioPago as string,
+    );
     return {
       modo,
       nombre: texto(datos.nombre),
       direccion: texto(datos.direccion),
       referencia: texto(datos.referencia),
+      medioPago: medioPagoValido ? datos.medioPago : undefined,
+      montoEfectivo: texto(datos.montoEfectivo),
     };
   } catch {
     return ENTREGA_VACIA;
@@ -63,10 +74,12 @@ function guardar(clave: string, valor: unknown) {
 }
 
 /**
- * "Mi pedido" de la carta pública: una selección informal que el cliente arma para enviar
- * por WhatsApp — nunca crea un `Pedido` real del sistema (eso requiere una mesa/mesero y
- * pasar por cocina). Se persiste en `localStorage` (por navegador, nunca llega a Claude ni
- * a otros visitantes) para que sobreviva un refresco de página mientras el cliente decide.
+ * "Mi pedido" de la carta pública: la selección que el cliente arma antes de enviarla. Con
+ * `entrega.modo` en `mesa`, `delivery` o `recojo` se puede enviar como un `Pedido` real del
+ * sistema (`pedidos.service.ts: crearPedidoPublico`), que cae en la cola normal del staff a la
+ * espera de que lo confirme y lo pase a cocina; WhatsApp sigue disponible como alternativa en
+ * recojo/delivery. Se persiste en `localStorage` (por navegador, nunca llega a Claude ni a
+ * otros visitantes) para que sobreviva un refresco de página mientras el cliente decide.
  *
  * Guarda también cómo quiere recibirlo (recojo o delivery, a nombre de quién, dirección):
  * son los datos que quien atiende el chat iba a tener que preguntar de todas formas.
@@ -115,9 +128,12 @@ export function useBandejaPedido() {
     );
   }
 
-  function cambiarEntrega(cambios: Partial<DatosEntrega>) {
+  // Estable entre renders (a diferencia del resto de funciones de este hook): la usa un
+  // `useEffect` en `Carta.tsx` para fijar la mesa apenas se resuelve el QR, y necesita una
+  // identidad fija para no re-disparar ese efecto en cada render.
+  const cambiarEntrega = useCallback((cambios: Partial<DatosEntrega>) => {
     setEntrega((previo) => ({ ...previo, ...cambios }));
-  }
+  }, []);
 
   function quitar(productoId: string) {
     setItems((previo) => previo.filter((item) => item.productoId !== productoId));

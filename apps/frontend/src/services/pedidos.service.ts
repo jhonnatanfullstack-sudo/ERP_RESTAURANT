@@ -1,5 +1,12 @@
 import { api } from './api';
-import type { ApiSuccess, DetallePedido, EstadoPedido, Pedido } from '../types/api';
+import type {
+  ApiSuccess,
+  CanalOrigenPedido,
+  DetallePedido,
+  EstadoPedido,
+  MedioPagoPreferido,
+  Pedido,
+} from '../types/api';
 
 export interface CrearPedidoInput {
   /** Sin mesaId el pedido es "para llevar". */
@@ -67,4 +74,29 @@ export async function actualizarDetalle(
 
 export async function eliminarDetalle(pedidoId: string, detalleId: string) {
   await api.delete(`/api/pedidos/${pedidoId}/detalles/${detalleId}`);
+}
+
+export interface LineaPedidoPublicoInput {
+  productoId: string;
+  cantidad: number;
+  notas?: string;
+}
+
+export interface CrearPedidoPublicoInput {
+  canalOrigen: Exclude<CanalOrigenPedido, 'salon'>;
+  mesaId?: string;
+  contactoNombre?: string;
+  contactoTelefono?: string;
+  direccionEntrega?: string;
+  medioPagoPreferido?: MedioPagoPreferido;
+  vueltoPara?: number;
+  notas?: string;
+  detalles: LineaPedidoPublicoInput[];
+}
+
+/** Pedido que arma el propio cliente desde la carta pública (autopedido en mesa, delivery o
+ * recojo), sin autenticarse — ver `carta-publica.routes.ts`. */
+export async function crearPedidoPublico(slug: string, input: CrearPedidoPublicoInput) {
+  const res = await api.post<ApiSuccess<Pedido>>(`/api/publico/${slug}/pedidos`, input);
+  return res.data.data;
 }

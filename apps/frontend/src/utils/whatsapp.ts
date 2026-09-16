@@ -26,21 +26,45 @@ interface LineaMensajePedido {
   nota?: string;
 }
 
-export type ModoEntrega = 'recojo' | 'delivery';
+/** `mesa` se agrega solo al entrar desde un QR de mesa (`?mesa=<id>`, ver `Carta.tsx`): ahí la
+ * entrega no se elige, ya se sabe dónde está sentado el cliente. */
+export type ModoEntrega = 'recojo' | 'delivery' | 'mesa';
+
+/** Lo que el cliente dice que va a usar para pagar — no es un cobro real, solo evita que quien
+ * atienda el pedido tenga que preguntarlo de nuevo por chat (ver `Pedido.medioPagoPreferido`). */
+export type MedioPagoPreferido = 'efectivo' | 'yape' | 'plin' | 'tarjeta';
 
 export interface DatosEntrega {
   modo: ModoEntrega;
   /** A nombre de quién va el pedido. Opcional: si no lo llena, no se inventa una línea. */
   nombre?: string;
+  /** Necesario para registrar un pedido real de recojo/delivery (`Pedido.contactoTelefono`);
+   * no aplica en `modo: 'mesa'`. */
+  telefono?: string;
   /** Solo tiene sentido con `modo: 'delivery'`. */
   direccion?: string;
   /** Cualquier indicación general: hora de recojo, referencia de la casa, etc. */
   referencia?: string;
+  /** Presentes solo en `modo: 'mesa'`, tomados del QR escaneado. */
+  mesaId?: string;
+  mesaNumero?: string;
+  medioPago?: MedioPagoPreferido;
+  /** Solo con `medioPago: 'efectivo'`: con cuánto va a pagar, para calcular el vuelto. Texto
+   * (no número) porque es lo que escribe el campo — se convierte recién al armar el pedido. */
+  montoEfectivo?: string;
 }
 
 const ETIQUETA_MODO: Record<ModoEntrega, string> = {
   recojo: 'Recojo en el local',
   delivery: 'Delivery',
+  mesa: 'En mi mesa',
+};
+
+const ETIQUETA_MEDIO_PAGO: Record<MedioPagoPreferido, string> = {
+  efectivo: 'Efectivo',
+  yape: 'Yape',
+  plin: 'Plin',
+  tarjeta: 'Tarjeta',
 };
 
 /**
@@ -68,11 +92,18 @@ export function mensajePedido(
   const bloqueEntrega: string[] = [];
   if (entrega) {
     const nombre = entrega.nombre?.trim();
+    const telefono = entrega.telefono?.trim();
     const direccion = entrega.direccion?.trim();
     const referencia = entrega.referencia?.trim();
     bloqueEntrega.push(`Entrega: ${ETIQUETA_MODO[entrega.modo]}`);
     if (nombre) bloqueEntrega.push(`A nombre de: ${nombre}`);
+    if (telefono) bloqueEntrega.push(`Teléfono: ${telefono}`);
     if (entrega.modo === 'delivery' && direccion) bloqueEntrega.push(`Dirección: ${direccion}`);
+    if (entrega.medioPago) {
+      bloqueEntrega.push(`Pago: ${ETIQUETA_MEDIO_PAGO[entrega.medioPago]}`);
+      const monto = entrega.medioPago === 'efectivo' ? entrega.montoEfectivo?.trim() : undefined;
+      if (monto) bloqueEntrega.push(`Paga con: S/ ${monto} (indicar vuelto)`);
+    }
     if (referencia) bloqueEntrega.push(`Indicaciones: ${referencia}`);
   }
 
