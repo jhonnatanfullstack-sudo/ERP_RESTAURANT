@@ -29,7 +29,13 @@ saludRouter.get('/health', (req, res) => {
     message: 'OK',
     data: {
       estado: 'vivo',
-      _diag: { ip: req.ip, ips: req.ips, xForwardedFor: req.headers['x-forwarded-for'] },
+      _diag: {
+        ip: req.ip,
+        ips: req.ips,
+        xForwardedFor: req.headers['x-forwarded-for'],
+        remoteAddress: req.socket.remoteAddress,
+        trustProxySetting: req.app.get('trust proxy'),
+      },
     },
   });
 });
