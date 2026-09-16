@@ -239,6 +239,7 @@ export function Propinas() {
                 )}
 
                 <Button
+                  type="button"
                   variante="secondary"
                   className="self-start"
                   cargando={crearMutation.isPending}
@@ -256,40 +257,40 @@ export function Propinas() {
         <h2 className="mb-3 text-sm font-semibold text-zinc-900">Historial de repartos</h2>
         <Table
           columnas={[
-              {
-                encabezado: 'Período',
-                render: (r) =>
-                  `${formatearFechaHora(r.fechaDesde)} — ${formatearFechaHora(r.fechaHasta)}`,
-              },
-              { encabezado: 'Método', render: (r) => ETIQUETA_METODO[r.metodo] },
-              { encabezado: 'Total', render: (r) => formatearPrecio(r.totalPropinas) },
-              { encabezado: 'Participantes', render: (r) => r.detalles.length },
-              {
-                encabezado: 'Registrado por',
-                render: (r) => nombrePersonal(r.usuarioRegistro.personal),
-              },
-              {
-                encabezado: '',
-                render: (r) => (
-                  <button
-                    type="button"
-                    onClick={() => setRepartoViendo(r)}
-                    className="text-sm font-medium text-orange-600 hover:text-orange-700 hover:underline"
-                  >
-                    Ver
-                  </button>
-                ),
-              },
-            ]}
-            filas={historialQuery.data ?? []}
-            claveFila={(r) => r.id}
-            vacio="Aún no se registró ningún reparto"
-            cargando={historialQuery.isLoading}
-            error={
-              historialQuery.isError
-                ? mensajeError(historialQuery.error, 'No se pudo cargar el historial')
-                : undefined
-            }
+            {
+              encabezado: 'Período',
+              render: (r) =>
+                `${formatearFechaHora(r.fechaDesde)} — ${formatearFechaHora(r.fechaHasta)}`,
+            },
+            { encabezado: 'Método', render: (r) => ETIQUETA_METODO[r.metodo] },
+            { encabezado: 'Total', render: (r) => formatearPrecio(r.totalPropinas) },
+            { encabezado: 'Participantes', render: (r) => r.detalles.length },
+            {
+              encabezado: 'Registrado por',
+              render: (r) => nombrePersonal(r.usuarioRegistro.personal),
+            },
+            {
+              encabezado: '',
+              render: (r) => (
+                <button
+                  type="button"
+                  onClick={() => setRepartoViendo(r)}
+                  className="text-sm font-medium text-orange-600 hover:text-orange-700 hover:underline"
+                >
+                  Ver
+                </button>
+              ),
+            },
+          ]}
+          filas={historialQuery.data ?? []}
+          claveFila={(r) => r.id}
+          vacio="Aún no se registró ningún reparto"
+          cargando={historialQuery.isLoading}
+          error={
+            historialQuery.isError
+              ? mensajeError(historialQuery.error, 'No se pudo cargar el historial')
+              : undefined
+          }
           onReintentar={() => void historialQuery.refetch()}
         />
       </div>
