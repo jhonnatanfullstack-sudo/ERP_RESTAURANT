@@ -42,6 +42,12 @@ export const env = {
      * `migrations/…-RolAplicacionSinBypassRls.ts`. */
     appUser: requireEnv('DB_APP_USER'),
     appPassword: requireEnv('DB_APP_PASSWORD'),
+    /** La base de datos local de Docker no usa TLS; un Postgres gestionado (Neon, Supabase,
+     * RDS…) lo exige siempre. No se infiere de `NODE_ENV`: un VPS con Postgres propio en
+     * `production` puede seguir sin TLS, así que es una decisión explícita, igual que
+     * `cookies.crossSite`. `rejectUnauthorized: false` no desactiva TLS — solo no valida el
+     * certificado contra una CA local, que es lo que exige la mayoría de estos proveedores. */
+    ssl: process.env.DB_SSL === 'true',
   },
   jwt: {
     accessSecret: requireEnv('JWT_ACCESS_SECRET'),
