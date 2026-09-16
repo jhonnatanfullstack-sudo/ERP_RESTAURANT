@@ -3,10 +3,16 @@ import { HttpError } from '../../utils/http-error';
 import { enTransaccion, empresaIdActual } from '../../database/tenant-context';
 import { descifrar, descifrarTexto } from '../../utils/cifrado';
 import { CODIGO_AFECTACION_GRAVADO, resolverTasaIgv } from '../empresa/igv.service';
-import { tipoComprobanteRepository, tipoAfectacionIgvRepository } from '../catalogos/catalogos.repository';
+import {
+  tipoComprobanteRepository,
+  tipoAfectacionIgvRepository,
+} from '../catalogos/catalogos.repository';
 import { motivoNotaRepository } from '../catalogos/catalogos.repository';
 import { ventaRepository } from '../ventas/venta.repository';
 import { Venta, EstadoVenta } from '../ventas/venta.entity';
+import { usuarioRepository } from '../usuarios/usuario.repository';
+import { anularSalidasVenta } from '../inventario/existencia.service';
+import { revertirPuntosPorVenta } from '../fidelizacion/fidelizacion.service';
 import { Talonario } from '../talonario/talonario.entity';
 import { calcularSiguienteNumero, listarTalonariosDeUsuario } from '../talonario/talonario.service';
 import { configuracionFacturacionRepository } from '../facturacion/facturacion.repository';
@@ -51,7 +57,10 @@ function ordenarDetalles(nota: NotaVenta): NotaVenta {
 }
 
 export async function listarNotasVenta(): Promise<NotaVenta[]> {
-  const notas = await notaVentaRepository.find({ relations: RELACIONES, order: { creadoEn: 'DESC' } });
+  const notas = await notaVentaRepository.find({
+    relations: RELACIONES,
+    order: { creadoEn: 'DESC' },
+  });
   return notas.map(ordenarDetalles);
 }
 
@@ -133,7 +142,9 @@ const MAXIMO_REINTENTOS_CORRELATIVO = 3;
 function esColisionDeCorrelativo(error: unknown): boolean {
   const driverError = (error as { driverError?: { code?: string; constraint?: string } })
     ?.driverError;
-  return driverError?.code === UNIQUE_VIOLATION && driverError?.constraint === INDICE_CORRELATIVO_NOTA;
+  return (
+    driverError?.code === UNIQUE_VIOLATION && driverError?.constraint === INDICE_CORRELATIVO_NOTA
+  );
 }
 
 /** Mismo patrón que `guia-remision.service.ts: reservarNumeroGuia`, contra `notas_venta`. */
@@ -209,6 +220,11 @@ export async function crearNotaCredito(
     throw new HttpError(409, 'Esta venta ya está anulada');
   }
 
+  const usuario = await usuarioRepository.findOneBy({ id: usuarioId });
+  if (!usuario) {
+    throw new HttpError(401, 'Usuario no encontrado');
+  }
+
   const talonario = await resolverTalonarioNota(usuarioId, CODIGO_NOTA_CREDITO, dto.talonarioId);
   const motivo = await resolverMotivo(CODIGO_NOTA_CREDITO, dto.motivoId);
   const tipoComprobante = talonario.tipoComprobante;
@@ -253,6 +269,15 @@ export async function crearNotaCredito(
       venta.estado = EstadoVenta.ANULADA;
       await manager.save(Venta, venta);
 
+      // Misma reversa que `venta.service.ts: anularVenta` — este es el otro camino por el
+      // que una venta termina anulada (cuando ya tiene comprobante aceptado por SUNAT), y
+      // hasta acá no devolvía nada al stock ni a los puntos del cliente. `anularSalidasVenta`
+      // y `revertirPuntosPorVenta` usan los repositorios conscientes de la empresa (no
+      // `manager` directo), pero como ya se está dentro de la transacción de la petición,
+      // resuelven contra el mismo manager igual — ver `database/tenant-repository.ts`.
+      await anularSalidasVenta(venta, usuario);
+      await revertirPuntosPorVenta(venta);
+
       return guardada;
     });
 
@@ -265,7 +290,10 @@ export async function crearNotaCredito(
  * como una línea nueva y libre gravada con IGV a la tasa vigente de la empresa — no toca el
  * estado de la venta original, que sigue vendida y facturada tal cual.
  */
-export async function crearNotaDebito(usuarioId: string, dto: CrearNotaDebitoDto): Promise<NotaVenta> {
+export async function crearNotaDebito(
+  usuarioId: string,
+  dto: CrearNotaDebitoDto,
+): Promise<NotaVenta> {
   const venta = await ventaConComprobanteAceptado(dto.ventaId);
   const talonario = await resolverTalonarioNota(usuarioId, CODIGO_NOTA_DEBITO, dto.talonarioId);
   const motivo = await resolverMotivo(CODIGO_NOTA_DEBITO, dto.motivoId);
@@ -373,7 +401,10 @@ async function enviarYRegistrar(
  * `emitirGuiaRemision`: paso explícito, no automático al crear. */
 export async function emitirNotaVenta(id: string): Promise<NotaVenta> {
   const nota = await obtenerNotaVenta(id);
-  if (nota.estado !== EstadoComprobante.PENDIENTE && nota.estado !== EstadoComprobante.ERROR_ENVIO) {
+  if (
+    nota.estado !== EstadoComprobante.PENDIENTE &&
+    nota.estado !== EstadoComprobante.ERROR_ENVIO
+  ) {
     throw new HttpError(409, 'Esta nota ya fue enviada');
   }
 
@@ -410,7 +441,13 @@ export async function emitirNotaVenta(id: string): Promise<NotaVenta> {
   nota.oseProveedor = config.oseProveedor;
   const guardada = await notaVentaRepository.save(nota);
 
-  return enviarYRegistrar(guardada, xmlFirmado, nombre, PROVEEDORES_OSE[config.oseProveedor], config);
+  return enviarYRegistrar(
+    guardada,
+    xmlFirmado,
+    nombre,
+    PROVEEDORES_OSE[config.oseProveedor],
+    config,
+  );
 }
 
 /** Reenvía una nota que quedó en `error_envio` — reusa el mismo XML ya firmado. */

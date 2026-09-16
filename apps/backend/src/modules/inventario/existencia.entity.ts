@@ -49,12 +49,19 @@ export enum TipoMovimientoExistencia {
   /** Salida por anular una compra ya registrada — reversa una entrada `compra` con una salida
    * de la misma cantidad, nunca se borra el movimiento original (ver `compra.service.ts`). */
   ANULACION_COMPRA = 'anulacion_compra',
+  /** Entrada por anular una venta — reversa un `venta_directa` con una entrada de la misma
+   * cantidad. Nunca reversa un `consumo_cocina`: ese descuento ocurrió cuando el platillo
+   * físicamente se sirvió, antes de que existiera ningún comprobante, y anular la venta (típ.
+   * un error de cobro) no significa que la comida vuelva a la cocina (ver
+   * `venta.service.ts: anularVenta`). */
+  ANULACION_VENTA = 'anulacion_venta',
 }
 
 const TIPOS_ENTRADA = [
   TipoMovimientoExistencia.INICIAL,
   TipoMovimientoExistencia.COMPRA,
   TipoMovimientoExistencia.AJUSTE_ENTRADA,
+  TipoMovimientoExistencia.ANULACION_VENTA,
 ];
 
 export function esMovimientoDeEntrada(tipo: TipoMovimientoExistencia): boolean {

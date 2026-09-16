@@ -129,6 +129,38 @@ describe('Inventario y kardex', () => {
     expect(await stockDe(ctx)).toBeCloseTo(9.5, 3);
   });
 
+  it('anular una venta directa devuelve el stock de sus insumos', async () => {
+    const ctx = await prepararCocina();
+
+    const venta = await api
+      .post('/api/ventas', ctx.sesion, {
+        detalles: [{ productoId: ctx.productoId, cantidad: 2 }],
+        tipoComprobanteId: ctx.catalogos.boletaId,
+        formaPago: 'contado',
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
+    // 10 − (2 platos × 0.25 kg) = 9.5
+    expect(await stockDe(ctx)).toBeCloseTo(9.5, 3);
+
+    await api.delete(`/api/ventas/${venta.body.data.id}`, ctx.sesion).expect(200);
+
+    // El insumo vuelve al stock original: la venta nunca debió consumirlo.
+    expect(await stockDe(ctx)).toBe(10);
+
+    // La reversa es un movimiento propio, no una edición del original — mismo criterio de
+    // "el kardex nunca se borra" que ya prueba el caso de compras.
+    const movimientos = await api
+      .get(`/api/existencias/movimientos?insumoId=${ctx.insumoId}`, ctx.sesion)
+      .expect(200);
+    expect(movimientos.body.data.map((m: { tipo: string }) => m.tipo).sort()).toEqual([
+      'anulacion_venta',
+      'inicial',
+      'venta_directa',
+    ]);
+  });
+
   it('el stock de otra empresa no se ve afectado', async () => {
     const a = await prepararCocina();
     const b = await prepararCocina();

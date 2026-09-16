@@ -6,7 +6,10 @@ import { usuarioRepository } from '../usuarios/usuario.repository';
 import { obtenerConfiguracion } from '../configuracion/configuracion.service';
 import { NUMERO_DOCUMENTO_VARIOS } from '../catalogos/codigos-sunat';
 import { movimientoFidelizacionRepository } from './fidelizacion.repository';
-import { MovimientoFidelizacion, TipoMovimientoFidelizacion } from './movimiento-fidelizacion.entity';
+import {
+  MovimientoFidelizacion,
+  TipoMovimientoFidelizacion,
+} from './movimiento-fidelizacion.entity';
 import type { Venta } from '../ventas/venta.entity';
 import type { Cliente } from '../clientes/cliente.entity';
 import type { AjustarPuntosDto, CanjearPuntosDto } from './fidelizacion.dto';
@@ -87,6 +90,38 @@ export async function acreditarPuntosPorVenta(venta: Venta): Promise<void> {
     observacion: null,
   });
   await movimientoFidelizacionRepository.save(movimiento);
+}
+
+/**
+ * Revierte los puntos que una venta acreditó, cuando esa venta se anula — llamado desde
+ * `venta.service.ts: anularVenta`. No hace nada si la venta nunca acreditó puntos (programa
+ * apagado en su momento, sin cliente, o cliente "Varios"; ver `acreditarPuntosPorVenta`).
+ *
+ * Se registra como `AJUSTE` (no un tipo nuevo): es exactamente lo que ya representa ese tipo
+ * —una corrección, positiva o negativa, sobre el saldo—, y evitar un enum nuevo mantiene el
+ * kardex de puntos con el mismo criterio de "nunca se borra, solo se contrarresta" que ya usan
+ * `existencias` y `pagos_venta`.
+ *
+ * Si el cliente ya canjeó esos puntos antes de que la venta se anulara, el saldo puede quedar
+ * en negativo — es correcto que así sea: informa que se gastaron puntos que, en retrospectiva,
+ * nunca debieron ganarse.
+ */
+export async function revertirPuntosPorVenta(venta: Venta): Promise<void> {
+  const ganado = await movimientoFidelizacionRepository.findOne({
+    where: { venta: { id: venta.id }, tipo: TipoMovimientoFidelizacion.GANADO },
+    relations: { cliente: true },
+  });
+  if (!ganado) return;
+
+  const reversa = movimientoFidelizacionRepository.create({
+    cliente: ganado.cliente,
+    tipo: TipoMovimientoFidelizacion.AJUSTE,
+    puntos: -ganado.puntos,
+    venta,
+    usuario: null,
+    observacion: 'Reversa por anulación de venta',
+  });
+  await movimientoFidelizacionRepository.save(reversa);
 }
 
 async function resolverCliente(clienteId: string): Promise<Cliente> {
