@@ -42,7 +42,9 @@ export interface TalonarioVista extends Talonario {
  * de comprobante: si alguna ya usó un número igual o mayor, el talonario continúa después de
  * ella en vez de chocar contra el índice único de `ventas (tipo_comprobante, serie, numero)`.
  */
-function calcularSiguienteNumero(talonario: Talonario, ultimoEnVentas: number): number {
+/** Exportada para que otros módulos con su propio correlativo por talonario (ej.
+ * `guias-remision`) calculen el siguiente número con la misma regla, sin duplicarla. */
+export function calcularSiguienteNumero(talonario: Talonario, ultimoEnVentas: number): number {
   return Math.max(talonario.numeroActual + 1, talonario.numeroInicio, ultimoEnVentas + 1);
 }
 
