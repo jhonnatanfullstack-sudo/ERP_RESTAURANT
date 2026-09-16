@@ -1,14 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useNavigate, useParams } from 'react-router';
 import {
   ArrowLeft,
+  Banknote,
   CheckCircle2,
+  CreditCard,
   Pencil,
   Plus,
   Send,
   ShoppingBag,
+  Smartphone,
+  Timer,
   Trash2,
   Utensils,
   XCircle,
@@ -31,8 +36,9 @@ import { mensajeError } from '../utils/errores';
 import { Combobox } from '../components/ui/Combobox';
 import type { OpcionCombobox } from '../components/ui/Combobox';
 import { formatearFechaHora, formatearPrecio, nombreCliente, nombreMesa } from '../utils/formato';
+import { minutosDesde } from '../utils/metricas';
 import type { AgregarDetalleInput } from '../services/pedidos.service';
-import type { DetallePedido, EstadoComanda, EstadoPedido } from '../types/api';
+import type { DetallePedido, EstadoComanda, EstadoPedido, MedioPagoPreferido } from '../types/api';
 
 const ETIQUETA_ESTADO: Record<EstadoPedido, string> = {
   abierto: 'Abierto',
@@ -62,6 +68,19 @@ const TONO_COMANDA: Record<EstadoComanda, 'exito' | 'neutral' | 'peligro'> = {
   cancelada: 'peligro',
 };
 
+/** Solo se llena en un pedido que llegó de la carta pública — ver `Pedido.medioPagoPreferido`.
+ * No es un cobro real (eso sigue pasando por Caja), es lo que el cliente dijo que iba a usar. */
+const MEDIO_PAGO: Record<MedioPagoPreferido, { etiqueta: string; icono: typeof Banknote }> = {
+  efectivo: { etiqueta: 'Efectivo', icono: Banknote },
+  yape: { etiqueta: 'Yape', icono: Smartphone },
+  plin: { etiqueta: 'Plin', icono: Smartphone },
+  tarjeta: { etiqueta: 'Tarjeta', icono: CreditCard },
+};
+
+/** A partir de cuántos minutos abierto un pedido se resalta — mismo umbral que usa el
+ * Dashboard para la cola de cocina. */
+const MINUTOS_URGENTE = 20;
+
 export function PedidoDetalle() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -72,6 +91,12 @@ export function PedidoDetalle() {
   const [confirmandoCierre, setConfirmandoCierre] = useState(false);
   const [confirmandoCancelacion, setConfirmandoCancelacion] = useState(false);
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
+  const [ahora, setAhora] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setAhora(new Date()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const pedidoQuery = useQuery({
     queryKey: ['pedidos', id],
@@ -200,6 +225,33 @@ export function PedidoDetalle() {
               {nombreMesa(pedido.mesa)}
             </h1>
             <Badge tono={TONO_ESTADO[pedido.estado]}>{ETIQUETA_ESTADO[pedido.estado]}</Badge>
+            {pedido.estado === 'abierto' &&
+              (() => {
+                const minutos = minutosDesde(pedido.creadoEn, ahora);
+                const urgente = minutos >= MINUTOS_URGENTE;
+                return (
+                  <span
+                    className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                      urgente ? 'bg-red-100 text-red-700' : 'bg-zinc-100 text-zinc-500'
+                    }`}
+                  >
+                    <Timer className="h-3 w-3" />
+                    {minutos} min abierto
+                  </span>
+                );
+              })()}
+            {pedido.medioPagoPreferido &&
+              (() => {
+                const { etiqueta, icono: Icono } = MEDIO_PAGO[pedido.medioPagoPreferido];
+                return (
+                  <span className="flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                    <Icono className="h-3 w-3" />
+                    {etiqueta}
+                    {pedido.vueltoPara != null &&
+                      ` · vuelto de ${formatearPrecio(pedido.vueltoPara - pedido.total)}`}
+                  </span>
+                );
+              })()}
           </div>
           <p className="mt-1 text-sm text-zinc-500">
             {pedido.cliente && <>Cliente: {nombreCliente(pedido.cliente)} · </>}
@@ -237,21 +289,31 @@ export function PedidoDetalle() {
         </div>
       )}
 
-      {puedeEditar && seleccionados.size > 0 && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
-          <p className="text-sm font-medium text-orange-800">
-            {seleccionados.size} producto{seleccionados.size === 1 ? '' : 's'} seleccionado
-            {seleccionados.size === 1 ? '' : 's'}
-          </p>
-          <Button
-            icono={<Send className="h-4 w-4" />}
-            onClick={() => enviarComandaMutation.mutate()}
-            disabled={enviarComandaMutation.isPending}
+      <AnimatePresence>
+        {puedeEditar && seleccionados.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+            animate={{ opacity: 1, height: 'auto', marginBottom: 16 }}
+            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+            transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+            className="overflow-hidden"
           >
-            Enviar a cocina
-          </Button>
-        </div>
-      )}
+            <div className="flex items-center justify-between rounded-xl border border-orange-200 bg-orange-50 px-4 py-3">
+              <p className="text-sm font-medium text-orange-800">
+                {seleccionados.size} producto{seleccionados.size === 1 ? '' : 's'} seleccionado
+                {seleccionados.size === 1 ? '' : 's'}
+              </p>
+              <Button
+                icono={<Send className="h-4 w-4" />}
+                onClick={() => enviarComandaMutation.mutate()}
+                disabled={enviarComandaMutation.isPending}
+              >
+                Enviar a cocina
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
         {pedido.detalles.length === 0 ? (
@@ -482,6 +544,7 @@ export function PedidoDetalle() {
 
       <ConfirmDialog
         abierto={confirmandoCierre}
+        severidad="normal"
         titulo="Cerrar pedido"
         mensaje="El pedido dejará de aceptar cambios. ¿Deseas continuar?"
         confirmando={cerrarMutation.isPending}

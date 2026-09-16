@@ -1,4 +1,4 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, HelpCircle } from 'lucide-react';
 import { Button } from './Button';
 import { Alert } from './Alert';
 
@@ -11,9 +11,18 @@ interface ConfirmDialogProps {
    * permanece abierto naturalmente mientras no se llame a onConfirmar/onCancelar, así que
    * basta con pasar este mensaje para que se vea sin que el usuario tenga que cerrarlo primero. */
   error?: string | null;
+  /** `peligro` (por defecto) es para lo irreversible o destructivo — eliminar, cancelar. Para
+   * un paso normal del flujo que solo necesita una pausa antes de confirmarse (cerrar un
+   * pedido, por ejemplo) usar `normal`: mismo diálogo, sin pintar de rojo algo que no lo es. */
+  severidad?: 'peligro' | 'normal';
   onConfirmar: () => void;
   onCancelar: () => void;
 }
+
+const ESTILO_SEVERIDAD = {
+  peligro: { icono: AlertTriangle, clases: 'bg-red-50 text-red-600', boton: 'danger' as const },
+  normal: { icono: HelpCircle, clases: 'bg-blue-50 text-blue-600', boton: 'primary' as const },
+};
 
 export function ConfirmDialog({
   abierto,
@@ -21,16 +30,19 @@ export function ConfirmDialog({
   mensaje,
   confirmando,
   error,
+  severidad = 'peligro',
   onConfirmar,
   onCancelar,
 }: ConfirmDialogProps) {
   if (!abierto) return null;
 
+  const { icono: Icono, clases, boton } = ESTILO_SEVERIDAD[severidad];
+
   return (
     <div className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm">
       <div className="animate-scale-in w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-red-50 text-red-600">
-          <AlertTriangle className="h-5 w-5" strokeWidth={2} />
+        <div className={`flex h-11 w-11 items-center justify-center rounded-full ${clases}`}>
+          <Icono className="h-5 w-5" strokeWidth={2} />
         </div>
         <h2 className="mt-4 text-lg font-bold text-zinc-900">{titulo}</h2>
         <p className="mt-1.5 text-sm text-zinc-500">{mensaje}</p>
@@ -45,7 +57,7 @@ export function ConfirmDialog({
           <Button variante="secondary" onClick={onCancelar} disabled={confirmando}>
             Cancelar
           </Button>
-          <Button variante="danger" onClick={onConfirmar} disabled={confirmando}>
+          <Button variante={boton} onClick={onConfirmar} disabled={confirmando}>
             {confirmando ? 'Procesando…' : 'Confirmar'}
           </Button>
         </div>

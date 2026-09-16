@@ -1,23 +1,25 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { Pencil, Trash2, Utensils } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import { Copy, Utensils } from 'lucide-react';
 import * as mesasService from '../services/mesas.service';
 import * as salonesService from '../services/salones.service';
 import * as reservasService from '../services/reservas.service';
 import * as pedidosService from '../services/pedidos.service';
-import { formatearHora } from '../utils/formato';
+import * as empresaService from '../services/empresa.service';
 import { useAuth } from '../context/AuthContext';
-import { Table } from '../components/ui/Table';
+import { PlanoMesas } from '../components/PlanoMesas';
 import { Modal } from '../components/ui/Modal';
 import { Alert } from '../components/ui/Alert';
-import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { Checkbox } from '../components/ui/Checkbox';
 import { FormActions } from '../components/ui/FormActions';
+import { EmptyState } from '../components/ui/EmptyState';
+import { Spinner } from '../components/ui/Spinner';
 import { mensajeError } from '../utils/errores';
 import type { ActualizarMesaInput, CrearMesaInput } from '../services/mesas.service';
 import type { Mesa } from '../types/api';
@@ -28,6 +30,8 @@ export function Mesas() {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [mesaEditando, setMesaEditando] = useState<Mesa | null>(null);
   const [mesaEliminando, setMesaEliminando] = useState<Mesa | null>(null);
+  const [mesaQr, setMesaQr] = useState<Mesa | null>(null);
+  const [copiado, setCopiado] = useState(false);
   const [filtroSalon, setFiltroSalon] = useState<string>('todos');
 
   const mesasQuery = useQuery({ queryKey: ['mesas'], queryFn: mesasService.listarMesas });
@@ -40,29 +44,14 @@ export function Mesas() {
     queryKey: ['pedidos'],
     queryFn: pedidosService.listarPedidos,
   });
-
-  function estadoOcupacion(mesaId: string): {
-    etiqueta: string;
-    tono: 'exito' | 'neutral' | 'peligro';
-  } {
-    const tienePedidoAbierto = (pedidosQuery.data ?? []).some(
-      (p) => p.mesa?.id === mesaId && p.estado === 'abierto',
-    );
-    if (tienePedidoAbierto) return { etiqueta: 'Ocupada', tono: 'peligro' };
-
-    const ahora = new Date().getTime();
-    const reserva = (reservasQuery.data ?? []).find((r) => {
-      if (r.mesa.id !== mesaId) return false;
-      if (r.estado !== 'pendiente' && r.estado !== 'confirmada') return false;
-      const inicio = new Date(r.fechaHora).getTime();
-      const fin = inicio + r.duracionMinutos * 60_000;
-      return ahora >= inicio && ahora < fin;
-    });
-    if (reserva)
-      return { etiqueta: `Reservada ${formatearHora(reserva.fechaHora)}`, tono: 'neutral' };
-
-    return { etiqueta: 'Libre', tono: 'exito' };
-  }
+  // El slug de la propia empresa: el QR de autopedido apunta a `/carta/:slug?mesa=:id`, la
+  // misma carta pública de siempre, solo que con la mesa ya identificada.
+  const empresasQuery = useQuery({
+    queryKey: ['empresas'],
+    queryFn: empresaService.listarEmpresas,
+  });
+  const slug = empresasQuery.data?.[0]?.slug;
+  const enlaceQr = mesaQr && slug ? `${window.location.origin}/carta/${slug}?mesa=${mesaQr.id}` : null;
 
   const crearForm = useForm<CrearMesaInput>();
   const editarForm = useForm<ActualizarMesaInput>();
@@ -152,73 +141,55 @@ export function Mesas() {
         </div>
       )}
 
-      <Table
-        columnas={[
-          { encabezado: 'Salón', render: (m) => m.salon.nombre },
-          { encabezado: 'Número', render: (m) => m.numero },
-          { encabezado: 'Capacidad', render: (m) => `${m.capacidad} personas` },
-          {
-            encabezado: 'Ocupación',
-            render: (m) => {
-              const { etiqueta, tono } = estadoOcupacion(m.id);
-              return <Badge tono={tono}>{etiqueta}</Badge>;
-            },
-          },
-          {
-            encabezado: 'Estado',
-            render: (m) => (
-              <Badge tono={m.activo ? 'exito' : 'neutral'}>
-                {m.activo ? 'Activa' : 'Inactiva'}
-              </Badge>
-            ),
-          },
-          {
-            encabezado: '',
-            render: (m) => (
-              <div className="flex items-center gap-3">
-                {tienePermiso('mesas.editar') && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMesaEditando(m);
-                      editarForm.reset({
-                        salonId: m.salon.id,
-                        numero: m.numero,
-                        capacidad: m.capacidad,
-                        activo: m.activo,
-                      });
-                    }}
-                    className="flex items-center gap-1.5 text-sm font-medium text-orange-600 hover:text-orange-700"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Editar
-                  </button>
-                )}
-                {tienePermiso('mesas.eliminar') && (
-                  <button
-                    type="button"
-                    onClick={() => setMesaEliminando(m)}
-                    className="flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Eliminar
-                  </button>
-                )}
-              </div>
-            ),
-          },
-        ]}
-        filas={mesasFiltradas}
-        claveFila={(m) => m.id}
-        vacio="No hay mesas registradas"
-        cargando={mesasQuery.isLoading}
-        error={
-          mesasQuery.isError
-            ? mensajeError(mesasQuery.error, 'No se pudieron cargar las mesas')
-            : undefined
-        }
-        onReintentar={() => void mesasQuery.refetch()}
-      />
+      <div className="mb-5 flex flex-wrap gap-x-5 gap-y-1.5 text-xs font-medium text-zinc-500">
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-500" /> Libre
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-red-500" /> Ocupada
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-amber-500" /> Reservada
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-zinc-300" /> Inactiva
+        </span>
+      </div>
+
+      {mesasQuery.isLoading ? (
+        <div className="flex justify-center py-16">
+          <Spinner />
+        </div>
+      ) : mesasQuery.isError ? (
+        <EmptyState
+          icono={Utensils}
+          titulo="No se pudieron cargar las mesas"
+          descripcion={mensajeError(mesasQuery.error, 'Vuelve a intentarlo en un momento.')}
+        />
+      ) : (
+        <PlanoMesas
+          mesas={mesasFiltradas}
+          pedidos={pedidosQuery.data ?? []}
+          reservas={reservasQuery.data ?? []}
+          vacio="No hay mesas registradas"
+          puedeEditar={tienePermiso('mesas.editar')}
+          puedeEliminar={tienePermiso('mesas.eliminar')}
+          onEditar={(m) => {
+            setMesaEditando(m);
+            editarForm.reset({
+              salonId: m.salon.id,
+              numero: m.numero,
+              capacidad: m.capacidad,
+              activo: m.activo,
+            });
+          }}
+          onEliminar={(m) => setMesaEliminando(m)}
+          onVerQr={(m) => {
+            setMesaQr(m);
+            setCopiado(false);
+          }}
+        />
+      )}
 
       <Modal abierto={modalAbierto} titulo="Nueva mesa" onCerrar={cerrarCrear}>
         <form
@@ -347,6 +318,44 @@ export function Mesas() {
         onConfirmar={() => eliminarMutation.mutate()}
         onCancelar={() => setMesaEliminando(null)}
       />
+
+      <Modal
+        abierto={mesaQr !== null}
+        titulo={mesaQr ? `QR de autopedido — Mesa ${mesaQr.numero}` : ''}
+        descripcion="El cliente lo escanea desde su celular, ve la carta y arma su pedido directo a esta mesa."
+        onCerrar={() => setMesaQr(null)}
+      >
+        {mesaQr &&
+          (enlaceQr ? (
+            <div className="flex flex-col items-center gap-4">
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                <QRCodeSVG value={enlaceQr} size={220} />
+              </div>
+              <div className="flex w-full items-end gap-2">
+                <Input label="Enlace" value={enlaceQr} readOnly className="flex-1" />
+                <Button
+                  type="button"
+                  variante="secondary"
+                  icono={<Copy className="h-4 w-4" />}
+                  onClick={() => {
+                    void navigator.clipboard.writeText(enlaceQr).then(() => setCopiado(true));
+                  }}
+                >
+                  {copiado ? 'Copiado' : 'Copiar'}
+                </Button>
+              </div>
+              <p className="text-center text-xs text-zinc-500">
+                Imprímelo y pégalo en la mesa — un clic derecho sobre el QR permite guardarlo
+                como imagen.
+              </p>
+            </div>
+          ) : (
+            <Alert
+              tipo="advertencia"
+              mensaje="No se pudo obtener el enlace de tu carta pública. Verifica que tu empresa tenga configurada la carta en Empresa."
+            />
+          ))}
+      </Modal>
     </div>
   );
 }
