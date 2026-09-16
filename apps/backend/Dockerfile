@@ -7,6 +7,11 @@ FROM node:22-alpine AS build
 WORKDIR /app
 
 RUN corepack enable
+# Sin TTY (cualquier build de CI/PaaS, incluido este), pnpm reciente se niega a purgar
+# `node_modules` al reinstalar solo con dependencias de producción más abajo
+# (ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY) — CI=true es la señal que pnpm reconoce para
+# saltar esa confirmación interactiva. Solo aplica a esta etapa, no a la imagen final.
+ENV CI=true
 
 # Primero los manifiestos: si no cambian, Docker reutiliza la capa de dependencias y una
 # recompilación por un cambio de código no vuelve a descargar todo el árbol.

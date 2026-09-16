@@ -194,6 +194,15 @@ Dos etapas: compila con las dependencias completas y la imagen final lleva solo 
 para ejecutar, corriendo como el usuario `node` sin privilegios. Monta un volumen en
 `/app/apps/backend/uploads` para que las fotos sobrevivan a los despliegues (sección 1.2).
 
+**Verificado de punta a punta el 2026-09-16**: build de la imagen, contenedor real conectado
+al Postgres de desarrollo con `NODE_ENV=production` y secretos generados de verdad, y los dos
+health checks respondiendo. En el camino apareció un bug real: el segundo `pnpm install
+--prod` (que purga `node_modules` para quedarse solo con dependencias de producción) fallaba
+con `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` en cualquier build sin TTY — es decir, en
+cualquier CI/PaaS, no solo aquí. Se corrigió agregando `ENV CI=true` a la etapa de build (pnpm
+respeta esa variable para saltar la confirmación interactiva). Sin este fix, el Dockerfile
+jamás había construido una imagen completa pese a estar documentado como "listo".
+
 ### Opción B: construcción nativa del proveedor (Render, Railway)
 
 Es un monorepo pnpm, así que los comandos se ejecutan desde la **raíz**:
