@@ -35,6 +35,7 @@ import { Propinas } from '../pages/Propinas';
 import { Fidelizacion } from '../pages/Fidelizacion';
 import { TicketVenta } from '../pages/TicketVenta';
 import { TicketComanda } from '../pages/TicketComanda';
+import { ReporteCaja } from '../pages/ReporteCaja';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
@@ -66,6 +67,7 @@ export function AppRoutes() {
             sidebar/navbar no debe aparecer ni en pantalla ni, sobre todo, en el papel. */}
         <Route path="/imprimir/venta/:id" element={<TicketVenta />} />
         <Route path="/imprimir/comanda/:id" element={<TicketComanda />} />
+        <Route path="/imprimir/caja/:id" element={<ReporteCaja />} />
 
         {/* Fuera del `AdminLayout`: el panel de proveedor mira todas las empresas del sistema,
             no la propia, así que no comparte el sidebar operativo del restaurante. */}

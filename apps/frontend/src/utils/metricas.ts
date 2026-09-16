@@ -1,4 +1,10 @@
-import type { Comanda, Venta } from '../types/api';
+import type { Cobranza, Comanda, Venta } from '../types/api';
+
+/** Código del medio de pago "Efectivo" (catálogo de Ventas) — el único que mueve el efectivo
+ * físico de la caja. Mismo criterio que usa el backend al cerrar (`caja.service.ts`); acá
+ * recalculado del lado del cliente, tanto para la vista previa en vivo mientras la caja sigue
+ * abierta como para el reporte impreso de una sesión ya cerrada. */
+export const CODIGO_MEDIO_PAGO_EFECTIVO = 'efectivo';
 
 /** Punto de una serie temporal o categórica lista para graficar. */
 export interface PuntoSerie {
@@ -184,6 +190,41 @@ export function segmentosMedioPago(ventas: Venta[], maximo = 5): Segmento[] {
   const principales = ordenados.slice(0, maximo - 1);
   const resto = ordenados.slice(maximo - 1);
   return [...principales, { etiqueta: 'Otros', valor: sumar(resto, (item) => item.valor) }];
+}
+
+/** Ventas emitidas dentro del período de una sesión de caja (abierta o ya cerrada) — base
+ * tanto del estimado de efectivo como de `segmentosMedioPago` (cuánto entró en Yape, Plin,
+ * tarjeta o al crédito, no solo en efectivo). Compartida entre `Caja.tsx` (vista en vivo) y
+ * `ReporteCaja.tsx` (reporte impreso de una sesión): que ambos calculen lo mismo con la misma
+ * función es lo que garantiza que el papel diga exactamente lo que decía la pantalla. */
+export function ventasEnPeriodo(ventas: Venta[], desde: string, hasta: string | null): Venta[] {
+  const inicio = new Date(desde).getTime();
+  const fin = hasta ? new Date(hasta).getTime() : Date.now();
+  return ventas.filter((v) => {
+    if (v.estado !== 'emitida') return false;
+    const momento = new Date(v.creadoEn).getTime();
+    return momento >= inicio && momento <= fin;
+  });
+}
+
+/** Cobros en efectivo de ventas al crédito dentro del período de la sesión — plata que entra
+ * físicamente al cajón igual que una venta al contado (ver `caja.service.ts:
+ * calcularPagosCreditoEfectivo`, mismo criterio del lado del backend). */
+export function pagosEfectivoEnPeriodo(
+  cobranzas: Cobranza[],
+  desde: string,
+  hasta: string | null,
+): number {
+  const inicio = new Date(desde).getTime();
+  const fin = hasta ? new Date(hasta).getTime() : Date.now();
+  return cobranzas
+    .flatMap((c) => c.pagos)
+    .filter((pago) => {
+      if (pago.anulado || pago.medioPago.codigo !== CODIGO_MEDIO_PAGO_EFECTIVO) return false;
+      const momento = new Date(pago.creadoEn).getTime();
+      return momento >= inicio && momento <= fin;
+    })
+    .reduce((suma, pago) => suma + pago.monto, 0);
 }
 
 /** Comandas que siguen en el flujo de cocina (ni entregadas ni canceladas). */
