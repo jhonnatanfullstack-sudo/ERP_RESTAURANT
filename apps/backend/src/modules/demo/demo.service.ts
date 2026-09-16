@@ -9,54 +9,30 @@ import { usuarioRepository } from '../usuarios/usuario.repository';
 import { rolRepository } from '../roles/rol.repository';
 import { permisoRepository } from '../permisos/permiso.repository';
 import { almacenRepository } from '../almacenes/almacen.repository';
-import { tipoDocumentoIdentidadRepository } from '../catalogos/catalogos.repository';
-import { SLUG_RESERVADOS } from './demo.dto';
+import { clienteRepository } from '../clientes/cliente.repository';
+import { proveedorRepository } from '../proveedores/proveedor.repository';
+import {
+  tipoDocumentoIdentidadRepository,
+  paisRepository,
+  divisionAdministrativaRepository,
+} from '../catalogos/catalogos.repository';
+import { NUMERO_DOCUMENTO_VARIOS } from '../catalogos/codigos-sunat';
+import { generarSlug, resolverSlugDisponible } from '../empresa/slug.util';
 import type { RegistrarDemoDto } from './demo.dto';
 import type { Empresa } from '../empresa/empresa.entity';
+import type { DivisionAdministrativa } from '../catalogos/division-administrativa.entity';
 
 const ROL_ADMINISTRADOR = 'Administrador';
 const ALMACEN_PRINCIPAL = 'Almacén principal';
 const MS_POR_DIA = 24 * 60 * 60 * 1000;
+/** Todo registro de hoy es de un negocio peruano; quien no mande `paisId` cae aquí (FASE 27). */
+const CODIGO_ISO2_PERU = 'PE';
 
 export interface DemoCreada {
   empresa: Empresa;
   usuarioId: string;
   rolNombre: string;
   permisos: string[];
-}
-
-/**
- * Convierte el nombre del restaurante en un slug para la URL pública de su carta. Quita
- * tildes (el enlace se dicta por teléfono y se escribe a mano) y todo lo que no sea letra,
- * número o guion.
- */
-function aSlug(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 50);
-}
-
-/**
- * Busca un slug libre. Dos restaurantes pueden llamarse igual, así que si el natural está
- * tomado se le agrega un sufijo numérico en vez de fallar el registro por algo que no es
- * culpa de quien se registra.
- */
-async function slugDisponible(base: string): Promise<string> {
-  const raiz = base || 'restaurante';
-  for (let intento = 0; intento < 50; intento += 1) {
-    const candidato = intento === 0 ? raiz : `${raiz}-${intento + 1}`;
-    if (SLUG_RESERVADOS.includes(candidato)) continue;
-    const tomado = await empresaRepository.findOneBy({ slug: candidato });
-    if (!tomado) return candidato;
-  }
-  throw new HttpError(
-    409,
-    'No se pudo generar una dirección para tu carta, intenta con otro nombre',
-  );
 }
 
 /**
@@ -98,8 +74,29 @@ export async function registrarDemo(dto: RegistrarDemoDto): Promise<DemoCreada> 
     ]);
   }
 
+  const pais = dto.paisId
+    ? await paisRepository.findOneBy({ id: dto.paisId })
+    : await paisRepository.findOneBy({ codigoIso2: CODIGO_ISO2_PERU });
+  if (!pais) {
+    throw new HttpError(400, 'El país indicado no existe', ['paisId inválido']);
+  }
+
+  // El distrito (nivel 3) es el único nivel que se guarda: departamento y provincia se
+  // recuperan navegando `padre` cuando hagan falta, no se duplican en `Empresa`.
+  let distrito: DivisionAdministrativa | null = null;
+  if (dto.distritoId) {
+    distrito = await divisionAdministrativaRepository.findOne({
+      where: { id: dto.distritoId, pais: { id: pais.id }, nivel: 3 },
+    });
+    if (!distrito) {
+      throw new HttpError(400, 'El distrito indicado no existe o no pertenece al país elegido', [
+        'distritoId inválido',
+      ]);
+    }
+  }
+
   const slug = await conBypassRls(() =>
-    slugDisponible(aSlug(dto.nombreComercial ?? dto.razonSocial)),
+    resolverSlugDisponible(generarSlug(dto.nombreComercial ?? dto.razonSocial)),
   );
 
   const empresa = await conBypassRls(() =>
@@ -111,6 +108,11 @@ export async function registrarDemo(dto: RegistrarDemoDto): Promise<DemoCreada> 
         direccionFiscal: dto.direccionFiscal ?? null,
         telefono: dto.telefono ?? null,
         email: dto.email,
+        pais,
+        distrito,
+        // Se deriva del distrito elegido: es el mismo dato, solo que `ubigeo` es lo que
+        // consume directamente el XML de facturación (ver `factura.builder.ts`).
+        ubigeo: distrito?.codigo ?? null,
         slug,
         plan: PlanEmpresa.DEMO,
         demoExpiraEn: new Date(Date.now() + env.demo.diasDePrueba * MS_POR_DIA),
@@ -165,6 +167,30 @@ export async function registrarDemo(dto: RegistrarDemoDto): Promise<DemoCreada> 
       activo: true,
     }),
   );
+
+  // Placeholder que Pedidos/Ventas/Compras preseleccionan cuando no vale la pena registrar a
+  // la contraparte real (público en general, compra menor sin comprobante) — ver
+  // `BuscadorCliente`/`BuscadorProveedor` en el frontend. DNI "99999999" es el mismo valor
+  // reservado que ya usa `1788980000000-SeedProveedorClienteVarios.ts`.
+  const tipoDni = await tipoDocumentoIdentidadRepository.findOneBy({ codigo: '1' });
+  if (tipoDni) {
+    await clienteRepository.save(
+      clienteRepository.create({
+        empresa,
+        nombres: 'Clientes Varios',
+        tipoDocumentoIdentidad: tipoDni,
+        numeroDocumento: NUMERO_DOCUMENTO_VARIOS,
+      }),
+    );
+    await proveedorRepository.save(
+      proveedorRepository.create({
+        empresa,
+        nombres: 'Proveedores Varios',
+        tipoDocumentoIdentidad: tipoDni,
+        numeroDocumento: NUMERO_DOCUMENTO_VARIOS,
+      }),
+    );
+  }
 
   return {
     empresa,

@@ -77,3 +77,64 @@ export async function bancos(_req: Request, res: Response, next: NextFunction): 
     next(error);
   }
 }
+
+export async function paises(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(res, await catalogosService.listarPaises());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function motivosTraslado(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, await catalogosService.listarMotivosTraslado());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function motivosNota(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const tipoDocumento = String(req.query.tipoDocumento ?? '');
+    sendSuccess(res, await catalogosService.listarMotivosNota(tipoDocumento));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function modalidadesTraslado(
+  _req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, await catalogosService.listarModalidadesTraslado());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function divisionesAdministrativas(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { paisId, padreId } = req.query as Record<string, string | undefined>;
+    if (!paisId) {
+      sendSuccess(res, []);
+      return;
+    }
+    sendSuccess(
+      res,
+      await catalogosService.listarDivisionesAdministrativas({ paisId, padreId: padreId ?? null }),
+    );
+  } catch (error) {
+    next(error);
+  }
+}

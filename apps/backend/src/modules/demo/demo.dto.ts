@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-/** Un slug legible para la URL pública de la carta: minúsculas, números y guiones. */
-export const SLUG_RESERVADOS = ['api', 'admin', 'login', 'carta', 'demo', 'proveedor', 'uploads'];
-
 export const registrarDemoSchema = z.object({
   // El RUC es obligatorio aunque sea una prueba: es un ERP peruano (sin RUC no se puede
   // facturar, que es la mitad del sistema), la búsqueda en SUNAT ya existe, y al ser único
@@ -15,6 +12,10 @@ export const registrarDemoSchema = z.object({
   nombreComercial: z.string().trim().max(255).optional(),
   direccionFiscal: z.string().trim().max(255).optional(),
   telefono: z.string().trim().max(20).optional(),
+  // Geografía (FASE 27): opcionales porque hoy el 100% de los registros son de Perú y el
+  // frontend ya preselecciona ese país — quien integre por API sin mandarlos no pierde nada.
+  paisId: z.string().uuid().optional(),
+  distritoId: z.string().uuid().optional(),
 
   // Datos de la persona que va a administrar el sistema.
   nombres: z.string().trim().min(2).max(100),

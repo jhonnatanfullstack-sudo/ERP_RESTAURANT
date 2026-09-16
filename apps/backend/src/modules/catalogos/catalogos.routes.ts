@@ -12,3 +12,8 @@ catalogosRouter.get('/tipos-afectacion-igv', catalogosController.tiposAfectacion
 catalogosRouter.get('/tipos-operacion', catalogosController.tiposOperacion);
 catalogosRouter.get('/medios-pago', catalogosController.mediosPago);
 catalogosRouter.get('/bancos', catalogosController.bancos);
+catalogosRouter.get('/paises', catalogosController.paises);
+catalogosRouter.get('/divisiones-administrativas', catalogosController.divisionesAdministrativas);
+catalogosRouter.get('/motivos-traslado', catalogosController.motivosTraslado);
+catalogosRouter.get('/motivos-nota', catalogosController.motivosNota);
+catalogosRouter.get('/modalidades-traslado', catalogosController.modalidadesTraslado);

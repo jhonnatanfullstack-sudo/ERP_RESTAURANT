@@ -15,3 +15,17 @@ export function empresaPublica(empresa: Empresa) {
 }
 
 export type EmpresaPublica = ReturnType<typeof empresaPublica>;
+
+/**
+ * A diferencia de `empresaPublica` (carta digital, donde el RUC no aporta nada), el formato
+ * oficial del Libro de Reclamaciones exige identificar al proveedor con su razón social y RUC
+ * — es información que el consumidor necesita para saber contra quién está reclamando, no un
+ * dato interno. Ver `carta-publica.routes.ts`.
+ */
+export function empresaParaReclamaciones(empresa: Empresa) {
+  return {
+    razonSocial: empresa.razonSocial,
+    ruc: empresa.ruc,
+    direccion: empresa.direccionFiscal,
+  };
+}

@@ -3,16 +3,31 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  JoinColumn,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Pais } from '../catalogos/pais.entity';
+import { DivisionAdministrativa } from '../catalogos/division-administrativa.entity';
 
 /** Qué tipo de cuenta tiene la empresa dentro del sistema. */
 export enum PlanEmpresa {
   /** Prueba gratuita con fecha de vencimiento (`demoExpiraEn`). */
   DEMO = 'demo',
-  /** Cliente que contrató: sin vencimiento. */
+  /** Cliente que contrató. Con `suscripcionExpiraEn` puesta, vence igual que una demo (solo
+   * que con un plazo pagado en vez de una prueba); `null` es una activación manual sin
+   * vencimiento (ver `PlataformaService.aplicarAccion` → `'activar'`). */
   ACTIVO = 'activo',
+}
+
+/** Qué módulos contrató la empresa (FASE 29 — página de precios). Solo metadatos: hoy no
+ * restringe el acceso a ningún módulo, es la base para poder facturar/mostrar el plan
+ * correcto — la aplicación de límites por plan queda para cuando se pida explícitamente. */
+export enum PlanContratado {
+  OPERATIVO = 'operativo',
+  FACTURACION = 'facturacion',
+  COMPLETO = 'completo',
 }
 
 @Entity('empresas')
@@ -75,8 +90,25 @@ export class Empresa {
   @UpdateDateColumn({ name: 'actualizado_en', type: 'timestamptz' })
   actualizadoEn!: Date;
 
+  /** Código UBIGEO peruano (o el equivalente que corresponda), usado directamente en el XML
+   * de facturación electrónica. Se deriva de `distrito.codigo` cuando hay `distrito`
+   * asignado (FASE 27); se mantiene como columna propia porque es lo que SUNAT exige tal
+   * cual, sin tener que navegar la relación en cada emisión. */
   @Column({ type: 'varchar', length: 255, nullable: true })
   ubigeo!: string | null;
+
+  /** País de la empresa (FASE 27). Nullable por compatibilidad con filas creadas antes de
+   * esta fase; el backfill de la migración las deja en Perú. */
+  @ManyToOne(() => Pais, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'pais_id' })
+  pais!: Pais | null;
+
+  /** Distrito (nivel 3 de `divisiones_administrativas`). Departamento y provincia se
+   * obtienen navegando `distrito.padre.padre`/`distrito.padre` cuando hagan falta, no se
+   * duplican aquí. */
+  @ManyToOne(() => DivisionAdministrativa, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'distrito_id' })
+  distrito!: DivisionAdministrativa | null;
 
   @Column({ type: 'text', nullable: true })
   logo!: string | null;
@@ -88,4 +120,17 @@ export class Empresa {
    * `decisiones-tecnicas.md`. */
   @Column({ name: 'acogido_regimen_mype_restaurantes', type: 'boolean', default: false })
   acogidoRegimenMypeRestaurantes!: boolean;
+
+  /** Qué plan contrató — `null` mientras nunca haya pagado (demo, o activada a mano sin
+   * plan asignado). Se fija al confirmar una `SolicitudSuscripcion`. */
+  @Column({ name: 'plan_contratado', type: 'enum', enum: PlanContratado, nullable: true })
+  planContratado!: PlanContratado | null;
+
+  /** Hasta cuándo cubre lo ya pagado. Distinta de `demoExpiraEn` (que es la prueba gratuita):
+   * esta es la que se extiende cada vez que se confirma una `SolicitudSuscripcion`, sumando
+   * los meses pagados a partir de `max(hoy, lo que ya tenía)` — nunca desde la fecha original,
+   * para que pagar tarde no "pierda" los días ya vencidos contra el saldo nuevo. `null` en una
+   * cuenta activada manualmente sin plazo (ver `PlanEmpresa.ACTIVO`). */
+  @Column({ name: 'suscripcion_expira_en', type: 'timestamptz', nullable: true })
+  suscripcionExpiraEn!: Date | null;
 }

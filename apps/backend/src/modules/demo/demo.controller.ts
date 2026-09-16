@@ -6,6 +6,7 @@ import { emitirSesion } from '../auth/auth.service';
 import { calcularSuscripcion } from '../suscripcion/suscripcion.service';
 import { conBypassRls } from '../../database/tenant-context';
 import { tipoDocumentoIdentidadRepository } from '../catalogos/catalogos.repository';
+import * as catalogosService from '../catalogos/catalogos.service';
 import * as demoService from './demo.service';
 
 export async function registrar(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -66,6 +67,39 @@ export async function tiposDocumento(
       tipoDocumentoIdentidadRepository.find({ order: { codigo: 'ASC' } }),
     );
     sendSuccess(res, tipos);
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** País y división administrativa (departamento/provincia/distrito) para el formulario de
+ * registro — mismo motivo que `tiposDocumento`: `/api/catalogos/...` exige sesión y quien se
+ * está registrando todavía no tiene ninguna. */
+export async function paises(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(res, await conBypassRls(() => catalogosService.listarPaises()));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function divisionesAdministrativas(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { paisId, padreId } = req.query as Record<string, string | undefined>;
+    if (!paisId) {
+      sendSuccess(res, []);
+      return;
+    }
+    sendSuccess(
+      res,
+      await conBypassRls(() =>
+        catalogosService.listarDivisionesAdministrativas({ paisId, padreId: padreId ?? null }),
+      ),
+    );
   } catch (error) {
     next(error);
   }

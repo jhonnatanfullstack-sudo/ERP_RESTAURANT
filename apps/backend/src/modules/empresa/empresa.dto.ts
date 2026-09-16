@@ -8,6 +8,8 @@ export const crearEmpresaSchema = z.object({
   telefono: z.string().trim().max(20).nullable().optional(),
   email: z.string().trim().email().max(150).nullable().optional(),
   ubigeo: z.string().trim().max(255).nullable().optional(),
+  paisId: z.string().uuid().nullable().optional(),
+  distritoId: z.string().uuid().nullable().optional(),
   logo: z.string().trim().nullable().optional(),
   acogidoRegimenMypeRestaurantes: z.boolean().optional(),
 });

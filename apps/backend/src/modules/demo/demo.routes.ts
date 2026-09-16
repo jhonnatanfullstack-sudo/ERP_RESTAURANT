@@ -31,6 +31,8 @@ const registroRateLimit = rateLimit({
 
 demoRouter.get('/informacion', demoController.informacion);
 demoRouter.get('/tipos-documento', demoController.tiposDocumento);
+demoRouter.get('/paises', demoController.paises);
+demoRouter.get('/divisiones-administrativas', demoController.divisionesAdministrativas);
 demoRouter.post(
   '/registrar',
   registroRateLimit,

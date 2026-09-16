@@ -1,0 +1,1247 @@
+[
+  {
+    "nombre": "Afghanistan",
+    "codigoIso2": "AF",
+    "codigoIso3": "AFG"
+  },
+  {
+    "nombre": "Åland Islands",
+    "codigoIso2": "AX",
+    "codigoIso3": "ALA"
+  },
+  {
+    "nombre": "Albania",
+    "codigoIso2": "AL",
+    "codigoIso3": "ALB"
+  },
+  {
+    "nombre": "Algeria",
+    "codigoIso2": "DZ",
+    "codigoIso3": "DZA"
+  },
+  {
+    "nombre": "American Samoa",
+    "codigoIso2": "AS",
+    "codigoIso3": "ASM"
+  },
+  {
+    "nombre": "Andorra",
+    "codigoIso2": "AD",
+    "codigoIso3": "AND"
+  },
+  {
+    "nombre": "Angola",
+    "codigoIso2": "AO",
+    "codigoIso3": "AGO"
+  },
+  {
+    "nombre": "Anguilla",
+    "codigoIso2": "AI",
+    "codigoIso3": "AIA"
+  },
+  {
+    "nombre": "Antarctica",
+    "codigoIso2": "AQ",
+    "codigoIso3": "ATA"
+  },
+  {
+    "nombre": "Antigua and Barbuda",
+    "codigoIso2": "AG",
+    "codigoIso3": "ATG"
+  },
+  {
+    "nombre": "Argentina",
+    "codigoIso2": "AR",
+    "codigoIso3": "ARG"
+  },
+  {
+    "nombre": "Armenia",
+    "codigoIso2": "AM",
+    "codigoIso3": "ARM"
+  },
+  {
+    "nombre": "Aruba",
+    "codigoIso2": "AW",
+    "codigoIso3": "ABW"
+  },
+  {
+    "nombre": "Australia",
+    "codigoIso2": "AU",
+    "codigoIso3": "AUS"
+  },
+  {
+    "nombre": "Austria",
+    "codigoIso2": "AT",
+    "codigoIso3": "AUT"
+  },
+  {
+    "nombre": "Azerbaijan",
+    "codigoIso2": "AZ",
+    "codigoIso3": "AZE"
+  },
+  {
+    "nombre": "Bahamas",
+    "codigoIso2": "BS",
+    "codigoIso3": "BHS"
+  },
+  {
+    "nombre": "Bahrain",
+    "codigoIso2": "BH",
+    "codigoIso3": "BHR"
+  },
+  {
+    "nombre": "Bangladesh",
+    "codigoIso2": "BD",
+    "codigoIso3": "BGD"
+  },
+  {
+    "nombre": "Barbados",
+    "codigoIso2": "BB",
+    "codigoIso3": "BRB"
+  },
+  {
+    "nombre": "Belarus",
+    "codigoIso2": "BY",
+    "codigoIso3": "BLR"
+  },
+  {
+    "nombre": "Belgium",
+    "codigoIso2": "BE",
+    "codigoIso3": "BEL"
+  },
+  {
+    "nombre": "Belize",
+    "codigoIso2": "BZ",
+    "codigoIso3": "BLZ"
+  },
+  {
+    "nombre": "Benin",
+    "codigoIso2": "BJ",
+    "codigoIso3": "BEN"
+  },
+  {
+    "nombre": "Bermuda",
+    "codigoIso2": "BM",
+    "codigoIso3": "BMU"
+  },
+  {
+    "nombre": "Bhutan",
+    "codigoIso2": "BT",
+    "codigoIso3": "BTN"
+  },
+  {
+    "nombre": "Bolivia, Plurinational State of",
+    "codigoIso2": "BO",
+    "codigoIso3": "BOL"
+  },
+  {
+    "nombre": "Bonaire, Sint Eustatius and Saba",
+    "codigoIso2": "BQ",
+    "codigoIso3": "BES"
+  },
+  {
+    "nombre": "Bosnia and Herzegovina",
+    "codigoIso2": "BA",
+    "codigoIso3": "BIH"
+  },
+  {
+    "nombre": "Botswana",
+    "codigoIso2": "BW",
+    "codigoIso3": "BWA"
+  },
+  {
+    "nombre": "Bouvet Island",
+    "codigoIso2": "BV",
+    "codigoIso3": "BVT"
+  },
+  {
+    "nombre": "Brazil",
+    "codigoIso2": "BR",
+    "codigoIso3": "BRA"
+  },
+  {
+    "nombre": "British Indian Ocean Territory",
+    "codigoIso2": "IO",
+    "codigoIso3": "IOT"
+  },
+  {
+    "nombre": "Brunei Darussalam",
+    "codigoIso2": "BN",
+    "codigoIso3": "BRN"
+  },
+  {
+    "nombre": "Bulgaria",
+    "codigoIso2": "BG",
+    "codigoIso3": "BGR"
+  },
+  {
+    "nombre": "Burkina Faso",
+    "codigoIso2": "BF",
+    "codigoIso3": "BFA"
+  },
+  {
+    "nombre": "Burundi",
+    "codigoIso2": "BI",
+    "codigoIso3": "BDI"
+  },
+  {
+    "nombre": "Cabo Verde",
+    "codigoIso2": "CV",
+    "codigoIso3": "CPV"
+  },
+  {
+    "nombre": "Cambodia",
+    "codigoIso2": "KH",
+    "codigoIso3": "KHM"
+  },
+  {
+    "nombre": "Cameroon",
+    "codigoIso2": "CM",
+    "codigoIso3": "CMR"
+  },
+  {
+    "nombre": "Canada",
+    "codigoIso2": "CA",
+    "codigoIso3": "CAN"
+  },
+  {
+    "nombre": "Cayman Islands",
+    "codigoIso2": "KY",
+    "codigoIso3": "CYM"
+  },
+  {
+    "nombre": "Central African Republic",
+    "codigoIso2": "CF",
+    "codigoIso3": "CAF"
+  },
+  {
+    "nombre": "Chad",
+    "codigoIso2": "TD",
+    "codigoIso3": "TCD"
+  },
+  {
+    "nombre": "Chile",
+    "codigoIso2": "CL",
+    "codigoIso3": "CHL"
+  },
+  {
+    "nombre": "China",
+    "codigoIso2": "CN",
+    "codigoIso3": "CHN"
+  },
+  {
+    "nombre": "Christmas Island",
+    "codigoIso2": "CX",
+    "codigoIso3": "CXR"
+  },
+  {
+    "nombre": "Cocos (Keeling) Islands",
+    "codigoIso2": "CC",
+    "codigoIso3": "CCK"
+  },
+  {
+    "nombre": "Colombia",
+    "codigoIso2": "CO",
+    "codigoIso3": "COL"
+  },
+  {
+    "nombre": "Comoros",
+    "codigoIso2": "KM",
+    "codigoIso3": "COM"
+  },
+  {
+    "nombre": "Congo",
+    "codigoIso2": "CG",
+    "codigoIso3": "COG"
+  },
+  {
+    "nombre": "Congo, Democratic Republic of the",
+    "codigoIso2": "CD",
+    "codigoIso3": "COD"
+  },
+  {
+    "nombre": "Cook Islands",
+    "codigoIso2": "CK",
+    "codigoIso3": "COK"
+  },
+  {
+    "nombre": "Costa Rica",
+    "codigoIso2": "CR",
+    "codigoIso3": "CRI"
+  },
+  {
+    "nombre": "Côte d'Ivoire",
+    "codigoIso2": "CI",
+    "codigoIso3": "CIV"
+  },
+  {
+    "nombre": "Croatia",
+    "codigoIso2": "HR",
+    "codigoIso3": "HRV"
+  },
+  {
+    "nombre": "Cuba",
+    "codigoIso2": "CU",
+    "codigoIso3": "CUB"
+  },
+  {
+    "nombre": "Curaçao",
+    "codigoIso2": "CW",
+    "codigoIso3": "CUW"
+  },
+  {
+    "nombre": "Cyprus",
+    "codigoIso2": "CY",
+    "codigoIso3": "CYP"
+  },
+  {
+    "nombre": "Czechia",
+    "codigoIso2": "CZ",
+    "codigoIso3": "CZE"
+  },
+  {
+    "nombre": "Denmark",
+    "codigoIso2": "DK",
+    "codigoIso3": "DNK"
+  },
+  {
+    "nombre": "Djibouti",
+    "codigoIso2": "DJ",
+    "codigoIso3": "DJI"
+  },
+  {
+    "nombre": "Dominica",
+    "codigoIso2": "DM",
+    "codigoIso3": "DMA"
+  },
+  {
+    "nombre": "Dominican Republic",
+    "codigoIso2": "DO",
+    "codigoIso3": "DOM"
+  },
+  {
+    "nombre": "Ecuador",
+    "codigoIso2": "EC",
+    "codigoIso3": "ECU"
+  },
+  {
+    "nombre": "Egypt",
+    "codigoIso2": "EG",
+    "codigoIso3": "EGY"
+  },
+  {
+    "nombre": "El Salvador",
+    "codigoIso2": "SV",
+    "codigoIso3": "SLV"
+  },
+  {
+    "nombre": "Equatorial Guinea",
+    "codigoIso2": "GQ",
+    "codigoIso3": "GNQ"
+  },
+  {
+    "nombre": "Eritrea",
+    "codigoIso2": "ER",
+    "codigoIso3": "ERI"
+  },
+  {
+    "nombre": "Estonia",
+    "codigoIso2": "EE",
+    "codigoIso3": "EST"
+  },
+  {
+    "nombre": "Eswatini",
+    "codigoIso2": "SZ",
+    "codigoIso3": "SWZ"
+  },
+  {
+    "nombre": "Ethiopia",
+    "codigoIso2": "ET",
+    "codigoIso3": "ETH"
+  },
+  {
+    "nombre": "Falkland Islands (Malvinas)",
+    "codigoIso2": "FK",
+    "codigoIso3": "FLK"
+  },
+  {
+    "nombre": "Faroe Islands",
+    "codigoIso2": "FO",
+    "codigoIso3": "FRO"
+  },
+  {
+    "nombre": "Fiji",
+    "codigoIso2": "FJ",
+    "codigoIso3": "FJI"
+  },
+  {
+    "nombre": "Finland",
+    "codigoIso2": "FI",
+    "codigoIso3": "FIN"
+  },
+  {
+    "nombre": "France",
+    "codigoIso2": "FR",
+    "codigoIso3": "FRA"
+  },
+  {
+    "nombre": "French Guiana",
+    "codigoIso2": "GF",
+    "codigoIso3": "GUF"
+  },
+  {
+    "nombre": "French Polynesia",
+    "codigoIso2": "PF",
+    "codigoIso3": "PYF"
+  },
+  {
+    "nombre": "French Southern Territories",
+    "codigoIso2": "TF",
+    "codigoIso3": "ATF"
+  },
+  {
+    "nombre": "Gabon",
+    "codigoIso2": "GA",
+    "codigoIso3": "GAB"
+  },
+  {
+    "nombre": "Gambia",
+    "codigoIso2": "GM",
+    "codigoIso3": "GMB"
+  },
+  {
+    "nombre": "Georgia",
+    "codigoIso2": "GE",
+    "codigoIso3": "GEO"
+  },
+  {
+    "nombre": "Germany",
+    "codigoIso2": "DE",
+    "codigoIso3": "DEU"
+  },
+  {
+    "nombre": "Ghana",
+    "codigoIso2": "GH",
+    "codigoIso3": "GHA"
+  },
+  {
+    "nombre": "Gibraltar",
+    "codigoIso2": "GI",
+    "codigoIso3": "GIB"
+  },
+  {
+    "nombre": "Greece",
+    "codigoIso2": "GR",
+    "codigoIso3": "GRC"
+  },
+  {
+    "nombre": "Greenland",
+    "codigoIso2": "GL",
+    "codigoIso3": "GRL"
+  },
+  {
+    "nombre": "Grenada",
+    "codigoIso2": "GD",
+    "codigoIso3": "GRD"
+  },
+  {
+    "nombre": "Guadeloupe",
+    "codigoIso2": "GP",
+    "codigoIso3": "GLP"
+  },
+  {
+    "nombre": "Guam",
+    "codigoIso2": "GU",
+    "codigoIso3": "GUM"
+  },
+  {
+    "nombre": "Guatemala",
+    "codigoIso2": "GT",
+    "codigoIso3": "GTM"
+  },
+  {
+    "nombre": "Guernsey",
+    "codigoIso2": "GG",
+    "codigoIso3": "GGY"
+  },
+  {
+    "nombre": "Guinea",
+    "codigoIso2": "GN",
+    "codigoIso3": "GIN"
+  },
+  {
+    "nombre": "Guinea-Bissau",
+    "codigoIso2": "GW",
+    "codigoIso3": "GNB"
+  },
+  {
+    "nombre": "Guyana",
+    "codigoIso2": "GY",
+    "codigoIso3": "GUY"
+  },
+  {
+    "nombre": "Haiti",
+    "codigoIso2": "HT",
+    "codigoIso3": "HTI"
+  },
+  {
+    "nombre": "Heard Island and McDonald Islands",
+    "codigoIso2": "HM",
+    "codigoIso3": "HMD"
+  },
+  {
+    "nombre": "Holy See",
+    "codigoIso2": "VA",
+    "codigoIso3": "VAT"
+  },
+  {
+    "nombre": "Honduras",
+    "codigoIso2": "HN",
+    "codigoIso3": "HND"
+  },
+  {
+    "nombre": "Hong Kong",
+    "codigoIso2": "HK",
+    "codigoIso3": "HKG"
+  },
+  {
+    "nombre": "Hungary",
+    "codigoIso2": "HU",
+    "codigoIso3": "HUN"
+  },
+  {
+    "nombre": "Iceland",
+    "codigoIso2": "IS",
+    "codigoIso3": "ISL"
+  },
+  {
+    "nombre": "India",
+    "codigoIso2": "IN",
+    "codigoIso3": "IND"
+  },
+  {
+    "nombre": "Indonesia",
+    "codigoIso2": "ID",
+    "codigoIso3": "IDN"
+  },
+  {
+    "nombre": "Iran, Islamic Republic of",
+    "codigoIso2": "IR",
+    "codigoIso3": "IRN"
+  },
+  {
+    "nombre": "Iraq",
+    "codigoIso2": "IQ",
+    "codigoIso3": "IRQ"
+  },
+  {
+    "nombre": "Ireland",
+    "codigoIso2": "IE",
+    "codigoIso3": "IRL"
+  },
+  {
+    "nombre": "Isle of Man",
+    "codigoIso2": "IM",
+    "codigoIso3": "IMN"
+  },
+  {
+    "nombre": "Israel",
+    "codigoIso2": "IL",
+    "codigoIso3": "ISR"
+  },
+  {
+    "nombre": "Italy",
+    "codigoIso2": "IT",
+    "codigoIso3": "ITA"
+  },
+  {
+    "nombre": "Jamaica",
+    "codigoIso2": "JM",
+    "codigoIso3": "JAM"
+  },
+  {
+    "nombre": "Japan",
+    "codigoIso2": "JP",
+    "codigoIso3": "JPN"
+  },
+  {
+    "nombre": "Jersey",
+    "codigoIso2": "JE",
+    "codigoIso3": "JEY"
+  },
+  {
+    "nombre": "Jordan",
+    "codigoIso2": "JO",
+    "codigoIso3": "JOR"
+  },
+  {
+    "nombre": "Kazakhstan",
+    "codigoIso2": "KZ",
+    "codigoIso3": "KAZ"
+  },
+  {
+    "nombre": "Kenya",
+    "codigoIso2": "KE",
+    "codigoIso3": "KEN"
+  },
+  {
+    "nombre": "Kiribati",
+    "codigoIso2": "KI",
+    "codigoIso3": "KIR"
+  },
+  {
+    "nombre": "Korea, Democratic People's Republic of",
+    "codigoIso2": "KP",
+    "codigoIso3": "PRK"
+  },
+  {
+    "nombre": "Korea, Republic of",
+    "codigoIso2": "KR",
+    "codigoIso3": "KOR"
+  },
+  {
+    "nombre": "Kuwait",
+    "codigoIso2": "KW",
+    "codigoIso3": "KWT"
+  },
+  {
+    "nombre": "Kyrgyzstan",
+    "codigoIso2": "KG",
+    "codigoIso3": "KGZ"
+  },
+  {
+    "nombre": "Lao People's Democratic Republic",
+    "codigoIso2": "LA",
+    "codigoIso3": "LAO"
+  },
+  {
+    "nombre": "Latvia",
+    "codigoIso2": "LV",
+    "codigoIso3": "LVA"
+  },
+  {
+    "nombre": "Lebanon",
+    "codigoIso2": "LB",
+    "codigoIso3": "LBN"
+  },
+  {
+    "nombre": "Lesotho",
+    "codigoIso2": "LS",
+    "codigoIso3": "LSO"
+  },
+  {
+    "nombre": "Liberia",
+    "codigoIso2": "LR",
+    "codigoIso3": "LBR"
+  },
+  {
+    "nombre": "Libya",
+    "codigoIso2": "LY",
+    "codigoIso3": "LBY"
+  },
+  {
+    "nombre": "Liechtenstein",
+    "codigoIso2": "LI",
+    "codigoIso3": "LIE"
+  },
+  {
+    "nombre": "Lithuania",
+    "codigoIso2": "LT",
+    "codigoIso3": "LTU"
+  },
+  {
+    "nombre": "Luxembourg",
+    "codigoIso2": "LU",
+    "codigoIso3": "LUX"
+  },
+  {
+    "nombre": "Macao",
+    "codigoIso2": "MO",
+    "codigoIso3": "MAC"
+  },
+  {
+    "nombre": "Madagascar",
+    "codigoIso2": "MG",
+    "codigoIso3": "MDG"
+  },
+  {
+    "nombre": "Malawi",
+    "codigoIso2": "MW",
+    "codigoIso3": "MWI"
+  },
+  {
+    "nombre": "Malaysia",
+    "codigoIso2": "MY",
+    "codigoIso3": "MYS"
+  },
+  {
+    "nombre": "Maldives",
+    "codigoIso2": "MV",
+    "codigoIso3": "MDV"
+  },
+  {
+    "nombre": "Mali",
+    "codigoIso2": "ML",
+    "codigoIso3": "MLI"
+  },
+  {
+    "nombre": "Malta",
+    "codigoIso2": "MT",
+    "codigoIso3": "MLT"
+  },
+  {
+    "nombre": "Marshall Islands",
+    "codigoIso2": "MH",
+    "codigoIso3": "MHL"
+  },
+  {
+    "nombre": "Martinique",
+    "codigoIso2": "MQ",
+    "codigoIso3": "MTQ"
+  },
+  {
+    "nombre": "Mauritania",
+    "codigoIso2": "MR",
+    "codigoIso3": "MRT"
+  },
+  {
+    "nombre": "Mauritius",
+    "codigoIso2": "MU",
+    "codigoIso3": "MUS"
+  },
+  {
+    "nombre": "Mayotte",
+    "codigoIso2": "YT",
+    "codigoIso3": "MYT"
+  },
+  {
+    "nombre": "Mexico",
+    "codigoIso2": "MX",
+    "codigoIso3": "MEX"
+  },
+  {
+    "nombre": "Micronesia, Federated States of",
+    "codigoIso2": "FM",
+    "codigoIso3": "FSM"
+  },
+  {
+    "nombre": "Moldova, Republic of",
+    "codigoIso2": "MD",
+    "codigoIso3": "MDA"
+  },
+  {
+    "nombre": "Monaco",
+    "codigoIso2": "MC",
+    "codigoIso3": "MCO"
+  },
+  {
+    "nombre": "Mongolia",
+    "codigoIso2": "MN",
+    "codigoIso3": "MNG"
+  },
+  {
+    "nombre": "Montenegro",
+    "codigoIso2": "ME",
+    "codigoIso3": "MNE"
+  },
+  {
+    "nombre": "Montserrat",
+    "codigoIso2": "MS",
+    "codigoIso3": "MSR"
+  },
+  {
+    "nombre": "Morocco",
+    "codigoIso2": "MA",
+    "codigoIso3": "MAR"
+  },
+  {
+    "nombre": "Mozambique",
+    "codigoIso2": "MZ",
+    "codigoIso3": "MOZ"
+  },
+  {
+    "nombre": "Myanmar",
+    "codigoIso2": "MM",
+    "codigoIso3": "MMR"
+  },
+  {
+    "nombre": "Namibia",
+    "codigoIso2": "NA",
+    "codigoIso3": "NAM"
+  },
+  {
+    "nombre": "Nauru",
+    "codigoIso2": "NR",
+    "codigoIso3": "NRU"
+  },
+  {
+    "nombre": "Nepal",
+    "codigoIso2": "NP",
+    "codigoIso3": "NPL"
+  },
+  {
+    "nombre": "Netherlands, Kingdom of the",
+    "codigoIso2": "NL",
+    "codigoIso3": "NLD"
+  },
+  {
+    "nombre": "New Caledonia",
+    "codigoIso2": "NC",
+    "codigoIso3": "NCL"
+  },
+  {
+    "nombre": "New Zealand",
+    "codigoIso2": "NZ",
+    "codigoIso3": "NZL"
+  },
+  {
+    "nombre": "Nicaragua",
+    "codigoIso2": "NI",
+    "codigoIso3": "NIC"
+  },
+  {
+    "nombre": "Niger",
+    "codigoIso2": "NE",
+    "codigoIso3": "NER"
+  },
+  {
+    "nombre": "Nigeria",
+    "codigoIso2": "NG",
+    "codigoIso3": "NGA"
+  },
+  {
+    "nombre": "Niue",
+    "codigoIso2": "NU",
+    "codigoIso3": "NIU"
+  },
+  {
+    "nombre": "Norfolk Island",
+    "codigoIso2": "NF",
+    "codigoIso3": "NFK"
+  },
+  {
+    "nombre": "North Macedonia",
+    "codigoIso2": "MK",
+    "codigoIso3": "MKD"
+  },
+  {
+    "nombre": "Northern Mariana Islands",
+    "codigoIso2": "MP",
+    "codigoIso3": "MNP"
+  },
+  {
+    "nombre": "Norway",
+    "codigoIso2": "NO",
+    "codigoIso3": "NOR"
+  },
+  {
+    "nombre": "Oman",
+    "codigoIso2": "OM",
+    "codigoIso3": "OMN"
+  },
+  {
+    "nombre": "Pakistan",
+    "codigoIso2": "PK",
+    "codigoIso3": "PAK"
+  },
+  {
+    "nombre": "Palau",
+    "codigoIso2": "PW",
+    "codigoIso3": "PLW"
+  },
+  {
+    "nombre": "Palestine, State of",
+    "codigoIso2": "PS",
+    "codigoIso3": "PSE"
+  },
+  {
+    "nombre": "Panama",
+    "codigoIso2": "PA",
+    "codigoIso3": "PAN"
+  },
+  {
+    "nombre": "Papua New Guinea",
+    "codigoIso2": "PG",
+    "codigoIso3": "PNG"
+  },
+  {
+    "nombre": "Paraguay",
+    "codigoIso2": "PY",
+    "codigoIso3": "PRY"
+  },
+  {
+    "nombre": "Peru",
+    "codigoIso2": "PE",
+    "codigoIso3": "PER"
+  },
+  {
+    "nombre": "Philippines",
+    "codigoIso2": "PH",
+    "codigoIso3": "PHL"
+  },
+  {
+    "nombre": "Pitcairn",
+    "codigoIso2": "PN",
+    "codigoIso3": "PCN"
+  },
+  {
+    "nombre": "Poland",
+    "codigoIso2": "PL",
+    "codigoIso3": "POL"
+  },
+  {
+    "nombre": "Portugal",
+    "codigoIso2": "PT",
+    "codigoIso3": "PRT"
+  },
+  {
+    "nombre": "Puerto Rico",
+    "codigoIso2": "PR",
+    "codigoIso3": "PRI"
+  },
+  {
+    "nombre": "Qatar",
+    "codigoIso2": "QA",
+    "codigoIso3": "QAT"
+  },
+  {
+    "nombre": "Réunion",
+    "codigoIso2": "RE",
+    "codigoIso3": "REU"
+  },
+  {
+    "nombre": "Romania",
+    "codigoIso2": "RO",
+    "codigoIso3": "ROU"
+  },
+  {
+    "nombre": "Russian Federation",
+    "codigoIso2": "RU",
+    "codigoIso3": "RUS"
+  },
+  {
+    "nombre": "Rwanda",
+    "codigoIso2": "RW",
+    "codigoIso3": "RWA"
+  },
+  {
+    "nombre": "Saint Barthélemy",
+    "codigoIso2": "BL",
+    "codigoIso3": "BLM"
+  },
+  {
+    "nombre": "Saint Helena, Ascension and Tristan da Cunha",
+    "codigoIso2": "SH",
+    "codigoIso3": "SHN"
+  },
+  {
+    "nombre": "Saint Kitts and Nevis",
+    "codigoIso2": "KN",
+    "codigoIso3": "KNA"
+  },
+  {
+    "nombre": "Saint Lucia",
+    "codigoIso2": "LC",
+    "codigoIso3": "LCA"
+  },
+  {
+    "nombre": "Saint Martin (French part)",
+    "codigoIso2": "MF",
+    "codigoIso3": "MAF"
+  },
+  {
+    "nombre": "Saint Pierre and Miquelon",
+    "codigoIso2": "PM",
+    "codigoIso3": "SPM"
+  },
+  {
+    "nombre": "Saint Vincent and the Grenadines",
+    "codigoIso2": "VC",
+    "codigoIso3": "VCT"
+  },
+  {
+    "nombre": "Samoa",
+    "codigoIso2": "WS",
+    "codigoIso3": "WSM"
+  },
+  {
+    "nombre": "San Marino",
+    "codigoIso2": "SM",
+    "codigoIso3": "SMR"
+  },
+  {
+    "nombre": "Sao Tome and Principe",
+    "codigoIso2": "ST",
+    "codigoIso3": "STP"
+  },
+  {
+    "nombre": "Saudi Arabia",
+    "codigoIso2": "SA",
+    "codigoIso3": "SAU"
+  },
+  {
+    "nombre": "Senegal",
+    "codigoIso2": "SN",
+    "codigoIso3": "SEN"
+  },
+  {
+    "nombre": "Serbia",
+    "codigoIso2": "RS",
+    "codigoIso3": "SRB"
+  },
+  {
+    "nombre": "Seychelles",
+    "codigoIso2": "SC",
+    "codigoIso3": "SYC"
+  },
+  {
+    "nombre": "Sierra Leone",
+    "codigoIso2": "SL",
+    "codigoIso3": "SLE"
+  },
+  {
+    "nombre": "Singapore",
+    "codigoIso2": "SG",
+    "codigoIso3": "SGP"
+  },
+  {
+    "nombre": "Sint Maarten (Dutch part)",
+    "codigoIso2": "SX",
+    "codigoIso3": "SXM"
+  },
+  {
+    "nombre": "Slovakia",
+    "codigoIso2": "SK",
+    "codigoIso3": "SVK"
+  },
+  {
+    "nombre": "Slovenia",
+    "codigoIso2": "SI",
+    "codigoIso3": "SVN"
+  },
+  {
+    "nombre": "Solomon Islands",
+    "codigoIso2": "SB",
+    "codigoIso3": "SLB"
+  },
+  {
+    "nombre": "Somalia",
+    "codigoIso2": "SO",
+    "codigoIso3": "SOM"
+  },
+  {
+    "nombre": "South Africa",
+    "codigoIso2": "ZA",
+    "codigoIso3": "ZAF"
+  },
+  {
+    "nombre": "South Georgia and the South Sandwich Islands",
+    "codigoIso2": "GS",
+    "codigoIso3": "SGS"
+  },
+  {
+    "nombre": "South Sudan",
+    "codigoIso2": "SS",
+    "codigoIso3": "SSD"
+  },
+  {
+    "nombre": "Spain",
+    "codigoIso2": "ES",
+    "codigoIso3": "ESP"
+  },
+  {
+    "nombre": "Sri Lanka",
+    "codigoIso2": "LK",
+    "codigoIso3": "LKA"
+  },
+  {
+    "nombre": "Sudan",
+    "codigoIso2": "SD",
+    "codigoIso3": "SDN"
+  },
+  {
+    "nombre": "Suriname",
+    "codigoIso2": "SR",
+    "codigoIso3": "SUR"
+  },
+  {
+    "nombre": "Svalbard and Jan Mayen",
+    "codigoIso2": "SJ",
+    "codigoIso3": "SJM"
+  },
+  {
+    "nombre": "Sweden",
+    "codigoIso2": "SE",
+    "codigoIso3": "SWE"
+  },
+  {
+    "nombre": "Switzerland",
+    "codigoIso2": "CH",
+    "codigoIso3": "CHE"
+  },
+  {
+    "nombre": "Syrian Arab Republic",
+    "codigoIso2": "SY",
+    "codigoIso3": "SYR"
+  },
+  {
+    "nombre": "Taiwan, Province of China",
+    "codigoIso2": "TW",
+    "codigoIso3": "TWN"
+  },
+  {
+    "nombre": "Tajikistan",
+    "codigoIso2": "TJ",
+    "codigoIso3": "TJK"
+  },
+  {
+    "nombre": "Tanzania, United Republic of",
+    "codigoIso2": "TZ",
+    "codigoIso3": "TZA"
+  },
+  {
+    "nombre": "Thailand",
+    "codigoIso2": "TH",
+    "codigoIso3": "THA"
+  },
+  {
+    "nombre": "Timor-Leste",
+    "codigoIso2": "TL",
+    "codigoIso3": "TLS"
+  },
+  {
+    "nombre": "Togo",
+    "codigoIso2": "TG",
+    "codigoIso3": "TGO"
+  },
+  {
+    "nombre": "Tokelau",
+    "codigoIso2": "TK",
+    "codigoIso3": "TKL"
+  },
+  {
+    "nombre": "Tonga",
+    "codigoIso2": "TO",
+    "codigoIso3": "TON"
+  },
+  {
+    "nombre": "Trinidad and Tobago",
+    "codigoIso2": "TT",
+    "codigoIso3": "TTO"
+  },
+  {
+    "nombre": "Tunisia",
+    "codigoIso2": "TN",
+    "codigoIso3": "TUN"
+  },
+  {
+    "nombre": "Türkiye",
+    "codigoIso2": "TR",
+    "codigoIso3": "TUR"
+  },
+  {
+    "nombre": "Turkmenistan",
+    "codigoIso2": "TM",
+    "codigoIso3": "TKM"
+  },
+  {
+    "nombre": "Turks and Caicos Islands",
+    "codigoIso2": "TC",
+    "codigoIso3": "TCA"
+  },
+  {
+    "nombre": "Tuvalu",
+    "codigoIso2": "TV",
+    "codigoIso3": "TUV"
+  },
+  {
+    "nombre": "Uganda",
+    "codigoIso2": "UG",
+    "codigoIso3": "UGA"
+  },
+  {
+    "nombre": "Ukraine",
+    "codigoIso2": "UA",
+    "codigoIso3": "UKR"
+  },
+  {
+    "nombre": "United Arab Emirates",
+    "codigoIso2": "AE",
+    "codigoIso3": "ARE"
+  },
+  {
+    "nombre": "United Kingdom of Great Britain and Northern Ireland",
+    "codigoIso2": "GB",
+    "codigoIso3": "GBR"
+  },
+  {
+    "nombre": "United States of America",
+    "codigoIso2": "US",
+    "codigoIso3": "USA"
+  },
+  {
+    "nombre": "United States Minor Outlying Islands",
+    "codigoIso2": "UM",
+    "codigoIso3": "UMI"
+  },
+  {
+    "nombre": "Uruguay",
+    "codigoIso2": "UY",
+    "codigoIso3": "URY"
+  },
+  {
+    "nombre": "Uzbekistan",
+    "codigoIso2": "UZ",
+    "codigoIso3": "UZB"
+  },
+  {
+    "nombre": "Vanuatu",
+    "codigoIso2": "VU",
+    "codigoIso3": "VUT"
+  },
+  {
+    "nombre": "Venezuela, Bolivarian Republic of",
+    "codigoIso2": "VE",
+    "codigoIso3": "VEN"
+  },
+  {
+    "nombre": "Viet Nam",
+    "codigoIso2": "VN",
+    "codigoIso3": "VNM"
+  },
+  {
+    "nombre": "Virgin Islands (British)",
+    "codigoIso2": "VG",
+    "codigoIso3": "VGB"
+  },
+  {
+    "nombre": "Virgin Islands (U.S.)",
+    "codigoIso2": "VI",
+    "codigoIso3": "VIR"
+  },
+  {
+    "nombre": "Wallis and Futuna",
+    "codigoIso2": "WF",
+    "codigoIso3": "WLF"
+  },
+  {
+    "nombre": "Western Sahara",
+    "codigoIso2": "EH",
+    "codigoIso3": "ESH"
+  },
+  {
+    "nombre": "Yemen",
+    "codigoIso2": "YE",
+    "codigoIso3": "YEM"
+  },
+  {
+    "nombre": "Zambia",
+    "codigoIso2": "ZM",
+    "codigoIso3": "ZMB"
+  },
+  {
+    "nombre": "Zimbabwe",
+    "codigoIso2": "ZW",
+    "codigoIso3": "ZWE"
+  }
+]
