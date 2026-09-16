@@ -26,11 +26,16 @@ export async function listarProductos(): Promise<Producto[]> {
 }
 
 export async function listarProductosPublico(): Promise<Producto[]> {
-  return productoRepository.find({
+  const productos = await productoRepository.find({
     where: { activo: true, categoria: { activo: true } },
     relations: RELACIONES,
     order: { nombre: 'ASC' },
   });
+
+  return productos.map((producto) => ({
+    ...producto,
+    nombreCompleto: producto.marca?.nombre ? `${producto.nombre} (${producto.marca.nombre})` : producto.nombre,
+  }));
 }
 
 export async function obtenerProducto(id: string): Promise<Producto> {

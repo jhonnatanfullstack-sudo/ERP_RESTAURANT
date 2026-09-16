@@ -23,7 +23,17 @@ if (env.trustProxy > 0) {
 }
 
 app.use(helmet());
-app.use(cors({ origin: env.corsOrigin, credentials: true }));
+// En desarrollo, Vite corre en el primer puerto libre a partir de 5173: con varias
+// instancias abiertas (o una que quedó viva de una sesión anterior) el front real puede
+// terminar en 5174, 5176... y `CORS_ORIGIN` fijo bloquearía TODAS sus peticiones sin ningún
+// error visible más que un `fetch` colgado. Se acepta cualquier puerto de localhost solo en
+// desarrollo; en producción sigue mandando `env.corsOrigin` tal cual, sin regex.
+app.use(
+  cors({
+    origin: env.nodeEnv === 'development' ? /^http:\/\/localhost:\d+$/ : env.corsOrigin,
+    credentials: true,
+  }),
+);
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 

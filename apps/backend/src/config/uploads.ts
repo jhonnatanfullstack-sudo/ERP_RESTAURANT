@@ -38,3 +38,25 @@ export function crearUploaderImagen(subcarpeta: string) {
     },
   });
 }
+
+const EXTENSIONES_CERTIFICADO = new Set(['.pfx', '.p12']);
+
+/**
+ * Certificado digital (`.pfx`/`.p12`) del módulo de facturación electrónica (FASE 28).
+ *
+ * A diferencia de `crearUploaderImagen`, usa `memoryStorage`: el archivo llega en
+ * `req.file.buffer` y **nunca toca el disco**. Es la clave privada tributaria de la empresa —
+ * se cifra (`utils/cifrado.ts`) apenas se guarda en `configuraciones_facturacion` y el buffer
+ * original se descarta con la petición.
+ */
+export const uploaderCertificado = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, archivo, callback) => {
+    if (!EXTENSIONES_CERTIFICADO.has(extname(archivo.originalname).toLowerCase())) {
+      callback(new HttpError(400, 'El certificado debe ser un archivo .pfx o .p12'));
+      return;
+    }
+    callback(null, true);
+  },
+});

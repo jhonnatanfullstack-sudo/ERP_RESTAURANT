@@ -34,6 +34,14 @@ import { auditoriaRouter } from '../modules/auditoria/auditoria.routes';
 import { existenciaRouter } from '../modules/inventario/existencia.routes';
 import { proveedorRouter } from '../modules/proveedores/proveedor.routes';
 import { compraRouter } from '../modules/compras/compra.routes';
+import { facturacionRouter } from '../modules/facturacion/facturacion.routes';
+import { guiaRemisionRouter } from '../modules/guias-remision/guia-remision.routes';
+import { reclamacionRouter } from '../modules/reclamaciones/reclamacion.routes';
+import { turnoRouter } from '../modules/turnos/turno.routes';
+import { notaVentaRouter } from '../modules/notas-venta/nota-venta.routes';
+import { repartoPropinaRouter } from '../modules/propinas/reparto-propina.routes';
+import { notificacionRouter } from '../modules/notificaciones/notificacion.routes';
+import { fidelizacionRouter } from '../modules/fidelizacion/fidelizacion.routes';
 
 export const apiRouter = Router();
 
@@ -74,3 +82,11 @@ apiRouter.use('/auditoria', auditoriaRouter);
 apiRouter.use('/existencias', existenciaRouter);
 apiRouter.use('/proveedores', proveedorRouter);
 apiRouter.use('/compras', compraRouter);
+apiRouter.use('/facturacion', facturacionRouter);
+apiRouter.use('/guias-remision', guiaRemisionRouter);
+apiRouter.use('/reclamaciones', reclamacionRouter);
+apiRouter.use('/turnos', turnoRouter);
+apiRouter.use('/notas-venta', notaVentaRouter);
+apiRouter.use('/propinas', repartoPropinaRouter);
+apiRouter.use('/notificaciones', notificacionRouter);
+apiRouter.use('/fidelizacion', fidelizacionRouter);

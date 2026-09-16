@@ -539,3 +539,124 @@ políticas restauradas.
 corre como el usuario `node` sin privilegios. Las migraciones **no** se ejecutan al arrancar,
 a propósito: con dos instancias, dos migraciones simultáneas sobre la misma base es la forma
 más rápida de corromperla.
+
+## Geografía multi-país y envío de comprobantes vía OSE (FASE 27, 2026-09-15)
+
+**Problema.** El usuario pidió transformar el sistema en SaaS e investigar los parámetros de
+SUNAT para completar la facturación electrónica, con la app preparada para identificar
+país/departamento/provincia/distrito de quien se registra, pensando en más países a futuro. Al
+revisar el código antes de tocar nada (regla 18 de `CLAUDE.md`) se encontró que **la
+transformación a SaaS ya estaba hecha** (FASE 25-26: RLS por empresa, registro público, panel
+de proveedor) y que la facturación electrónica ya tenía la entidad, el XML UBL 2.1 y la firma
+digital construidos, solo sin conectar. Lo que sí faltaba por completo era la geografía: `Empresa`
+solo tenía un `ubigeo` de texto libre, sin catálogo de países ni de divisiones administrativas.
+
+**Dos decisiones de arquitectura, presentadas al usuario antes de escribir código (sección 17
+de `CLAUDE.md`) y confirmadas con `AskUserQuestion`:**
+
+1. **Envío de comprobantes: vía OSE de terceros, no directo a SUNAT.** El sistema es
+   multi-empresa (cada restaurante-cliente tiene su propio RUC y su propio certificado).
+   Conectar directo a SUNAT (SEE) obliga a mantener las reglas de validación de cada catálogo
+   y absorber cada cambio normativo (ej. el Catálogo N° 25, con nuevas reglas ya aplazadas por
+   SUNAT de agosto 2026 a enero 2027). Un OSE (ej. NubeFacT, Efact) traslada ese mantenimiento
+   al proveedor. **Pendiente de implementación** (FASE 28): elegir el proveedor concreto y
+   verificar contra su manual técnico oficial que el producto usado acepte **XML ya firmado**
+   (no el que arma el XML desde una "trama" JSON propia, que dejaría muerto
+   `facturacion/ubl/factura.builder.ts` y `facturacion/firma/firmador.ts`, ya construidos).
+2. **Modelo geográfico multi-país ya, no Perú-only.** Se optó por una tabla genérica
+   `divisiones_administrativas` autorreferenciada por `padre_id` con un `nivel` (1/2/3) en vez
+   de tablas separadas `departamentos`/`provincias`/`distritos`: cada país organiza su
+   territorio distinto (estados, cantones, comunas...), y una jerarquía genérica no cambia de
+   esquema al sumar un país nuevo — solo se agregan filas. Es **solo estructura de datos**: no
+   se implementó ninguna regla tributaria de otro país (sigue fuera de alcance, sección 1 de
+   `CLAUDE.md`).
+
+**Por qué no se tocó la columna `ubigeo` de `Empresa`.** Ya la usa directamente
+`factura.builder.ts` en el XML UBL. En vez de reemplazarla, `Empresa` ganó `pais_id`/
+`distrito_id` (FK nullable) y `ubigeo` pasó a **derivarse** de `distrito.codigo` cuando hay
+distrito elegido — pero se mantiene editable a mano para una empresa sin distrito (otro país, o
+que todavía no lo cargó). Aditivo, no rompe nada existente (regla 3 de `CLAUDE.md`).
+
+**De dónde salió la data real.** Se descargó de fuentes públicas en vez de inventarla o
+tipearla a mano: ISO 3166-1 de
+[lukes/ISO-3166-Countries-with-Regional-Codes](https://github.com/lukes/ISO-3166-Countries-with-Regional-Codes)
+(249 países) y el UBIGEO completo de Perú de
+[RitchieRD/ubigeos-peru-data](https://github.com/RitchieRD/ubigeos-peru-data) (actualizado a
+2024; 25 departamentos, 196 provincias, 1892 distritos — más que los ~1874 de INEI porque
+incluye distritos creados después). Ambos datasets se transformaron a JSON con la forma que la
+migración necesita (`database/seeds/paises-iso3166.json`, `database/seeds/ubigeo-peru.json`) y
+se verificó su integridad antes de sembrarlos: sin duplicados, sin huérfanos (cada provincia
+apunta a un departamento real, cada distrito a una provincia real).
+
+**Verificado de punta a punta:** registro público con `distritoId` real → `GET /api/empresas`
+devuelve `pais`/`distrito` con la cadena `distrito.padre.padre` completa y `ubigeo` derivado
+correctamente (`010101` para el distrito de Chachapoyas, Amazonas); edición de empresa con
+`distritoId: null` limpia también el `ubigeo`. 44 pruebas automatizadas pasando (4 nuevas en
+`tests/geografia.test.ts`), typecheck/lint/build limpios en ambos paquetes.
+
+## Facturación electrónica SUNAT vía OSE (FASE 28, 2026-09-15)
+
+**Contrato del OSE, confirmado antes de escribir el cliente.** NubeFacT documenta dos productos
+distintos: uno que arma el XML desde una "trama" JSON propia (no sirve, dejaría muerto el
+`factura.builder.ts`/`firmador.ts` ya construidos) y **NubeFacT OSE** (`ose.nubefact.com`), que
+recibe el XML **ya firmado**. Este último habla el mismo protocolo `billService` que usa SUNAT
+para su propio SEE-SOL: SOAP + WS-Security (`UsernameToken`/`PasswordText`), el XML va
+comprimido en `.zip` y en Base64 dentro de `sendBill`. Endpoints confirmados contra la
+documentación pública: `https://ose.nubefact.com/ol-ti-itcpe/billService` (producción) y
+`https://demo-ose.nubefact.com/ol-ti-itcpe/billService` (beta).
+
+**Por qué un cliente SOAP a mano y no una librería.** El proyecto ya arma XML a mano en todo el
+módulo de facturación (`xml.util.ts`: "un builder genérico no evita ningún error real"); el
+mismo criterio aplica al sobre SOAP, que es fijo y pequeño. `jszip` ya era una dependencia sin
+usar en el proyecto — quien empezó el módulo de facturación (FASE 14) ya la había anticipado
+para justo este paso.
+
+**Por qué la emisión es una acción explícita desde `/ventas`, no automática al crear la venta.**
+El plan original consideraba un enganche "best-effort" dentro de `crearVenta`, con el mismo
+criterio que ya usa `consultarTipoCambio` (no bloqueante, falla en silencio). Pero cada petición
+corre dentro de **una única transacción de base de datos** (`tenant.middleware.ts`): encadenar
+ahí una llamada de red a un OSE (hasta 30 s de por sí, más lo que tarde SUNAT detrás) dejaría la
+respuesta de "venta creada" —y la conexión a la base— esperando al OSE, y una venta con el
+comprobante fallido silenciosamente es peor que una venta sin comprobante y un botón visible
+para emitirlo. Se decidió que emitir sea un paso aparte, disparado desde el detalle de la venta:
+más simple, no arriesga la venta si el OSE está caído, y es la UX habitual de un POS (estado del
+comprobante + reintentar, sin bloquear el cobro).
+
+**Certificado y credenciales del OSE, cifrados en reposo, por empresa.**
+`configuraciones_facturacion` guarda el `.pfx` y la clave del OSE como `bytea` cifrados
+(`utils/cifrado.ts`, AES-256-GCM; ver `base-de-datos.md` para el detalle de columnas). Es la
+primera vez que el proyecto cifra algo en la base en vez de solo hashearlo (como las
+contraseñas de usuario, con `bcrypt`) — acá hace falta **recuperar** el original para firmar,
+no solo compararlo. El certificado nunca toca el disco: `config/uploads.ts` gana un segundo
+uploader (`uploaderCertificado`, `memoryStorage`) distinto del que ya existía para fotos de
+producto (`diskStorage`, pensado para archivos públicos sin nada sensible).
+
+**`activo` es un interruptor separado de tener certificado/credencial cargados.** Terminar de
+configurar sin que una venta dispare un envío real a mitad de la carga de datos.
+
+**Verificado a mano contra el OSE real, no solo con datos de prueba.** Se registró una empresa
+de prueba, se le cargó un certificado autofirmado (`generarCertificadoPruebas`, empaquetado a
+`.pfx` con `node-forge`) y credenciales de OSE inventadas, se creó una venta real y se llamó
+`POST /api/facturacion/ventas/:id/emitir` contra el endpoint demo real de NubeFacT. La respuesta
+fue un rechazo esperado (credenciales inexistentes / certificado no acreditado), pero confirmó
+que **todo el circuito funciona de punta a punta contra el servicio real**: arma el XML, lo
+firma, lo comprime, arma el sobre SOAP con WS-Security, lo envía, y parsea correctamente una
+respuesta de error real del OSE. **Encontró y corrigió un bug real en el proceso**: el primer
+intento guardó el `faultcode` genérico del sobre SOAP (ej. `soapenv:Server`, más largo que 10
+caracteres) como si fuera el código de negocio de SUNAT, y reventó con un error 500 de "value
+too long" contra la columna `codigo_respuesta varchar(10)`. Se corrigió para que solo el código
+de negocio real (`<cod>`, corto y numérico) se guarde ahí, con una segunda capa de defensa
+(truncar a 10 caracteres en el service) para que un OSE que responda distinto de lo esperado
+nunca tumbe la petición completa.
+
+**Explícitamente fuera de alcance de esta fase** (quedan documentadas para cuando el usuario las
+pida): notas de crédito/débito, comunicación de baja, resumen diario de boletas, guía de
+remisión electrónica, envío directo a SUNAT (solo vía OSE, por la decisión ya tomada) y
+representación impresa en PDF del comprobante.
+
+**Pendiente de acción real del usuario.** Dar de alta una cuenta con NubeFacT (real o de
+pruebas) y cargar sus credenciales + un certificado digital (real, o uno de pruebas para el
+ambiente beta) desde `/facturacion-electronica` — sin eso, ninguna empresa puede emitir un
+comprobante que SUNAT realmente acepte. Es la misma limitación que ya se explicó al usuario
+antes de empezar esta fase: el código está completo y verificado hasta donde se puede sin una
+cuenta real.

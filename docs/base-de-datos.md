@@ -228,3 +228,67 @@ esperado — y validarlo solo en zod dejaría la puerta abierta a cualquier escr
 Permisos nuevos: `configuracion.ver` y `configuracion.editar`, otorgados al rol Administrador
 de cada empresa. La migración activa el bypass de RLS antes de consultar `roles`, que sí está
 bajo las políticas.
+
+## FASE 27 — Geografía multi-país (2026-09-15)
+
+**Tablas nuevas, sin `empresa_id` ni RLS** (catálogos globales, mismo caso que
+`tipos_documento_identidad`):
+
+| Tabla                        | Descripción                                                                                                                         | PK        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `paises`                     | Catálogo ISO 3166-1 completo (249 países), sembrado por migración                                                                   | `id` uuid |
+| `divisiones_administrativas` | Departamento/provincia/distrito de Perú (o el nivel equivalente de otro país), autorreferenciada por `padre_id` con `nivel` (1/2/3) | `id` uuid |
+
+**Por qué una tabla genérica y no `departamentos`/`provincias`/`distritos` separadas.** Cada
+país organiza su territorio distinto (estados, cantones, comunas...); `padre_id` +
+`nivel` representa cualquier esquema sin cambiar el modelo al sumar un país nuevo — solo se
+agregan filas. Hoy solo está sembrado el UBIGEO completo de Perú (25 departamentos, 196
+provincias, 1892 distritos, fuente INEI/RENIEC); otros países quedan con el esquema listo pero
+sin datos (CLAUDE.md sección 1: diseñar la arquitectura, no implementar lo que no hace falta
+todavía). Índice único `(pais_id, padre_id, nombre)`.
+
+**De dónde sale la data.** `database/seeds/paises-iso3166.json` y `database/seeds/ubigeo-peru.json`,
+cargados por la migración `GeografiaPaisesDivisiones` — no tipeados a mano en el `.ts`, así se
+pueden auditar/regenerar por separado.
+
+**`empresas` gana `pais_id` (FK a `paises`, nullable) y `distrito_id` (FK a
+`divisiones_administrativas` nivel 3, nullable), ambas `ON DELETE RESTRICT`.** La columna
+`ubigeo` que ya existía **no se tocó** (la sigue leyendo tal cual `factura.builder.ts`): ahora
+se deriva de `distrito.codigo` cuando hay `distrito_id` asignado, pero se puede seguir editando
+a mano para una empresa sin distrito elegido. El backfill de la migración puso `pais_id` de las
+17 empresas existentes en Perú, y enlazó `distrito_id` en la que ya tenía un `ubigeo` de texto
+que coincidía con un distrito real.
+
+## FASE 28 — Facturación electrónica SUNAT vía OSE (2026-09-15)
+
+**Tabla nueva `configuraciones_facturacion`**, una fila por empresa (mismo patrón que
+`configuraciones` de FASE 21: `empresa_id` único, RLS `FORCE` con la política
+`aislamiento_empresa`):
+
+| Columna                          | Descripción                                                                                              |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ose_proveedor`                  | Enum (`nubefact`, ampliable) — qué OSE tramita el envío. Nullable: puede no haber elegido aún            |
+| `ose_usuario`                    | Usuario asignado por el OSE. Texto plano: no es secreto por sí solo                                      |
+| `ose_credencial_cifrada`         | Contraseña/token del OSE, `bytea` cifrado con `utils/cifrado.ts` (AES-256-GCM)                           |
+| `certificado_pfx_cifrado`        | El `.pfx`/`.p12` completo, `bytea` cifrado                                                               |
+| `certificado_contrasena_cifrada` | Contraseña del `.pfx`, `bytea` cifrada                                                                   |
+| `certificado_valido_hasta`       | Fecha de vencimiento del certificado, leída del propio X.509 al subirlo                                  |
+| `ambiente`                       | Enum `beta`/`produccion`                                                                                 |
+| `activo`                         | Interruptor explícito: separado de si hay certificado/credencial cargados (ver `decisiones-tecnicas.md`) |
+
+**Por qué cifrado y no solo RLS.** RLS protege contra que otra empresa lea la fila por la API;
+no protege contra un volcado de la base o un acceso directo a Postgres. La clave privada del
+certificado es la identidad tributaria de la empresa — cifrarla en reposo es la misma lógica que
+ya aplica el proyecto a las contraseñas de usuario (`bcrypt`), solo que acá hace falta poder
+**recuperar** el original para firmar, no solo compararlo, de ahí AES-256-GCM en vez de un hash.
+La clave de cifrado (`CIFRADO_CLAVE`) vive en una variable de entorno del servidor, nunca en la
+base — perder la base sin perder también el servidor no expone el certificado.
+
+**`comprobantes_electronicos` gana `ose_proveedor`** (varchar nullable): qué OSE tramitó cada
+envío, informativo/auditoría, no gobierna nada en el código — el proveedor real siempre se
+resuelve desde `configuraciones_facturacion` de la empresa en el momento de emitir.
+
+**Permisos nuevos:** `facturacion.ver`, `facturacion.configurar`, `facturacion.emitir`,
+otorgados al rol Administrador de cada empresa existente (mismo patrón de bypass de RLS que
+`Configuraciones1789000600000`, ya que con multi-empresa hay un rol "Administrador" por cada
+restaurante, no uno solo).

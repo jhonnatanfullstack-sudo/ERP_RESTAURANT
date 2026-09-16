@@ -1,5 +1,5 @@
 import { api } from './api';
-import type { ApiSuccess, Mesa } from '../types/api';
+import type { ApiSuccess, Mesa, MesaPublica } from '../types/api';
 
 export interface CrearMesaInput {
   salonId: string;
@@ -31,4 +31,11 @@ export async function actualizarMesa(id: string, input: ActualizarMesaInput) {
 
 export async function eliminarMesa(id: string) {
   await api.delete(`/api/mesas/${id}`);
+}
+
+/** Para confirmarle al visitante de la carta "vas a pedir para la Mesa 5" antes de armar su
+ * pedido — sin autenticación, ver `carta-publica.routes.ts`. */
+export async function obtenerMesaPublica(slug: string, mesaId: string) {
+  const res = await api.get<ApiSuccess<MesaPublica>>(`/api/publico/${slug}/mesas/${mesaId}`);
+  return res.data.data;
 }

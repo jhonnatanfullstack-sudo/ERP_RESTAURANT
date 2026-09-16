@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router';
 import { AdminLayout } from '../layouts/AdminLayout';
+import { ProveedorLayout } from '../layouts/ProveedorLayout';
 import { PublicLayout } from '../layouts/PublicLayout';
 import { Dashboard } from '../pages/Dashboard';
 import { Login } from '../pages/Login';
@@ -28,12 +29,22 @@ import { Compras } from '../pages/Compras';
 import { Reportes } from '../pages/Reportes';
 import { Costos } from '../pages/Costos';
 import { Auditoria } from '../pages/Auditoria';
+import { Reclamaciones } from '../pages/Reclamaciones';
+import { Turnos } from '../pages/Turnos';
+import { Propinas } from '../pages/Propinas';
+import { Fidelizacion } from '../pages/Fidelizacion';
+import { TicketVenta } from '../pages/TicketVenta';
+import { TicketComanda } from '../pages/TicketComanda';
 import { Empresa } from '../pages/Empresa';
 import { CambiarPassword } from '../pages/CambiarPassword';
 import { Carta } from '../pages/public/Carta';
+import { LibroReclamaciones } from '../pages/public/LibroReclamaciones';
 import { RegistroDemo } from '../pages/public/RegistroDemo';
+import { Precios } from '../pages/public/Precios';
 import { Plataforma } from '../pages/Plataforma';
 import { Configuracion } from '../pages/Configuracion';
+import { FacturacionElectronica } from '../pages/FacturacionElectronica';
+import { GuiasRemision } from '../pages/GuiasRemision';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export function AppRoutes() {
@@ -43,12 +54,25 @@ export function AppRoutes() {
           a secas ya no identifica a ninguna. */}
       <Route element={<PublicLayout />}>
         <Route path="/carta/:slug" element={<Carta />} />
+        <Route path="/libro-reclamaciones/:slug" element={<LibroReclamaciones />} />
       </Route>
 
       <Route path="/login" element={<Login />} />
       <Route path="/registro" element={<RegistroDemo />} />
+      <Route path="/precios" element={<Precios />} />
 
       <Route element={<ProtectedRoute />}>
+        {/* Sin ningún layout: son documentos para imprimir, no pantallas del panel — el
+            sidebar/navbar no debe aparecer ni en pantalla ni, sobre todo, en el papel. */}
+        <Route path="/imprimir/venta/:id" element={<TicketVenta />} />
+        <Route path="/imprimir/comanda/:id" element={<TicketComanda />} />
+
+        {/* Fuera del `AdminLayout`: el panel de proveedor mira todas las empresas del sistema,
+            no la propia, así que no comparte el sidebar operativo del restaurante. */}
+        <Route element={<ProveedorLayout />}>
+          <Route path="/plataforma" element={<Plataforma />} />
+        </Route>
+
         <Route element={<AdminLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/usuarios" element={<Usuarios />} />
@@ -75,9 +99,14 @@ export function AppRoutes() {
           <Route path="/compras" element={<Compras />} />
           <Route path="/reportes" element={<Reportes />} />
           <Route path="/costos" element={<Costos />} />
-          <Route path="/plataforma" element={<Plataforma />} />
           <Route path="/configuracion" element={<Configuracion />} />
+          <Route path="/facturacion-electronica" element={<FacturacionElectronica />} />
+          <Route path="/guias-remision" element={<GuiasRemision />} />
           <Route path="/auditoria" element={<Auditoria />} />
+          <Route path="/reclamaciones" element={<Reclamaciones />} />
+          <Route path="/turnos" element={<Turnos />} />
+          <Route path="/propinas" element={<Propinas />} />
+          <Route path="/fidelizacion" element={<Fidelizacion />} />
           <Route path="/empresa" element={<Empresa />} />
           <Route path="/cambiar-password" element={<CambiarPassword />} />
         </Route>

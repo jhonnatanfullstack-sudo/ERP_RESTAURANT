@@ -1,5 +1,12 @@
 import { api } from './api';
-import type { ApiSuccess, InformacionDemo, SesionDemo, TipoDocumentoIdentidad } from '../types/api';
+import type {
+  ApiSuccess,
+  DivisionAdministrativa,
+  InformacionDemo,
+  Pais,
+  SesionDemo,
+  TipoDocumentoIdentidad,
+} from '../types/api';
 
 export interface RegistrarDemoInput {
   ruc: string;
@@ -14,6 +21,8 @@ export interface RegistrarDemoInput {
   numeroDocumento: string;
   email: string;
   password: string;
+  paisId?: string;
+  distritoId?: string;
 }
 
 /** Sin autenticación: es la puerta de entrada de quien todavía no tiene cuenta. */
@@ -25,6 +34,22 @@ export async function obtenerInformacionDemo() {
 /** El catálogo general exige sesión; quien se registra todavía no tiene ninguna. */
 export async function listarTiposDocumentoPublico() {
   const res = await api.get<ApiSuccess<TipoDocumentoIdentidad[]>>('/api/demo/tipos-documento');
+  return res.data.data;
+}
+
+export async function listarPaisesPublico() {
+  const res = await api.get<ApiSuccess<Pais[]>>('/api/demo/paises');
+  return res.data.data;
+}
+
+export async function listarDivisionesAdministrativasPublico(
+  paisId: string,
+  padreId?: string | null,
+) {
+  const res = await api.get<ApiSuccess<DivisionAdministrativa[]>>(
+    '/api/demo/divisiones-administrativas',
+    { params: { paisId, padreId: padreId ?? undefined } },
+  );
   return res.data.data;
 }
 

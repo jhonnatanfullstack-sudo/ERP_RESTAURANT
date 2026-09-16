@@ -8,6 +8,8 @@ export interface ActualizarEmpresaInput {
   telefono?: string | null;
   email?: string | null;
   ubigeo?: string | null;
+  paisId?: string | null;
+  distritoId?: string | null;
   logo?: string | null;
   acogidoRegimenMypeRestaurantes?: boolean;
 }

@@ -13,12 +13,21 @@ interface ModalProps {
   /** Ancho máximo: 'md' (por defecto, formularios simples), 'lg' o 'xl' (formularios con
    * varias secciones o una lista/carrito editable, ej. la venta directa). */
   tamano?: TamanoModal;
+  /** 'superior' para un selector abierto encima de otro modal ya abierto (ej. elegir el
+   * pedido a facturar dentro de "Nueva venta"): sube el z-index por encima del modal base y
+   * oscurece un poco más el fondo, para que se note que se abrió un nivel más profundo. */
+  capa?: 'base' | 'superior';
 }
 
 const anchoPorTamano: Record<TamanoModal, string> = {
   md: 'max-w-lg',
   lg: 'max-w-2xl',
   xl: 'max-w-3xl',
+};
+
+const zIndicePorCapa: Record<NonNullable<ModalProps['capa']>, string> = {
+  base: 'z-50',
+  superior: 'z-[60]',
 };
 
 export function Modal({
@@ -28,6 +37,7 @@ export function Modal({
   onCerrar,
   children,
   tamano = 'md',
+  capa = 'base',
 }: ModalProps) {
   if (!abierto) return null;
 
@@ -38,7 +48,7 @@ export function Modal({
     // del formulario padre si no se corta aquí. Ver decisiones-tecnicas.md.
     <div
       onSubmit={(e) => e.stopPropagation()}
-      className="animate-fade-in fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 p-4 backdrop-blur-sm"
+      className={`animate-fade-in fixed inset-0 ${zIndicePorCapa[capa]} flex items-center justify-center p-4 backdrop-blur-sm ${capa === 'superior' ? 'bg-zinc-900/65' : 'bg-zinc-900/50'}`}
     >
       <div
         className={`animate-scale-in flex max-h-[calc(100vh-2rem)] w-full flex-col rounded-2xl bg-white shadow-xl ${anchoPorTamano[tamano]}`}

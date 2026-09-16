@@ -67,4 +67,11 @@ export const env = {
     baseUrl: process.env.APIS_NET_PE_BASE_URL ?? 'https://api.decolecta.com/v1',
     token: process.env.APIS_NET_PE_TOKEN ?? null,
   },
+  /** Clave con la que se cifra en reposo el certificado digital y las credenciales del OSE de
+   * cada empresa (FASE 28) — nunca se guardan en texto plano en la base de datos. Opcional a
+   * nivel de arranque (ver `apisNetPe.token`): el sistema funciona igual sin facturación
+   * electrónica configurada; `utils/cifrado.ts` es quien exige que exista al usarla. */
+  cifrado: {
+    claveBase64: process.env.CIFRADO_CLAVE ?? null,
+  },
 };

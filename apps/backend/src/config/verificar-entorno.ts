@@ -65,6 +65,11 @@ export async function verificarEntorno(): Promise<void> {
       // El restaurante vería "tu prueba terminó" sin a quién escribirle.
       avisos.push('PROVEEDOR_EMAIL y PROVEEDOR_TELEFONO están vacíos');
     }
+    if (!env.cifrado.claveBase64) {
+      // No impide arrancar (la facturación electrónica es opcional), pero sin esto ninguna
+      // empresa puede configurar su certificado/credenciales del OSE.
+      avisos.push('CIFRADO_CLAVE está vacía: la facturación electrónica no estará disponible');
+    }
   }
 
   // --- Aislamiento entre empresas ----------------------------------------------------

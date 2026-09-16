@@ -12,6 +12,11 @@ export async function listarComandas() {
   return res.data.data;
 }
 
+export async function obtenerComanda(id: string) {
+  const res = await api.get<ApiSuccess<Comanda>>(`/api/comandas/${id}`);
+  return res.data.data;
+}
+
 export async function crearComanda(input: CrearComandaInput) {
   const res = await api.post<ApiSuccess<Comanda>>('/api/comandas', input);
   return res.data.data;

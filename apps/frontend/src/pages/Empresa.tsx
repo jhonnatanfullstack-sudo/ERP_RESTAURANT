@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { Pencil } from 'lucide-react';
+import { Check, Copy, ExternalLink, Pencil, QrCode } from 'lucide-react';
 import * as empresaService from '../services/empresa.service';
+import * as catalogosService from '../services/catalogos.service';
 import { useAuth } from '../context/AuthContext';
 import { Table } from '../components/ui/Table';
 import { Modal } from '../components/ui/Modal';
@@ -10,7 +11,10 @@ import { Alert } from '../components/ui/Alert';
 import { Input } from '../components/ui/Input';
 import { Checkbox } from '../components/ui/Checkbox';
 import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { Panel } from '../components/ui/Panel';
 import { FormActions } from '../components/ui/FormActions';
+import { SelectorGeografico } from '../components/SelectorGeografico';
 import { mensajeError } from '../utils/errores';
 import type { ActualizarEmpresaInput } from '../services/empresa.service';
 import type { Empresa as EmpresaType } from '../types/api';
@@ -19,13 +23,17 @@ export function Empresa() {
   const { tienePermiso } = useAuth();
   const queryClient = useQueryClient();
   const [empresaEditando, setEmpresaEditando] = useState<EmpresaType | null>(null);
+  const [copiado, setCopiado] = useState(false);
 
   const empresasQuery = useQuery({
     queryKey: ['empresas'],
     queryFn: empresaService.listarEmpresas,
   });
+  const empresa = empresasQuery.data?.[0];
+  const urlCarta = empresa ? `${window.location.origin}/carta/${empresa.slug}` : null;
 
-  const { register, handleSubmit, formState } = useForm<ActualizarEmpresaInput>();
+  const { register, handleSubmit, formState, control, setValue } =
+    useForm<ActualizarEmpresaInput>();
 
   const actualizarMutation = useMutation({
     mutationFn: (values: ActualizarEmpresaInput) =>
@@ -47,6 +55,43 @@ export function Empresa() {
         <h1 className="text-2xl font-bold text-zinc-900">Empresa</h1>
         <p className="mt-1 text-sm text-zinc-500">Datos legales y de contacto del restaurante</p>
       </div>
+
+      {urlCarta && (
+        <Panel
+          titulo="Tu carta pública"
+          descripcion="El enlace que le compartes a tus clientes — el mismo que llevan los QR de tus mesas"
+          icono={QrCode}
+          className="mb-6"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+              {urlCarta}
+            </code>
+            <Button
+              type="button"
+              variante="secondary"
+              icono={copiado ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              onClick={() => {
+                void navigator.clipboard.writeText(urlCarta).then(() => {
+                  setCopiado(true);
+                  window.setTimeout(() => setCopiado(false), 1500);
+                });
+              }}
+            >
+              {copiado ? 'Copiado' : 'Copiar'}
+            </Button>
+            <a
+              href={urlCarta}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-300 px-3.5 py-2 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-50"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Abrir
+            </a>
+          </div>
+        </Panel>
+      )}
 
       <Table
         columnas={[
@@ -146,13 +191,27 @@ export function Empresa() {
               />
             </div>
 
+            <SelectorGeografico
+              control={control}
+              register={register}
+              setValue={setValue}
+              campoPais="paisId"
+              campoDistrito="distritoId"
+              paisInicial={empresaEditando.pais}
+              distritoInicial={empresaEditando.distrito}
+              consultarPaises={catalogosService.listarPaises}
+              consultarDivisiones={catalogosService.listarDivisionesAdministrativas}
+              erroresPais={formState.errors.paisId?.message}
+              erroresDistrito={formState.errors.distritoId?.message}
+            />
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Input
                 label="Ubigeo"
-                ayuda="Código INEI de 6 dígitos del distrito."
-                defaultValue={empresaEditando.ubigeo ?? ''}
-                error={formState.errors.ubigeo?.message}
-                {...register('ubigeo')}
+                ayuda="Se completa solo al elegir el distrito — es lo que se envía a SUNAT."
+                value={empresaEditando.ubigeo ?? ''}
+                readOnly
+                disabled
               />
               <Input
                 label="Logo"

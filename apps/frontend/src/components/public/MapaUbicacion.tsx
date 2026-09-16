@@ -1,5 +1,5 @@
 import { ExternalLink, MapPin, Phone } from 'lucide-react';
-import { useEnVista } from '../../hooks/useEnVista';
+import { SeccionRevelada } from './SeccionRevelada';
 
 interface MapaUbicacionProps {
   nombre: string;
@@ -15,8 +15,6 @@ interface MapaUbicacionProps {
  * exacto, habría que guardar latitud/longitud y cambiar la `q` por las coordenadas.
  */
 export function MapaUbicacion({ nombre, direccion, telefono }: MapaUbicacionProps) {
-  const { ref, visible } = useEnVista<HTMLDivElement>();
-
   if (!direccion) return null;
 
   const consulta = encodeURIComponent(direccion);
@@ -25,12 +23,7 @@ export function MapaUbicacion({ nombre, direccion, telefono }: MapaUbicacionProp
 
   return (
     <section id="ubicacion" className="border-t border-(--carta-borde) py-16 sm:py-24">
-      <div
-        ref={ref}
-        className={`mx-auto grid max-w-6xl gap-10 px-5 transition-all duration-700 ease-out sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-16 ${
-          visible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0'
-        }`}
-      >
+      <SeccionRevelada className="mx-auto grid max-w-6xl gap-10 px-5 sm:px-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center lg:gap-16">
         <div>
           <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">Dónde estamos</h2>
           <p className="mt-4 max-w-md leading-relaxed text-(--carta-suave)">
@@ -85,7 +78,7 @@ export function MapaUbicacion({ nombre, direccion, telefono }: MapaUbicacionProp
             className="h-80 w-full sm:h-105"
           />
         </div>
-      </div>
+      </SeccionRevelada>
     </section>
   );
 }

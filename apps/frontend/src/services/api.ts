@@ -12,6 +12,13 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+/** Para el socket de tiempo real (`context/SocketContext.tsx`), que necesita el mismo token
+ * de acceso para autenticar la conexión — no hay forma de mandarlo por cabecera una vez que
+ * el protocolo sube a WebSocket. */
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler;
 }

@@ -13,11 +13,17 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ClipboardList,
+  Clock,
+  Coins,
   Contact,
   DoorOpen,
+  FileSignature,
   Flame,
+  Gift,
   LayoutDashboard,
+  PackageCheck,
   Receipt,
+  MessageSquareWarning,
   ScrollText,
   ShieldCheck,
   SlidersHorizontal,
@@ -35,16 +41,12 @@ interface EnlaceHijo {
   permiso?: string;
 }
 
-/** Entradas que no dependen del RBAC del restaurante sino de la marca de proveedor. */
-type VisibilidadEspecial = 'proveedor';
-
 interface ItemEnlace {
   tipo: 'enlace';
   etiqueta: string;
   ruta: string;
   icono: LucideIcon;
   permiso?: string;
-  soloPara?: VisibilidadEspecial;
 }
 
 interface ItemGrupo {
@@ -64,6 +66,7 @@ interface SeccionMenu {
 
 const menu: SeccionMenu[] = [
   {
+    // El día a día de salón y cocina: lo que se usa a cada minuto durante el servicio.
     etiqueta: 'Operación',
     items: [
       { tipo: 'enlace', etiqueta: 'Dashboard', ruta: '/', icono: LayoutDashboard },
@@ -82,6 +85,19 @@ const menu: SeccionMenu[] = [
         icono: Receipt,
         permiso: 'ventas.ver',
       },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Reservas',
+        ruta: '/reservas',
+        icono: CalendarCheck,
+        permiso: 'reservas.ver',
+      },
+    ],
+  },
+  {
+    // Todo lo que mueve efectivo: la caja física y lo que la empresa todavía tiene por cobrar.
+    etiqueta: 'Caja',
+    items: [
       { tipo: 'enlace', etiqueta: 'Caja', ruta: '/caja', icono: Wallet, permiso: 'caja.ver' },
       {
         tipo: 'enlace',
@@ -90,12 +106,32 @@ const menu: SeccionMenu[] = [
         icono: HandCoins,
         permiso: 'cobranzas.ver',
       },
+    ],
+  },
+  {
+    // Todo lo relacionado con las personas que trabajan en el restaurante — quiénes son, con
+    // qué acceso, cuándo entraron a turno y cómo se reparte lo que ganaron en propinas. Antes
+    // "Usuarios/Personal/Roles" vivía suelto dentro de "Sistema"; tiene más sentido acá, junto
+    // al resto de lo que es "sobre el equipo".
+    etiqueta: 'Equipo',
+    items: [
+      { tipo: 'enlace', etiqueta: 'Turnos', ruta: '/turnos', icono: Clock, permiso: 'turnos.ver' },
       {
         tipo: 'enlace',
-        etiqueta: 'Reservas',
-        ruta: '/reservas',
-        icono: CalendarCheck,
-        permiso: 'reservas.ver',
+        etiqueta: 'Propinas',
+        ruta: '/propinas',
+        icono: Coins,
+        permiso: 'propinas.ver',
+      },
+      {
+        tipo: 'grupo',
+        etiqueta: 'Administración',
+        icono: ShieldCheck,
+        hijos: [
+          { etiqueta: 'Usuarios', ruta: '/usuarios', permiso: 'usuarios.ver' },
+          { etiqueta: 'Personal', ruta: '/personal', permiso: 'personal.ver' },
+          { etiqueta: 'Roles', ruta: '/roles', permiso: 'roles.ver' },
+        ],
       },
     ],
   },
@@ -154,6 +190,13 @@ const menu: SeccionMenu[] = [
         icono: Contact,
         permiso: 'clientes.ver',
       },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Fidelización',
+        ruta: '/fidelizacion',
+        icono: Gift,
+        permiso: 'fidelizacion.ver',
+      },
     ],
   },
   {
@@ -175,13 +218,6 @@ const menu: SeccionMenu[] = [
       },
       {
         tipo: 'enlace',
-        etiqueta: 'Plataforma',
-        ruta: '/plataforma',
-        icono: Building2,
-        soloPara: 'proveedor',
-      },
-      {
-        tipo: 'enlace',
         etiqueta: 'Auditoría',
         ruta: '/auditoria',
         icono: ScrollText,
@@ -190,17 +226,16 @@ const menu: SeccionMenu[] = [
     ],
   },
   {
-    etiqueta: 'Sistema',
+    // Trámites y documentos que exige SUNAT/INDECOPI — distinto de "Sistema", que es
+    // configuración propia del negocio, no una obligación externa.
+    etiqueta: 'Cumplimiento',
     items: [
       {
-        tipo: 'grupo',
-        etiqueta: 'Administración',
-        icono: ShieldCheck,
-        hijos: [
-          { etiqueta: 'Usuarios', ruta: '/usuarios', permiso: 'usuarios.ver' },
-          { etiqueta: 'Personal', ruta: '/personal', permiso: 'personal.ver' },
-          { etiqueta: 'Roles', ruta: '/roles', permiso: 'roles.ver' },
-        ],
+        tipo: 'enlace',
+        etiqueta: 'Libro de Reclamaciones',
+        ruta: '/reclamaciones',
+        icono: MessageSquareWarning,
+        permiso: 'reclamaciones.ver',
       },
       {
         tipo: 'enlace',
@@ -209,6 +244,25 @@ const menu: SeccionMenu[] = [
         icono: BookMarked,
         permiso: 'talonarios.ver',
       },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Facturación electrónica',
+        ruta: '/facturacion-electronica',
+        icono: FileSignature,
+        permiso: 'facturacion.ver',
+      },
+      {
+        tipo: 'enlace',
+        etiqueta: 'Guías de remisión',
+        ruta: '/guias-remision',
+        icono: PackageCheck,
+        permiso: 'guias_remision.ver',
+      },
+    ],
+  },
+  {
+    etiqueta: 'Sistema',
+    items: [
       {
         tipo: 'enlace',
         etiqueta: 'Configuración',
@@ -256,7 +310,7 @@ export function Sidebar({
   abiertoMovil,
   onCerrarMovil,
 }: SidebarProps) {
-  const { tienePermiso, usuario } = useAuth();
+  const { tienePermiso } = useAuth();
   const { pathname } = useLocation();
   // Se abre de entrada el grupo que contiene la ruta actual (ej. al entrar
   // directo por URL a /marcas); a partir de ahí el usuario controla el resto.
@@ -294,10 +348,6 @@ export function Sidebar({
       items: seccion.items
         .map((item): ItemMenu | null => {
           if (item.tipo === 'enlace') {
-            // `soloPara: 'proveedor'` no se resuelve con el catálogo de permisos: los
-            // permisos son del RBAC interno de cada restaurante, y el panel del proveedor
-            // está fuera de ese eje a propósito.
-            if (item.soloPara === 'proveedor' && !usuario?.esProveedor) return null;
             return !item.permiso || tienePermiso(item.permiso) ? item : null;
           }
           const hijosVisibles = item.hijos.filter(

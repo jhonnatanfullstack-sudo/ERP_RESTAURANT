@@ -29,8 +29,28 @@ export interface TipoDocumentoIdentidad {
   nombre: string;
 }
 
+export interface Pais {
+  id: string;
+  codigoIso2: string;
+  codigoIso3: string;
+  nombre: string;
+}
+
+/** Departamento (nivel 1), provincia (nivel 2) o distrito (nivel 3) — o el equivalente de
+ * cualquier otro país. `padre` viaja anidado cuando el backend lo pide explícitamente (ver
+ * `Empresa.distrito`), para poder preseleccionar los combos superiores sin otra consulta. */
+export interface DivisionAdministrativa {
+  id: string;
+  nivel: number;
+  nombre: string;
+  codigo: string | null;
+  padre?: DivisionAdministrativa | null;
+}
+
 export interface Empresa {
   id: string;
+  /** Identificador de la carta pública: `/carta/:slug`. */
+  slug: string;
   ruc: string;
   razonSocial: string;
   nombreComercial: string | null;
@@ -39,6 +59,8 @@ export interface Empresa {
   email: string | null;
   activo: boolean;
   ubigeo: string | null;
+  pais: Pais | null;
+  distrito: DivisionAdministrativa | null;
   logo: string | null;
   /** Acogida al régimen especial de IGV para MYPE de restaurantes/hoteles (10.5% en vez del
    * 18% general) — no es automático, requiere acogimiento explícito ante SUNAT. */
@@ -61,6 +83,10 @@ export interface EmpresaPublica {
   facebookUrl: string | null;
   instagramUrl: string | null;
   tiktokUrl: string | null;
+  /** QR de cobro que el restaurante subió en Configuración — se muestra en el carrito cuando
+   * el cliente elige pagar con ese medio. */
+  qrPagoYape: string | null;
+  qrPagoPlin: string | null;
 }
 
 export interface Personal {
@@ -138,6 +164,7 @@ export interface Producto {
   precio: number;
   imagenUrl: string | null;
   activo: boolean;
+  nombreCompleto: string;
 }
 
 export interface Insumo {
@@ -345,6 +372,12 @@ export interface Reserva {
 
 export type EstadoPedido = 'abierto' | 'cerrado' | 'cancelado';
 export type EstadoComanda = 'pendiente' | 'en_preparacion' | 'listo' | 'entregado' | 'cancelada';
+/** Por dónde entró el pedido: `salon` lo abre un mesero; los otros tres los crea el propio
+ * cliente desde la carta pública, sin autenticarse. */
+export type CanalOrigenPedido = 'salon' | 'autopedido' | 'delivery' | 'recojo';
+/** Lo que el cliente dice que va a usar para pagar en un pedido público — no es un cobro real
+ * (eso sigue pasando por Caja al cerrar la venta). */
+export type MedioPagoPreferido = 'efectivo' | 'yape' | 'plin' | 'tarjeta';
 
 export interface DetallePedido {
   id: string;
@@ -362,11 +395,30 @@ export interface Pedido {
   mesa: Mesa | null;
   cliente: Pick<Cliente, 'id' | 'nombres' | 'apellidos' | 'razonSocial'> | null;
   estado: EstadoPedido;
+  canalOrigen: CanalOrigenPedido;
+  /** Solo en un pedido público (`autopedido`/`delivery`/`recojo`) — quien lo abre desde el
+   * salón no necesita decir su nombre, está ahí. */
+  contactoNombre: string | null;
+  contactoTelefono: string | null;
+  /** Solo aplica a `delivery`. */
+  direccionEntrega: string | null;
+  /** Solo se llena en un pedido público. */
+  medioPagoPreferido: MedioPagoPreferido | null;
+  /** Con cuánto dice el cliente que va a pagar en efectivo, para preparar el vuelto. */
+  vueltoPara: number | null;
   total: number;
   notas: string | null;
   fechaCierre: string | null;
   detalles: DetallePedido[];
   creadoEn: string;
+}
+
+/** Lo que ve un visitante de la carta pública sobre "su" mesa antes de pedir — solo lo
+ * necesario para confirmarle "vas a pedir para la Mesa 5" (`GET /api/publico/:slug/mesas/:id`). */
+export interface MesaPublica {
+  id: string;
+  numero: string;
+  salon: string;
 }
 
 export interface Comanda {
@@ -428,6 +480,11 @@ export interface Talonario {
 
 export interface Venta {
   id: string;
+  /** Para el encabezado del ticket de impresión térmica (`TicketVenta.tsx`). */
+  empresa: Pick<
+    Empresa,
+    'razonSocial' | 'nombreComercial' | 'ruc' | 'direccionFiscal' | 'telefono'
+  >;
   /** null en una venta directa (sin pedido de origen: los productos se venden sueltos). */
   pedido: Pick<Pedido, 'id' | 'mesa' | 'estado' | 'total' | 'creadoEn'> | null;
   cliente: Pick<
@@ -448,9 +505,153 @@ export interface Venta {
   subtotal: number;
   igv: number;
   total: number;
+  /** Propina voluntaria del cliente — no es parte del precio de venta ni paga IGV, así que
+   * queda fuera de `subtotal`/`igv`/`total`. Lo que el cliente entrega en total es
+   * `total + propina`. */
+  propina: number;
   tipoCambio: number | null;
   estado: EstadoVenta;
   detalles: DetalleVenta[];
+  creadoEn: string;
+}
+
+export type EstadoComprobante =
+  'pendiente' | 'aceptado' | 'observado' | 'rechazado' | 'error_envio';
+
+/** Representación electrónica de una `Venta` ante SUNAT (FASE 28): el XML UBL 2.1 firmado y
+ * la constancia (CDR) que el OSE devolvió. `null` cuando la venta todavía no se emitió. */
+export interface ComprobanteElectronico {
+  id: string;
+  nombreArchivo: string;
+  estado: EstadoComprobante;
+  xmlFirmado: string;
+  cdrXml: string | null;
+  codigoRespuesta: string | null;
+  mensajeRespuesta: string | null;
+  intentos: number;
+  enviadoEn: string | null;
+  oseProveedor: string | null;
+}
+
+export type ProveedorOse = 'nubefact';
+export type AmbienteFacturacion = 'beta' | 'produccion';
+
+/** Estado de la configuración de facturación electrónica de la empresa — nunca trae el
+ * certificado ni las credenciales en claro, solo si ya están cargados (FASE 28). */
+export interface ConfiguracionFacturacion {
+  oseProveedor: ProveedorOse | null;
+  oseUsuario: string | null;
+  tieneCredencialOse: boolean;
+  tieneCertificado: boolean;
+  certificadoValidoHasta: string | null;
+  ambiente: AmbienteFacturacion;
+  activo: boolean;
+}
+
+/** Catálogo SUNAT N° 20 (subconjunto para restaurante). */
+export interface MotivoTraslado {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
+/** Catálogo SUNAT N° 18: `01` transporte público, `02` transporte privado. */
+export interface ModalidadTraslado {
+  id: string;
+  codigo: string;
+  nombre: string;
+}
+
+export interface DetalleGuiaRemision {
+  id: string;
+  descripcion: string;
+  cantidad: number;
+  unidadMedida: UnidadMedida;
+}
+
+/** Guía de Remisión Electrónica del remitente (`09`) — mismo ciclo de vida que
+ * `ComprobanteElectronico` (pendiente → aceptado/observado/rechazado/error_envio), pero
+ * `venta` es opcional: la mayoría de traslados de un restaurante (insumos entre almacenes
+ * propios) no nace de una venta. */
+export interface GuiaRemision {
+  id: string;
+  talonario: Pick<Talonario, 'id' | 'serie'>;
+  serie: string;
+  numero: number;
+  venta: Pick<Venta, 'id' | 'serie' | 'numero'> | null;
+  motivoTraslado: MotivoTraslado;
+  modalidadTraslado: ModalidadTraslado;
+  fechaTraslado: string;
+  pesoTotalKg: number;
+  numeroBultos: number | null;
+  partidaDireccion: string;
+  partidaUbigeo: string | null;
+  llegadaDireccion: string;
+  llegadaUbigeo: string | null;
+  destinatarioNumeroDocumento: string | null;
+  destinatarioNombre: string | null;
+  transportistaPlaca: string | null;
+  transportistaLicencia: string | null;
+  transportistaRuc: string | null;
+  transportistaRazonSocial: string | null;
+  observacion: string | null;
+  detalles: DetalleGuiaRemision[];
+  nombreArchivo: string;
+  estado: EstadoComprobante;
+  xmlFirmado: string;
+  cdrXml: string | null;
+  codigoRespuesta: string | null;
+  mensajeRespuesta: string | null;
+  intentos: number;
+  enviadoEn: string | null;
+  oseProveedor: string | null;
+  creadoEn: string;
+}
+
+/** Catálogos SUNAT N° 09 (motivo de Nota de Crédito, `tipoDocumento` '07') y N° 10 (motivo de
+ * Nota de Débito, `tipoDocumento` '08'). */
+export interface MotivoNota {
+  id: string;
+  tipoDocumento: '07' | '08';
+  codigo: string;
+  nombre: string;
+}
+
+export interface DetalleNotaVenta {
+  id: string;
+  producto: Pick<Producto, 'id' | 'nombre'> | null;
+  descripcionProducto: string;
+  cantidad: number;
+  precioUnitario: number;
+  valorVenta: number;
+  igv: number;
+  subtotal: number;
+}
+
+/** Nota de Crédito (07) o Nota de Débito (08) que corrige o complementa una `Venta` ya emitida
+ * a SUNAT — mismo ciclo de vida que `ComprobanteElectronico`/`GuiaRemision`. */
+export interface NotaVenta {
+  id: string;
+  talonario: Pick<Talonario, 'id' | 'serie'>;
+  serie: string;
+  numero: number;
+  tipoComprobante: TipoComprobante;
+  venta: Pick<Venta, 'id' | 'serie' | 'numero' | 'tipoComprobante'>;
+  motivo: MotivoNota;
+  descripcionSustento: string | null;
+  subtotal: number;
+  igv: number;
+  total: number;
+  detalles: DetalleNotaVenta[];
+  nombreArchivo: string;
+  estado: EstadoComprobante;
+  xmlFirmado: string;
+  cdrXml: string | null;
+  codigoRespuesta: string | null;
+  mensajeRespuesta: string | null;
+  intentos: number;
+  enviadoEn: string | null;
+  oseProveedor: string | null;
   creadoEn: string;
 }
 
@@ -491,6 +692,84 @@ export interface Caja {
   movimientos: MovimientoCaja[];
   creadoEn: string;
   fechaCierre: string | null;
+}
+
+export type EstadoTurno = 'abierto' | 'cerrado';
+
+export interface Turno {
+  id: string;
+  usuario: Pick<Usuario, 'id' | 'personal'>;
+  usuarioCierre: Pick<Usuario, 'id' | 'personal'> | null;
+  notaApertura: string | null;
+  notaCierre: string | null;
+  estado: EstadoTurno;
+  creadoEn: string;
+  fechaCierre: string | null;
+}
+
+export type MetodoRepartoPropina = 'igualitario' | 'por_horas';
+
+export interface DetalleRepartoPropina {
+  id: string;
+  usuario: Pick<Usuario, 'id' | 'personal'>;
+  horasTrabajadas: number | null;
+  monto: number;
+}
+
+/** Reparto de las propinas recaudadas en un período entre el personal que trabajó en él (ver
+ * `turnos`) — registro de cierre, no editable una vez creado. */
+export interface RepartoPropina {
+  id: string;
+  fechaDesde: string;
+  fechaHasta: string;
+  metodo: MetodoRepartoPropina;
+  totalPropinas: number;
+  usuarioRegistro: Pick<Usuario, 'id' | 'personal'>;
+  observacion: string | null;
+  detalles: DetalleRepartoPropina[];
+  creadoEn: string;
+}
+
+/** Participante calculado por `GET /api/propinas/vista-previa`, antes de confirmar el reparto
+ * — no tiene `id` propio porque todavía no se guardó nada. */
+export interface ParticipanteVistaPreviaPropina {
+  usuario: Pick<Usuario, 'id' | 'personal'>;
+  horas: number | null;
+  monto: number;
+}
+
+export interface VistaPreviaRepartoPropina {
+  totalPropinas: number;
+  participantes: ParticipanteVistaPreviaPropina[];
+}
+
+export type TipoNotificacion = 'comanda_lista' | 'pedido_nuevo' | 'reclamo_nuevo';
+
+/** Notificación del equipo — bandeja compartida por empresa (ver `notificacion.entity.ts` en
+ * el backend): quien la marca leída la marca leída para todos. */
+export interface Notificacion {
+  id: string;
+  tipo: TipoNotificacion;
+  titulo: string;
+  mensaje: string;
+  entidadTipo: string | null;
+  entidadId: string | null;
+  leida: boolean;
+  creadoEn: string;
+}
+
+export type TipoMovimientoFidelizacion = 'ganado' | 'canjeado' | 'ajuste';
+
+/** Un movimiento del kardex de puntos de un cliente (ver `movimiento-fidelizacion.entity.ts`
+ * en el backend) — el saldo es la suma con signo de sus movimientos, nunca un número aparte. */
+export interface MovimientoFidelizacion {
+  id: string;
+  tipo: TipoMovimientoFidelizacion;
+  puntos: number;
+  venta: Pick<Venta, 'id' | 'serie' | 'numero'> | null;
+  usuario: Pick<Usuario, 'id' | 'personal'> | null;
+  observacion: string | null;
+  creadoEn: string;
 }
 
 export interface UsuarioAutenticado {
@@ -634,8 +913,36 @@ export interface Cobranza {
 
 // --- Multi-empresa, demo y panel del proveedor (FASE 25-26) ---
 
-export type EstadoSuscripcion = 'activa' | 'demo' | 'demo_vencida' | 'suspendida';
+export type EstadoSuscripcion =
+  'activa' | 'demo' | 'demo_vencida' | 'suscripcion_vencida' | 'suspendida';
 export type PlanEmpresa = 'demo' | 'activo';
+
+export type PlanContratado = 'operativo' | 'facturacion' | 'completo';
+export type CicloFacturacion = 'mensual' | 'trimestral' | 'anual';
+export type EstadoSolicitudSuscripcion = 'pendiente' | 'confirmada' | 'rechazada';
+
+/** Catálogo público de planes (FASE 29), lo que consume `/precios`. */
+export interface PlanPublico {
+  id: PlanContratado;
+  nombre: string;
+  descripcion: string;
+  precioMensual: number;
+  caracteristicas: string[];
+  precios: Record<CicloFacturacion, number>;
+}
+
+export interface SolicitudSuscripcion {
+  id: string;
+  empresa: Pick<Empresa, 'id' | 'razonSocial' | 'nombreComercial' | 'ruc'>;
+  plan: PlanContratado;
+  ciclo: CicloFacturacion;
+  meses: number;
+  monto: number;
+  estado: EstadoSolicitudSuscripcion;
+  mensajeContacto: string | null;
+  confirmadoEn: string | null;
+  creadoEn: string;
+}
 
 export interface ContactoProveedor {
   nombre: string;
@@ -721,4 +1028,53 @@ export interface ConfiguracionRestaurante {
   facebookUrl: string | null;
   instagramUrl: string | null;
   tiktokUrl: string | null;
+  /** QR estático de cobro (el que muestra la propia app de Yape/Plin al restaurante) — se
+   * exhibe en caja al cobrar con ese medio de pago. `null` si no se subió ninguno. */
+  qrPagoYape: string | null;
+  qrPagoPlin: string | null;
+  fidelizacionActiva: boolean;
+  /** Cuánto hay que gastar (soles) para ganar 1 punto. */
+  solesPorPunto: number;
+  /** Cuánto vale 1 punto (soles) al canjearlo. */
+  valorCanjePunto: number;
+}
+
+// --- Libro de Reclamaciones Virtual (Ley 29571) -----------------------------------------
+
+/** Reclamo: disconformidad con el producto/servicio. Queja: disconformidad con la atención u
+ * otro malestar que no tiene que ver con lo comprado — mismo criterio del formato oficial. */
+export type TipoReclamacion = 'reclamo' | 'queja';
+export type EstadoReclamacion = 'pendiente' | 'atendido';
+
+/** Datos del proveedor para la cabecera del formulario público — a diferencia de
+ * `EmpresaPublica` (la carta), acá el RUC sí es lo que el consumidor necesita ver. */
+export interface EmpresaReclamaciones {
+  razonSocial: string;
+  ruc: string;
+  direccion: string | null;
+}
+
+export interface Reclamacion {
+  id: string;
+  numero: number;
+  tipo: TipoReclamacion;
+  consumidorNombres: string;
+  consumidorApellidos: string;
+  tipoDocumentoIdentidad: TipoDocumentoIdentidad;
+  consumidorNumeroDocumento: string;
+  consumidorDomicilio: string;
+  consumidorEmail: string;
+  consumidorTelefono: string | null;
+  esMenorEdad: boolean;
+  apoderadoNombre: string | null;
+  apoderadoNumeroDocumento: string | null;
+  descripcionBien: string;
+  montoReclamado: number | null;
+  detalle: string;
+  pedido: string;
+  estado: EstadoReclamacion;
+  respuestaProveedor: string | null;
+  fechaRespuesta: string | null;
+  usuarioAtendio: Pick<Usuario, 'id' | 'personal'> | null;
+  creadoEn: string;
 }

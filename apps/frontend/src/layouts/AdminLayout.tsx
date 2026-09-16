@@ -3,10 +3,13 @@ import { Outlet } from 'react-router';
 import { Sidebar } from '../components/Sidebar';
 import { Navbar } from '../components/Navbar';
 import { AvisoSuscripcion } from '../components/AvisoSuscripcion';
+import { useSocketCocina } from '../hooks/useSocketCocina';
 
 const CLAVE_COLAPSADO = 'restaurant-erp:sidebar-colapsado';
 
 export function AdminLayout() {
+  useSocketCocina();
+
   const [colapsado, setColapsado] = useState(() => {
     try {
       return localStorage.getItem(CLAVE_COLAPSADO) === '1';

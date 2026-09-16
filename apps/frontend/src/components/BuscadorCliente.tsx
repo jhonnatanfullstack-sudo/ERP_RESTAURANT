@@ -28,8 +28,10 @@ interface BuscadorClienteProps {
  * Búsqueda de cliente por DNI/RUC: si ya existe, lo selecciona directamente; si no, consulta
  * RENIEC/SUNAT y ofrece registrarlo automáticamente con esos datos; siempre hay un botón
  * "+ Nuevo cliente" para el registro manual. Al abrir un formulario nuevo preselecciona
- * "Clientes Varios" (ver `NUMERO_DOCUMENTO_VARIOS`). Reemplaza el combo simple de cliente en
- * los formularios de Pedidos y Ventas — no duplicar esta lógica de búsqueda en otro lugar.
+ * "Clientes Varios" (ver `NUMERO_DOCUMENTO_VARIOS`) — y mientras ese genérico siga elegido,
+ * ofrece anotarle un nombre suelto sin pasar por el registro completo (no todo cliente da su
+ * documento para una boleta, pero a veces sí dice cómo se llama). Reemplaza el combo simple de
+ * cliente en los formularios de Pedidos y Ventas — no duplicar esta lógica en otro lugar.
  */
 export function BuscadorCliente({
   clienteId,
@@ -80,6 +82,27 @@ export function BuscadorCliente({
     },
   });
 
+  // Con "Clientes Varios" preseleccionado (el caso más común: nadie pide documento para una
+  // boleta chica), a veces el cliente sí da su nombre aunque no quiera registrarse del todo.
+  // En vez de obligar a pasar por "+ Nuevo cliente" (documento, etc.), esto crea un cliente
+  // liviano con solo ese nombre y lo deja puesto — el mismo que después va a aparecer en
+  // reportes y en el comprobante SUNAT en vez de "Clientes Varios" (`nombreCliente()` y
+  // `factura.builder.ts::construirCliente` ya usan `cliente.nombres` tal cual).
+  const [nombreOcasional, setNombreOcasional] = useState('');
+  const nombreOcasionalMutation = useMutation({
+    mutationFn: (nombre: string) => clientesService.crearCliente({ nombres: nombre }),
+    onSuccess: (cliente) => {
+      queryClient.invalidateQueries({ queryKey: ['clientes'] });
+      setNombreOcasional('');
+      onCambiar(cliente.id);
+    },
+  });
+
+  function guardarNombreOcasional() {
+    const nombre = nombreOcasional.trim();
+    if (nombre) nombreOcasionalMutation.mutate(nombre);
+  }
+
   const clienteSeleccionado = clientesQuery.data?.find((c) => c.id === clienteId);
 
   // Al abrir un formulario nuevo (sin cliente aún elegido), preselecciona "Clientes Varios"
@@ -128,6 +151,8 @@ export function BuscadorCliente({
   const etiqueta = <>Cliente {requerido && <span className="text-red-500">*</span>}</>;
 
   if (clienteSeleccionado) {
+    const esGenerico = clienteSeleccionado.numeroDocumento === NUMERO_DOCUMENTO_VARIOS;
+
     return (
       <div>
         <p className={claseLabel}>{etiqueta}</p>
@@ -153,6 +178,46 @@ export function BuscadorCliente({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {esGenerico && (
+          <div className="mt-2">
+            <p className="text-xs text-zinc-500">
+              ¿Dio su nombre aunque no quiera registrarse? Ponlo aquí — así va a aparecer en el
+              comprobante y en los reportes, en vez de &quot;Clientes Varios&quot;.
+            </p>
+            <div className="mt-1.5 flex gap-2">
+              <input
+                type="text"
+                value={nombreOcasional}
+                onChange={(e) => setNombreOcasional(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    guardarNombreOcasional();
+                  }
+                }}
+                placeholder="Ej. Juan"
+                aria-label="Nombre del cliente"
+                className={`${claseCampo(false)} flex-1 text-sm`}
+              />
+              <Button
+                type="button"
+                variante="secondary"
+                onClick={guardarNombreOcasional}
+                disabled={!nombreOcasional.trim()}
+                cargando={nombreOcasionalMutation.isPending}
+              >
+                Usar nombre
+              </Button>
+            </div>
+            {nombreOcasionalMutation.isError && (
+              <p className="mt-1 text-xs text-red-600">
+                {mensajeError(nombreOcasionalMutation.error, 'No se pudo guardar el nombre')}
+              </p>
+            )}
+          </div>
+        )}
+
         {ayuda && <p className="mt-1.5 text-xs text-zinc-500">{ayuda}</p>}
       </div>
     );

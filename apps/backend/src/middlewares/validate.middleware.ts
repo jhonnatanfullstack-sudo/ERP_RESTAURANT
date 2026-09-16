@@ -43,3 +43,20 @@ export function validateUuidParam(nombre: string) {
     next();
   };
 }
+
+/** Parámetro de ruta restringido a un conjunto fijo de valores (ej. `/qr-pago/:medio`, donde
+ * `medio` solo puede ser `yape` o `plin`). */
+export function validateEnumParam(nombre: string, valores: readonly string[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const resultado = z.enum(valores as [string, ...string[]]).safeParse(req.params[nombre]);
+    if (!resultado.success) {
+      next(
+        new HttpError(400, 'Parámetro inválido', [
+          `${nombre} debe ser uno de: ${valores.join(', ')}`,
+        ]),
+      );
+      return;
+    }
+    next();
+  };
+}
