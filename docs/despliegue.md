@@ -66,9 +66,40 @@ frontend en `mi-erp.com` y el backend en `mi-erp.com/api` vía proxy inverso), d
 
 ### 1.4. Detrás de un balanceador hay que configurar `TRUST_PROXY`
 
-Todos los PaaS ponen un balanceador delante. Sin `TRUST_PROXY=1`, Express ve la IP del
-balanceador en vez de la del visitante, y el limitador de peticiones **cuenta a todos los
-usuarios como uno solo** y los bloquea en conjunto.
+Todos los PaaS ponen uno o más saltos delante de la aplicación. Con `TRUST_PROXY` de menos,
+Express ve la IP de un proxy en vez de la del visitante, y el limitador de peticiones
+**cuenta a todos los usuarios como uno solo** y los bloquea en conjunto — o, si esa IP
+intermedia cambia entre peticiones (una red de borde con varios nodos), el limitador ve un
+cliente distinto en cada petición y **deja de bloquear a nadie**, sin ningún síntoma visible
+hasta que alguien lo prueba a propósito.
+
+**El valor correcto no es el mismo en todos los proveedores** — depende de cuántos saltos
+reales inserte cada uno, y adivinarlo es un error fácil: `1` es la cuenta de "un balanceador",
+pero varios PaaS meten dos (su borde público + un enrutador interno). **Verificado en Railway
+(2026-09-16): son 2 saltos, no 1** — con `TRUST_PROXY=1`, `req.ip` resolvía a un nodo interno
+de Railway (rango `100.64.0.0/10`, su red privada) en vez de al visitante real, y ese nodo
+interno variaba entre peticiones sucesivas del mismo cliente, causando exactamente el segundo
+síntoma de arriba (el limitador dejaba de bloquear fuerza bruta contra el login). Se depuró
+agregando temporalmente `req.ips`/`req.socket.remoteAddress`/`req.app.get('trust proxy')` a
+`/health` para ver la cadena real de `X-Forwarded-For`, no adivinándolo.
+
+Antes de confiar en un valor para un proveedor nuevo, compruébalo así — no solo que el
+servidor arranque, sino que el límite de peticiones realmente bloquee tras varios intentos
+seguidos desde el mismo lugar:
+
+```bash
+# Debe bajar de forma consistente en cada intento (9, 8, 7…) y terminar en 429, no
+# quedarse fluctuando entre números sin llegar nunca al bloqueo.
+for i in $(seq 1 6); do
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST https://TU-BACKEND/api/auth/login \
+    -H "Content-Type: application/json" -d '{"email":"x@x.com","password":"incorrecta"}'
+done
+```
+
+| Proveedor             | `TRUST_PROXY`                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| **Railway**           | `2` (verificado)                                                                              |
+| Render, Fly.io, otros | `1` como punto de partida — **verifícalo igual con la prueba de arriba**, no lo des por bueno |
 
 ---
 
@@ -82,7 +113,7 @@ deliberado: mejor no arrancar que arrancar mal configurado.
 | `NODE_ENV`                | —           | `production`                                                   |
 | `PORT`                    | —           | El que inyecte el proveedor (Render/Railway lo hacen solos)    |
 | `CORS_ORIGIN`             | —           | URL exacta del frontend, con `https://` y sin barra final      |
-| `TRUST_PROXY`             | —           | `1` en cualquier PaaS                                          |
+| `TRUST_PROXY`             | —           | `2` en Railway (verificado); en otros, ver sección 1.4         |
 | `COOKIE_CROSS_SITE`       | —           | `true` si el frontend está en otro dominio                     |
 | `DB_HOST`                 | Sí          | Host del Postgres gestionado                                   |
 | `DB_PORT`                 | Sí          | `5432` normalmente                                             |
