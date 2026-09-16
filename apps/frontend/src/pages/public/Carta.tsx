@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import { AlertTriangle, MessageCircle, Search, UtensilsCrossed, X } from 'lucide-react';
 import * as productosService from '../../services/productos.service';
 import * as empresaService from '../../services/empresa.service';
+import * as mesasService from '../../services/mesas.service';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { MenuInteractivo } from '../../components/public/MenuInteractivo';
+import { SeccionCategoriaBento } from '../../components/public/SeccionCategoriaBento';
+import { GrillaBento } from '../../components/public/GrillaBento';
+import { SeccionRevelada } from '../../components/public/SeccionRevelada';
 import { BandejaPedidoFlotante } from '../../components/public/BandejaPedidoFlotante';
 import { BotonSubir } from '../../components/public/BotonSubir';
 import { ModalPlatillo } from '../../components/public/ModalPlatillo';
@@ -19,7 +23,7 @@ import { useMetaDocumento } from '../../hooks/useMetaDocumento';
 import { useMovimientoReducido } from '../../hooks/animacion';
 import { enlaceWhatsApp } from '../../utils/whatsapp';
 import { urlImagen } from '../../utils/formato';
-import type { GrupoCategoria } from '../../components/public/MenuInteractivo';
+import type { GrupoCategoria } from '../../components/public/SeccionCategoriaBento';
 import type { Producto } from '../../types/api';
 
 /** Compensa la barra pegajosa (cabecera + buscador) al saltar a una categoría. */
@@ -52,10 +56,26 @@ export function Carta() {
   // Qué restaurante publica esta carta. Viene de la URL (`/carta/:slug`) porque un cliente
   // mirando el menú no tiene sesión: no hay otra forma de saber de quién es la carta.
   const { slug = '' } = useParams<{ slug: string }>();
+  // `?mesa=<id>` es lo que codifica el QR pegado en la mesa (ver Mesas.tsx en el panel
+  // administrativo): con eso presente, el pedido se registra como autopedido a esa mesa en
+  // vez de preguntar cómo se quiere recibir — ya se sabe, está sentado ahí.
+  const [parametros] = useSearchParams();
+  const mesaId = parametros.get('mesa');
   const [busqueda, setBusqueda] = useState('');
   const [platilloAbierto, setPlatilloAbierto] = useState<Producto | null>(null);
   const bandeja = useBandejaPedido();
   const movimientoReducido = useMovimientoReducido();
+
+  // Parallax sutil de la foto del hero: se mueve un poco más lento que el scroll, así se lee
+  // con algo de profundidad en vez de ir pegada al resto de la página (ambient layer de la
+  // skill de motion design). `MotionConfig reducedMotion="user"` en `PublicLayout` ya lo
+  // desactiva solo si el sistema pide menos movimiento.
+  const heroRef = useRef<HTMLElement>(null);
+  const { scrollYProgress: progresoHero } = useScroll({
+    target: heroRef,
+    offset: ['start start', 'end start'],
+  });
+  const desplazamientoFotoHero = useTransform(progresoHero, [0, 1], [0, 70]);
 
   const productosQuery = useQuery({
     queryKey: ['productos-publico', slug],
@@ -67,7 +87,20 @@ export function Carta() {
     queryFn: () => empresaService.obtenerEmpresaPublica(slug),
     enabled: slug.length > 0,
   });
+  const mesaQuery = useQuery({
+    queryKey: ['mesa-publica', slug, mesaId],
+    queryFn: () => mesasService.obtenerMesaPublica(slug, mesaId!),
+    enabled: slug.length > 0 && !!mesaId,
+  });
   const empresa = empresaQuery.data;
+
+  const { cambiarEntrega } = bandeja;
+  const mesaData = mesaQuery.data;
+  useEffect(() => {
+    if (mesaData) {
+      cambiarEntrega({ modo: 'mesa', mesaId: mesaData.id, mesaNumero: mesaData.numero });
+    }
+  }, [mesaData, cambiarEntrega]);
   const nombreRestaurante = empresa?.nombre ?? 'nuestro restaurante';
 
   const productos = productosQuery.data ?? SIN_PRODUCTOS;
@@ -97,7 +130,7 @@ export function Carta() {
     if (!termino) return [];
     const encontrados = productos.filter(
       (producto) =>
-        producto.nombre.toLowerCase().includes(termino) ||
+        producto.nombreCompleto.toLowerCase().includes(termino) ||
         (producto.descripcion?.toLowerCase().includes(termino) ?? false),
     );
     return encontrados.length === 0
@@ -167,10 +200,28 @@ export function Carta() {
       )
     : null;
 
-  const fotoHero = useMemo(() => {
-    const conFoto = productos.find((producto) => urlImagen(producto.imagenUrl) !== null);
-    return conFoto ? { url: urlImagen(conFoto.imagenUrl)!, nombre: conFoto.nombre } : null;
-  }, [productos]);
+  // Con foto, para el clúster del hero y la grilla de destacados: sin foto no hay nada
+  // vistoso que mostrar en ninguno de los dos.
+  const conFoto = useMemo(
+    () => productos.filter((producto) => urlImagen(producto.imagenUrl) !== null),
+    [productos],
+  );
+  const fotoHero = conFoto[0]
+    ? { url: urlImagen(conFoto[0].imagenUrl)!, nombre: conFoto[0].nombreCompleto }
+    : null;
+  // Acompañan a la foto principal del hero en el clúster bento: dos teselas chicas al lado,
+  // no una fila completa (la portada ya tiene poco alto para permitirse mucho más).
+  const fotosAcompanantes = useMemo(
+    () =>
+      conFoto.slice(1, 3).map((p) => ({ url: urlImagen(p.imagenUrl)!, nombre: p.nombreCompleto })),
+    [conFoto],
+  );
+  // El plato del hero (y sus acompañantes) no se repiten en la grilla de recomendados de más
+  // abajo; tope de 8 porque más no se lee mejor, solo alarga la sección.
+  const destacados = useMemo(
+    () => conFoto.filter((p) => p.id !== conFoto[0]?.id).slice(2, 10),
+    [conFoto],
+  );
 
   // El enlace de la carta se comparte por chat: ahí se ve este título, esta descripción y
   // esta foto, no el título genérico del `index.html`.
@@ -198,7 +249,7 @@ export function Carta() {
 
       {/* Hero: el titular manda y la foto entra desde el borde de la pantalla, sin quedar
           encajada en una tarjeta centrada. */}
-      <section className="relative overflow-hidden pt-16 pb-20 sm:pt-24 sm:pb-28">
+      <section ref={heroRef} className="relative overflow-hidden pt-16 pb-20 sm:pt-24 sm:pb-28">
         <div className="mx-auto grid max-w-6xl items-center gap-12 px-5 sm:px-8 lg:grid-cols-[1.1fr_0.9fr] lg:gap-8">
           <div>
             <p
@@ -268,24 +319,105 @@ export function Carta() {
 
           {fotoHero && (
             <div className="animar-revelar relative" style={{ animationDelay: '420ms' }}>
+              {/* Dos manchas de color (no una) para que el resplandor de fondo tenga algo de
+                  profundidad en vez de leerse como un solo círculo plano. */}
               <div
                 aria-hidden="true"
                 className="animar-resplandor absolute -inset-6 rounded-full bg-(--carta-acento)/10 blur-3xl"
               />
-              {/* En escritorio la foto sale por el borde derecho de la pantalla en vez de
-                  quedar centrada como una tarjeta; en móvil es una foto apaisada bajo el
-                  titular, que es donde el visitante decide si le provoca entrar. */}
-              <div className="relative overflow-hidden rounded-3xl lg:rounded-r-none lg:rounded-l-[3rem]">
-                <img
-                  src={fotoHero.url}
-                  alt={fotoHero.nombre}
-                  className="aspect-16/10 w-full object-cover sm:aspect-2/1 lg:aspect-4/5"
-                />
+              <div
+                aria-hidden="true"
+                className="animar-flotar absolute -top-10 -left-10 h-40 w-40 rounded-full bg-(--carta-acento)/15 blur-3xl sm:h-56 sm:w-56"
+              />
+
+              {/* Clúster bento: la foto principal más dos teselas chicas al lado (solo desde
+                  `sm`, donde hay ancho para las tres) — el mismo lenguaje de tamaños mixtos que
+                  usa la grilla de la carta, ya desde la portada. En móvil queda solo la
+                  principal, apaisada bajo el titular. */}
+              <div className="relative grid grid-cols-3 gap-3 sm:gap-4">
+                <div className="relative col-span-3 overflow-hidden rounded-3xl sm:col-span-2">
+                  <motion.img
+                    src={fotoHero.url}
+                    alt={fotoHero.nombre}
+                    style={{ y: desplazamientoFotoHero }}
+                    className="aspect-16/10 w-full object-cover sm:aspect-4/3"
+                  />
+
+                  {/* Insignia flotante con un dato real (nunca inventado): cuántos platos
+                      tiene la carta hoy. */}
+                  {productos.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.85, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ duration: 0.5, delay: 0.9, ease: [0.4, 0, 0.2, 1] }}
+                      className="absolute bottom-4 left-4 flex items-center gap-2.5 rounded-2xl bg-(--carta-superficie)/90 px-4 py-3 shadow-xl backdrop-blur-sm sm:bottom-6 sm:left-6"
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-(--carta-acento) text-sm font-bold text-(--carta-acento-contraste)">
+                        {productos.length}
+                      </span>
+                      <span className="text-xs leading-tight font-semibold text-(--carta-texto)">
+                        platos
+                        <br />
+                        en la carta
+                      </span>
+                    </motion.div>
+                  )}
+                </div>
+
+                {fotosAcompanantes.length > 0 && (
+                  <div className="hidden flex-col gap-3 sm:col-span-1 sm:flex sm:gap-4">
+                    {fotosAcompanantes.map((foto, indice) => (
+                      <motion.div
+                        key={foto.url}
+                        initial={{ opacity: 0, scale: 0.94 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{
+                          duration: 0.5,
+                          delay: 0.55 + indice * 0.1,
+                          ease: [0.4, 0, 0.2, 1],
+                        }}
+                        className="flex-1 overflow-hidden rounded-2xl"
+                      >
+                        <img
+                          src={foto.url}
+                          alt={foto.nombre}
+                          className="h-full w-full object-cover"
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
       </section>
+
+      {/* Destacados: la primera grilla bento de la página, antes de la carta completa por
+          categorías. Es lo primero "vistoso" que se ve al bajar del hero — sin esto, de la
+          portada se pasa directo a un encabezado de categoría. */}
+      {destacados.length >= 2 && (
+        <section className="border-t border-(--carta-borde) py-16 sm:py-24">
+          <div className="mx-auto max-w-6xl px-5 sm:px-8">
+            <SeccionRevelada className="mb-8 sm:mb-10">
+              <p className="text-xs font-semibold tracking-[0.2em] text-(--carta-acento) uppercase">
+                Recomendados
+              </p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+                Los favoritos de la casa
+              </h2>
+            </SeccionRevelada>
+
+            <GrillaBento
+              productos={destacados}
+              items={bandeja.items}
+              permitirPedidos={permitirPedidos}
+              onAgregar={(id) => bandeja.agregar(id)}
+              onVerDetalle={setPlatilloAbierto}
+            />
+          </div>
+        </section>
+      )}
 
       {/* Barra: buscador y salto entre categorías. */}
       {productos.length > 0 && (
@@ -322,13 +454,23 @@ export function Carta() {
                       key={categoria.id}
                       type="button"
                       onClick={() => irACategoria(categoria.id)}
-                      className={`shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+                      className={`relative shrink-0 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
                         activa
-                          ? 'bg-(--carta-texto) text-(--carta-fondo)'
+                          ? 'text-(--carta-fondo)'
                           : 'text-(--carta-suave) hover:bg-(--carta-elevado) hover:text-(--carta-texto)'
                       }`}
                     >
-                      {categoria.nombre}
+                      {/* La píldora es un único elemento compartido (`layoutId`) que se
+                          desliza de un botón a otro — al hacer clic y también al hacer scroll,
+                          ya que `activa` sigue al scrollspy, no solo al clic. */}
+                      {activa && (
+                        <motion.span
+                          layoutId="carta-categoria-activa"
+                          className="absolute inset-0 rounded-lg bg-(--carta-texto)"
+                          transition={{ type: 'spring', stiffness: 420, damping: 38 }}
+                        />
+                      )}
+                      <span className="relative">{categoria.nombre}</span>
                     </button>
                   );
                 })}
@@ -378,34 +520,38 @@ export function Carta() {
             />
           </div>
         ) : (
-          <MenuInteractivo
-            grupos={gruposVisibles}
-            items={bandeja.items}
-            onAgregar={(id) => bandeja.agregar(id)}
-            onQuitarUna={(id, cantidadActual) => bandeja.cambiarCantidad(id, cantidadActual - 1)}
-            onVerDetalle={setPlatilloAbierto}
-            registrarSeccion={registrarSeccion}
-            permitirPedidos={permitirPedidos}
-            pie={
-              enlaceWspGeneral ? (
-                <div className="rounded-2xl border border-(--carta-borde) bg-(--carta-superficie) p-7">
-                  <p className="text-lg font-semibold tracking-tight">¿Dudas con algún plato?</p>
-                  <p className="mt-2 text-sm leading-relaxed text-(--carta-suave)">
-                    Escríbenos y te contamos qué lleva, cuánto demora o si podemos ajustarlo.
-                  </p>
-                  <a
-                    href={enlaceWspGeneral}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-5 inline-flex items-center gap-2 rounded-xl border border-(--carta-borde) px-5 py-3 text-sm font-semibold transition-colors hover:border-(--carta-acento) hover:text-(--carta-acento)"
-                  >
-                    <MessageCircle className="h-4 w-4" strokeWidth={2.25} />
-                    Escríbenos por WhatsApp
-                  </a>
-                </div>
-              ) : null
-            }
-          />
+          <div className="flex flex-col gap-16 sm:gap-20">
+            {gruposVisibles.map((grupo, indice) => (
+              <SeccionCategoriaBento
+                key={grupo.categoria.id}
+                grupo={grupo}
+                indice={indice}
+                items={bandeja.items}
+                permitirPedidos={permitirPedidos}
+                onAgregar={(id) => bandeja.agregar(id)}
+                onVerDetalle={setPlatilloAbierto}
+                registrarSeccion={registrarSeccion}
+              />
+            ))}
+
+            {enlaceWspGeneral && (
+              <div className="rounded-3xl border border-(--carta-borde) bg-(--carta-superficie) p-7">
+                <p className="text-lg font-semibold tracking-tight">¿Dudas con algún plato?</p>
+                <p className="mt-2 text-sm leading-relaxed text-(--carta-suave)">
+                  Escríbenos y te contamos qué lleva, cuánto demora o si podemos ajustarlo.
+                </p>
+                <a
+                  href={enlaceWspGeneral}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-5 inline-flex items-center gap-2 rounded-xl border border-(--carta-borde) px-5 py-3 text-sm font-semibold transition-colors hover:border-(--carta-acento) hover:text-(--carta-acento)"
+                >
+                  <MessageCircle className="h-4 w-4" strokeWidth={2.25} />
+                  Escríbenos por WhatsApp
+                </a>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -421,6 +567,7 @@ export function Carta() {
 
       {permitirPedidos && (
         <BandejaPedidoFlotante
+          slug={slug}
           items={bandeja.items}
           productos={productos}
           entrega={bandeja.entrega}
@@ -431,6 +578,8 @@ export function Carta() {
           onVaciar={bandeja.vaciar}
           nombreRestaurante={nombreRestaurante}
           telefonoWhatsApp={empresa?.telefono ?? null}
+          qrPagoYape={empresa?.qrPagoYape ?? null}
+          qrPagoPlin={empresa?.qrPagoPlin ?? null}
         />
       )}
 

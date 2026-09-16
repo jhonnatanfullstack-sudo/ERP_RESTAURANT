@@ -1,15 +1,45 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageCircle, Minus, Plus, RotateCcw, Tag, UtensilsCrossed, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { MessageCircle, Minus, Plus, Tag, UtensilsCrossed, X } from 'lucide-react';
 import { formatearPrecio, urlImagen } from '../../utils/formato';
 import { enlaceWhatsApp } from '../../utils/whatsapp';
-import { useMovimientoReducido } from '../../hooks/animacion';
 import type { Producto } from '../../types/api';
 
-/** Cuántos grados gira la foto por cada píxel arrastrado. */
-const GRADOS_POR_PIXEL = 0.35;
-/** Tope de giro: más allá la foto se ve de canto y pierde sentido. */
-const GIRO_MAXIMO = 24;
+/** Personalidad "Premium" (ver skill de motion design): decelera al entrar, sin rebote —
+ * transmite pulcritud, no juego. La salida es ~30% más corta que la entrada: el usuario ya
+ * decidió irse, no hace falta retenerlo. */
+const EASE_PREMIUM = [0.4, 0, 0.2, 1] as const;
+const VARIANTES_FONDO = {
+  oculto: { opacity: 0 },
+  visible: { opacity: 1, transition: { duration: 0.32, ease: EASE_PREMIUM } },
+  salida: { opacity: 0, transition: { duration: 0.22, ease: EASE_PREMIUM } },
+};
+const VARIANTES_TARJETA = {
+  oculto: { opacity: 0, y: 28, scale: 0.97 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.38, ease: EASE_PREMIUM },
+  },
+  salida: {
+    opacity: 0,
+    y: 16,
+    scale: 0.98,
+    transition: { duration: 0.22, ease: EASE_PREMIUM },
+  },
+};
+/** La foto entra un instante después de la tarjeta y con un leve acercamiento: la misma
+ * relación primario/secundario que usa cada tesela del bento al aparecer en la grilla. */
+const VARIANTES_FOTO = {
+  oculto: { opacity: 0, scale: 1.05 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { duration: 0.45, ease: EASE_PREMIUM, delay: 0.05 },
+  },
+};
 
 interface ModalPlatilloProps {
   producto: Producto | null;
@@ -22,10 +52,9 @@ interface ModalPlatilloProps {
 }
 
 /**
- * Ficha inmersiva de un platillo de la carta pública: la foto se puede girar arrastrándola
- * (rotateX/rotateY sobre el plano, con las capas de precio y categoría flotando por delante
- * gracias a `translateZ`). Sigue siendo la misma fotografía 2D, no un modelo `.glb` — ver
- * `useInclinacion3D` y `decisiones-tecnicas.md`.
+ * Ficha de un platillo de la carta pública: la misma foto a sangre y el mismo lenguaje plano de
+ * las teselas del bento, ampliados. Se abre sobre un `createPortal` para escapar del recorte de
+ * `overflow-hidden` de las secciones de la página.
  */
 export function ModalPlatillo({ producto, onCerrar, ...resto }: ModalPlatilloProps) {
   useEffect(() => {
@@ -37,12 +66,16 @@ export function ModalPlatillo({ producto, onCerrar, ...resto }: ModalPlatilloPro
     return () => document.removeEventListener('keydown', alPresionar);
   }, [producto, onCerrar]);
 
-  if (!producto) return null;
-
-  // `key` por platillo: al abrir otro, el contenido se remonta y el giro arranca en cero sin
-  // necesidad de un efecto que lo resetee.
+  // El `null` vive DENTRO de `AnimatePresence` (no como `return null` temprano): así, al
+  // cerrar, `Contenido` se desmonta con su `exit` en vez de desaparecer de golpe.
   return createPortal(
-    <Contenido key={producto.id} producto={producto} onCerrar={onCerrar} {...resto} />,
+    <AnimatePresence>
+      {producto && (
+        // `key` por platillo: al abrir otro, el contenido se remonta y la foto vuelve a
+        // entrar desde su estado inicial sin necesidad de un efecto que la resetee.
+        <Contenido key={producto.id} producto={producto} onCerrar={onCerrar} {...resto} />
+      )}
+    </AnimatePresence>,
     document.body,
   );
 }
@@ -58,48 +91,7 @@ function Contenido({
   nombreRestaurante,
   telefonoWhatsApp,
 }: ContenidoProps) {
-  const movimientoReducido = useMovimientoReducido();
-  const [giro, setGiro] = useState({ x: 0, y: 0 });
-  // Es estado y no ref porque decide si la foto sigue al dedo al instante (sin transición) o
-  // vuelve a su sitio con animación: eso se lee durante el render.
-  const [arrastrando, setArrastrando] = useState(false);
-  const inicioArrastre = useRef<{ x: number; y: number } | null>(null);
-
   const imagen = urlImagen(producto.imagenUrl);
-
-  function girarCon(dx: number, dy: number) {
-    setGiro({
-      x: Math.max(-GIRO_MAXIMO, Math.min(GIRO_MAXIMO, -dy * GRADOS_POR_PIXEL)),
-      y: Math.max(-GIRO_MAXIMO, Math.min(GIRO_MAXIMO, dx * GRADOS_POR_PIXEL)),
-    });
-  }
-
-  function alBajarPuntero(evento: React.PointerEvent<HTMLDivElement>) {
-    if (movimientoReducido) return;
-    inicioArrastre.current = { x: evento.clientX, y: evento.clientY };
-    setArrastrando(true);
-    evento.currentTarget.setPointerCapture(evento.pointerId);
-  }
-
-  function alMoverPuntero(evento: React.PointerEvent<HTMLDivElement>) {
-    if (movimientoReducido) return;
-    const inicio = inicioArrastre.current;
-    // Sin arrastrar, la foto igual acompaña al cursor (mismo gesto que la tarjeta de la grilla).
-    if (!inicio) {
-      if (evento.pointerType === 'touch') return;
-      const caja = evento.currentTarget.getBoundingClientRect();
-      const x = (evento.clientX - caja.left) / caja.width - 0.5;
-      const y = (evento.clientY - caja.top) / caja.height - 0.5;
-      setGiro({ x: -y * 14, y: x * 14 });
-      return;
-    }
-    girarCon(evento.clientX - inicio.x, evento.clientY - inicio.y);
-  }
-
-  function soltarPuntero() {
-    inicioArrastre.current = null;
-    setArrastrando(false);
-  }
 
   const mensaje = telefonoWhatsApp
     ? enlaceWhatsApp(
@@ -112,9 +104,13 @@ function Contenido({
     // `data-tema="carta"` se repite acá porque el modal se monta con `createPortal` en
     // `document.body`, fuera del árbol de `PublicLayout`: sin esto no heredaría las
     // variables `--carta-*` y las superficies quedarían transparentes.
-    <div
+    <motion.div
       data-tema="carta"
-      className="animate-fade-in fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/70 p-0 backdrop-blur-md sm:items-center sm:p-6"
+      variants={VARIANTES_FONDO}
+      initial="oculto"
+      animate="visible"
+      exit="salida"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/70 p-0 backdrop-blur-md sm:items-center sm:p-6"
     >
       <button
         type="button"
@@ -124,7 +120,13 @@ function Contenido({
         className="absolute inset-0 cursor-default"
       />
 
-      <div className="animate-scale-in relative flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-t-3xl bg-(--carta-superficie) shadow-2xl sm:rounded-3xl md:flex-row">
+      <motion.div
+        variants={VARIANTES_TARJETA}
+        initial="oculto"
+        animate="visible"
+        exit="salida"
+        className="relative flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl bg-(--carta-superficie) shadow-2xl sm:rounded-3xl md:flex-row"
+      >
         <button
           type="button"
           onClick={onCerrar}
@@ -134,66 +136,23 @@ function Contenido({
           <X className="h-4.5 w-4.5" />
         </button>
 
-        {/* Escenario 3D de la foto */}
-        <div
-          className="relative flex shrink-0 items-center justify-center overflow-hidden bg-(--carta-elevado) p-8 md:w-1/2 md:p-12"
-          style={{ perspective: '1100px' }}
-          onPointerDown={alBajarPuntero}
-          onPointerMove={alMoverPuntero}
-          onPointerUp={soltarPuntero}
-          onPointerLeave={() => {
-            soltarPuntero();
-            setGiro({ x: 0, y: 0 });
-          }}
-        >
-          <div
-            aria-hidden="true"
-            className="animar-latido absolute h-56 w-56 rounded-full bg-(--carta-acento)/15 blur-3xl"
-          />
-
-          <div
-            className="relative touch-none will-change-transform"
-            style={{
-              transform: `rotateX(${giro.x.toFixed(2)}deg) rotateY(${giro.y.toFixed(2)}deg)`,
-              transformStyle: 'preserve-3d',
-              transition: arrastrando ? 'none' : 'transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)',
-            }}
-          >
-            <div className="aspect-square w-56 overflow-hidden rounded-full shadow-2xl shadow-black/40 ring-8 ring-(--carta-fondo) sm:w-72">
-              {imagen ? (
-                <img
-                  src={imagen}
-                  alt={producto.nombre}
-                  draggable={false}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-(--carta-elevado) text-(--carta-suave)">
-                  <UtensilsCrossed className="h-16 w-16" strokeWidth={1} />
-                </div>
-              )}
+        {/* Foto a sangre, el mismo tratamiento de las teselas del bento: sin marco ni recorte
+            circular, para que la ficha se sienta parte de la misma carta y no un componente
+            aparte. */}
+        <div className="relative aspect-4/3 shrink-0 overflow-hidden bg-(--carta-elevado) md:aspect-auto md:w-1/2">
+          {imagen ? (
+            <motion.img
+              variants={VARIANTES_FOTO}
+              initial="oculto"
+              animate="visible"
+              src={imagen}
+              alt={producto.nombre}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-(--carta-suave)">
+              <UtensilsCrossed className="h-16 w-16" strokeWidth={1} />
             </div>
-
-            {/* Capas flotando por delante del plato: dan la sensación de volumen real. */}
-            <span
-              className="absolute top-0 left-0 rounded-full bg-(--carta-superficie) px-3 py-1.5 text-xs font-bold text-(--carta-acento) shadow-lg"
-              style={{ transform: 'translateZ(24px)' }}
-            >
-              {producto.categoria.nombre}
-            </span>
-            <span
-              className="absolute right-0 bottom-0 rounded-2xl bg-(--carta-texto) px-4 py-2 text-lg font-bold text-(--carta-fondo) shadow-xl"
-              style={{ transform: 'translateZ(30px)' }}
-            >
-              {formatearPrecio(producto.precio)}
-            </span>
-          </div>
-
-          {!movimientoReducido && (
-            <p className="pointer-events-none absolute bottom-4 flex items-center gap-1.5 text-xs font-medium text-(--carta-suave)">
-              <RotateCcw className="h-3.5 w-3.5" />
-              Arrastra la foto para girarla
-            </p>
           )}
         </div>
 
@@ -281,7 +240,7 @@ function Contenido({
             )}
           </div>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

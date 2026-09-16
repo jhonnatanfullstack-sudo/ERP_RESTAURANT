@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Check, Share2 } from 'lucide-react';
 
 /** Cuánto dura el acuse de "copiado" antes de volver al estado normal. */
 const MS_ACUSE = 2000;
+
+/** Peso "ligero" (ver skill de motion design): un ícono que cambia de estado se resuelve en
+ * menos de 200ms, no con la misma duración que una tarjeta o un modal. */
+const TRANSICION_ICONO = { duration: 0.18, ease: [0.4, 0, 0.2, 1] as const };
 
 interface BotonCompartirProps {
   /** Título con el que se ofrece el enlace en el menú nativo de compartir. */
@@ -50,19 +55,37 @@ export function BotonCompartir({ titulo, texto, className = '' }: BotonCompartir
     <button
       type="button"
       onClick={() => void compartir()}
-      className={`flex items-center gap-2 rounded-xl border border-(--carta-borde) px-7 py-4 text-sm font-semibold transition-colors hover:bg-(--carta-elevado) ${className}`}
+      className={`flex items-center gap-2 overflow-hidden rounded-xl border border-(--carta-borde) px-7 py-4 text-sm font-semibold transition-colors hover:bg-(--carta-elevado) ${className}`}
     >
-      {copiado ? (
-        <>
-          <Check className="h-4 w-4 text-(--carta-acento)" strokeWidth={2.5} />
-          Enlace copiado
-        </>
-      ) : (
-        <>
-          <Share2 className="h-4 w-4" strokeWidth={2.25} />
-          Compartir
-        </>
-      )}
+      {/* `mode="wait"` para que el ícono saliente termine antes de que entre el siguiente: con
+          los dos a la vez el cambio de ancho del botón (ícono + texto distintos) se ve saltado. */}
+      <AnimatePresence mode="wait" initial={false}>
+        {copiado ? (
+          <motion.span
+            key="copiado"
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            transition={TRANSICION_ICONO}
+            className="flex items-center gap-2"
+          >
+            <Check className="h-4 w-4 text-(--carta-acento)" strokeWidth={2.5} />
+            Enlace copiado
+          </motion.span>
+        ) : (
+          <motion.span
+            key="compartir"
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            transition={TRANSICION_ICONO}
+            className="flex items-center gap-2"
+          >
+            <Share2 className="h-4 w-4" strokeWidth={2.25} />
+            Compartir
+          </motion.span>
+        )}
+      </AnimatePresence>
     </button>
   );
 }
