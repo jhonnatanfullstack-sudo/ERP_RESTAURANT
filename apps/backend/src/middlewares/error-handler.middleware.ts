@@ -12,7 +12,7 @@ export function errorHandlerMiddleware(
   _next: NextFunction,
 ): void {
   if (err instanceof HttpError) {
-    sendError(res, err.statusCode, err.message, err.details);
+    sendError(res, err.statusCode, err.message, err.details, err.codigo);
     return;
   }
 

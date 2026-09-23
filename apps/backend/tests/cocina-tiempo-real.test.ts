@@ -1,10 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { io as ioClient, type Socket } from 'socket.io-client';
 import { app } from '../src/app';
 import { initSocket } from '../src/realtime/socket';
+import { AppDataSource } from '../src/database/data-source';
 import { api, empresaConProducto } from './ayudantes';
 import type { AddressInfo } from 'node:net';
+
+/** H01-R02: mismo patrón de bypass que usan los tests de H01 — todavía no existe ningún
+ * mecanismo de la aplicación para fijar esta bandera fuera de la migración de arranque, así
+ * que se prepara el escenario a mano. */
+async function marcarDebeCambiarPasswordDirecto(email: string): Promise<void> {
+  const queryRunner = AppDataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+  try {
+    await queryRunner.query(`SELECT set_config('app.bypass_rls', 'on', true)`);
+    await queryRunner.query(`UPDATE "usuarios" SET "debe_cambiar_password" = true WHERE "email" = $1`, [
+      email,
+    ]);
+    await queryRunner.commitTransaction();
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    throw error;
+  } finally {
+    await queryRunner.release();
+  }
+}
 
 /**
  * Cocina en tiempo real: cuando se crea o avanza una comanda, `comanda.service.ts` avisa por
@@ -40,6 +62,59 @@ describe('Cocina en tiempo real (WebSockets)', () => {
     const { puerto, cerrar } = await levantarServidor();
     try {
       await expect(conectar(puerto, 'token-invalido')).rejects.toThrow();
+    } finally {
+      await cerrar();
+    }
+  });
+
+  it('H01-R02 — rechaza la conexión de un usuario con debe_cambiar_password=true, aunque el JWT sea válido', async () => {
+    const { sesion } = await empresaConProducto();
+    const me = await api.get('/api/auth/me', sesion).expect(200);
+    await marcarDebeCambiarPasswordDirecto(me.body.data.email);
+
+    const { puerto, cerrar } = await levantarServidor();
+    try {
+      // El JWT en sí sigue siendo perfectamente válido (firma y expiración correctas) — el
+      // rechazo tiene que venir de releer el estado real del usuario en la base, no del token.
+      await expect(conectar(puerto, sesion.token)).rejects.toThrow();
+    } finally {
+      await cerrar();
+    }
+  });
+
+  it('H01-R12 — un fallo interno durante la validación del handshake rechaza la conexión sin dejar el servidor roto', async () => {
+    const { sesion } = await empresaConProducto();
+    const { puerto, cerrar } = await levantarServidor();
+
+    try {
+      // Inyección puntual y limitada: se hace fallar exactamente la primera adquisición de
+      // `queryRunner` que intente `usuarioPuedeConectar` (`realtime/socket.ts`), sin simular
+      // una caída real de Postgres (que rompería toda la suite, ya conectada a la misma base
+      // para el resto de las pruebas). Antes de H01-R12, esto dejaba la promesa del handshake
+      // sin ningún `.catch()` esperándola — un `unhandledRejection` real, no solo teórico.
+      const espia = vi
+        .spyOn(AppDataSource, 'createQueryRunner')
+        .mockImplementationOnce(() => {
+          throw new Error('Fallo simulado de conexión a Postgres durante el handshake');
+        });
+
+      try {
+        // El comportamiento que importa no es solo "hubo un connect_error" (eso también lo
+        // demuestra el primer test del archivo, con un token inválido) — es que un fallo
+        // *interno* durante la validación se traduzca al mismo rechazo controlado, sin que el
+        // detalle real de Postgres se filtre al cliente.
+        const error = await conectar(puerto, sesion.token).catch((e: Error) => e);
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).not.toMatch(/Postgres|pg_|ECONNREFUSED/i);
+      } finally {
+        espia.mockRestore();
+      }
+
+      // El servidor sigue vivo y respondiendo con normalidad para la siguiente conexión: el
+      // fallo simulado (y su manejo) no tumbó el proceso ni dejó el listener de Socket.IO en
+      // un estado roto.
+      const socket = await conectar(puerto, sesion.token);
+      socket.disconnect();
     } finally {
       await cerrar();
     }

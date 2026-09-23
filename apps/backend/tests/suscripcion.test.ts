@@ -1,6 +1,39 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { AppDataSource } from '../src/database/data-source';
-import { api, crearEmpresaDePrueba, sesionAdminInicial } from './ayudantes';
+import {
+  asignarProveedor,
+  quitarProveedor,
+} from '../src/modules/plataforma/proveedor-bootstrap.service';
+import { api, crearEmpresaDePrueba } from './ayudantes';
+import type { Sesion } from './ayudantes';
+
+/**
+ * Sesión de una empresa de prueba marcada como proveedor mediante el mecanismo real de H01
+ * (`asignarProveedor`). Ya no se puede asumir que `sesionAdminInicial()` lo sea — desde la
+ * migración `NeutralizarProveedorSemilla`, esa cuenta nunca lo es automáticamente — así que
+ * cada prueba que necesite un proveedor real se crea el suyo, explícitamente, igual que lo
+ * haría un operador con el CLI.
+ */
+const emailsProveedorDePrueba: string[] = [];
+
+async function sesionProveedorDePrueba(nombre: string): Promise<{ sesion: Sesion; email: string }> {
+  const sesion = await crearEmpresaDePrueba(nombre);
+  const me = await api.get('/api/auth/me', sesion).expect(200);
+  const email = me.body.data.email as string;
+  await asignarProveedor(email);
+  emailsProveedorDePrueba.push(email);
+  return { sesion, email };
+}
+
+// Red de seguridad si algún test de este archivo falla antes de limpiar el suyo — cada test
+// que usa `sesionProveedorDePrueba` de todas formas se limpia de inmediato al terminar (ver
+// abajo), porque el siguiente test del mismo `describe` corre antes de que este `afterAll`
+// dispare.
+afterAll(async () => {
+  for (const email of emailsProveedorDePrueba) {
+    await quitarProveedor(email);
+  }
+});
 
 /**
  * Vence la prueba de una empresa moviéndole la fecha al pasado, en vez de esperar 15 días.
@@ -79,8 +112,10 @@ describe('Panel del proveedor', () => {
     // 404 y no 403: a quien no corresponde no se le confirma siquiera que el panel exista.
     await api.get('/api/plataforma/panel', cualquiera).expect(404);
 
-    const proveedor = await sesionAdminInicial();
+    const { sesion: proveedor, email } = await sesionProveedorDePrueba('ProveedorDePruebaPanel');
     await api.get('/api/plataforma/panel', proveedor).expect(200);
+
+    await quitarProveedor(email);
   });
 
   it('lista las empresas con su uso real y permite extender una demo', async () => {
@@ -89,7 +124,8 @@ describe('Panel del proveedor', () => {
     await vencerDemo(empresa.empresaId);
     await api.post('/api/categorias', empresa, { nombre: 'OTRA' }).expect(402);
 
-    const proveedor = await sesionAdminInicial();
+    const { sesion: proveedor, email: emailProveedor } =
+      await sesionProveedorDePrueba('ProveedorDePruebaExtender');
     const panel = await api.get('/api/plataforma/panel', proveedor).expect(200);
     const fila = panel.body.data.empresas.find((e: { id: string }) => e.id === empresa.empresaId);
 
@@ -106,5 +142,7 @@ describe('Panel del proveedor', () => {
 
     // Tras extender vuelve a poder operar, sin necesidad de iniciar sesión de nuevo.
     await api.post('/api/categorias', empresa, { nombre: 'OTRA' }).expect(201);
+
+    await quitarProveedor(emailProveedor);
   });
 });

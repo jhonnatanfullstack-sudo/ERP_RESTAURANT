@@ -41,16 +41,29 @@ export class Usuario {
 
   /**
    * Marca al proveedor del sistema (quien lo vende y lo opera), no a un usuario del
-   * restaurante. Habilita el panel transversal de `/api/proveedor`, que es el único lugar
+   * restaurante. Habilita el panel transversal de `/api/plataforma`, que es el único lugar
    * del sistema que mira todas las empresas a la vez.
    *
-   * **No se puede activar por la API**: solo por migración o SQL directo. Si fuera editable
-   * desde `PUT /api/usuarios/:id`, el administrador de cualquier restaurante podría
-   * ascenderse a proveedor y leer los datos de todos los demás — exactamente lo que el
-   * aislamiento existe para impedir.
+   * **No se puede activar por la API**: solo por `proveedor-bootstrap.service.ts` (usado por
+   * `scripts/cli-proveedor.ts`, H01) o por migración. Si fuera editable desde
+   * `PUT /api/usuarios/:id`, el administrador de cualquier restaurante podría ascenderse a
+   * proveedor y leer los datos de todos los demás — exactamente lo que el aislamiento existe
+   * para impedir.
    */
   @Column({ name: 'es_proveedor', type: 'boolean', default: false })
   esProveedor!: boolean;
+
+  /**
+   * Fuerza la rotación de la contraseña antes de permitir cualquier otra operación (H01).
+   *
+   * La pone en `true` la migración de arranque cuando detecta que la contraseña sigue siendo
+   * el placeholder público de `SeedRbacInicial`, y la propia aplicación al cambiar una
+   * contraseña la vuelve a poner en `false`. Mientras esté en `true`, `requireAuth`
+   * (`middlewares/auth.middleware.ts`) bloquea toda ruta salvo las del propio flujo de
+   * cambio de contraseña.
+   */
+  @Column({ name: 'debe_cambiar_password', type: 'boolean', default: false })
+  debeCambiarPassword!: boolean;
 
   @ManyToOne(() => Rol, { nullable: false, onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'rol_id' })

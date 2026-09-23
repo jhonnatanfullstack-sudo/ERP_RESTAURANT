@@ -197,6 +197,86 @@ en un Postgres gestionado, donde el rol suele ser dueño **sin** ser superusuari
 `FORCE ROW LEVEL SECURITY` sí lo alcanza y un `UPDATE` sin bypass afecta cero filas **en
 silencio**.
 
+### Actualizar una instalación existente a H01, con más de un proveedor ya marcado (caso excepcional)
+
+`docs/auditoria/BACKLOG-TECNICO.md`, H01-R04/R13.
+
+**Importante — esto corrige una versión anterior de esta misma sección, que era incorrecta.**
+Decía que si `migration:run` fallaba en `UnicoProveedorGlobal`, la migración anterior
+(`NeutralizarProveedorSemilla`) quedaba confirmada de todos modos y el CLI ya podía usarse en
+ese punto. **Eso no es cierto.** `pnpm migration:run` usa el modo transaccional por defecto de
+TypeORM (`transaction: "all"` — no se fija `migrationsTransactionMode` en ningún `DataSource`
+de este proyecto, ni se pasa `-t` en el script): en ese modo, TypeORM envuelve **todas** las
+migraciones pendientes en una única transacción y solo confirma al final, si todas terminan sin
+error. Si `UnicoProveedorGlobal` falla, se revierte **toda** esa transacción — incluida
+`NeutralizarProveedorSemilla`, y con ella la columna `debe_cambiar_password`. En ese momento el
+CLI normal (`proveedor:listar`/`proveedor:quitar`, que depende de esa columna a través de la
+entidad `Usuario`) **no puede ejecutarse todavía** — el procedimiento antiguo de "migrar, si
+falla usar el CLI, volver a migrar" queda descartado.
+
+#### Instalación normal (0 o 1 proveedor ya marcado)
+
+No hace falta nada especial: `migration:run` corre y completa con normalidad.
+
+#### Instalación antigua con más de un proveedor ya marcado
+
+Resolver el conflicto **ANTES** de correr `migration:run`, con una herramienta separada que no
+depende de ninguna columna de H01 (`preflight-h01.ts` — solo usa `id`/`email`/`es_proveedor`,
+columnas que ya existían antes de H01):
+
+1. **Verificar**, antes de migrar:
+
+   ```
+   pnpm --filter @restaurant-erp/backend preflight:h01 verificar
+   ```
+
+   Si hay 0 o 1 usuarios con `es_proveedor = true`, termina con éxito y no hace falta nada más
+   — sigue con `migration:run` como siempre.
+
+2. Si reporta más de uno, muestra una tabla con **ID + EMAIL** de cada uno en conflicto y **no
+   elige cuál conservar**:
+
+   ```
+   ID                                    EMAIL
+   3fa2c1e0-....-....-....-............  Proveedor@dominio.com
+   9b7d4a11-....-....-....-............  proveedor@dominio.com
+   ```
+
+   El email es solo información para que un humano reconozca la cuenta — **la selección final
+   se hace por ID, nunca por email**. El motivo: `usuarios.email` es sensible a
+   mayúsculas/minúsculas (no hay ninguna restricción que lo normalice todavía, ver H01-R08,
+   diferido), así que dos cuentas con emails que solo difieren en el uso de mayúsculas —como
+   `Proveedor@dominio.com` y `proveedor@dominio.com`— pueden coexistir como proveedores
+   distintos. Elegir por email normalizado a minúsculas sería ambiguo en ese caso: no hay forma
+   de saber cuál de las dos quiso decir el operador. El `id` (UUID) siempre es inequívoco.
+
+   El operador decide explícitamente cuál de esos IDs debe seguir siendo el proveedor real de
+   esa instalación, y resuelve el conflicto con:
+
+   ```
+   pnpm --filter @restaurant-erp/backend preflight:h01 resolver --mantener-id <el-id-que-corresponde>
+   ```
+
+   Esto le quita `es_proveedor` a todos los DEMÁS que estaban en conflicto (nunca a nadie fuera
+   de esa lista), verificando de nuevo el estado dentro de la misma transacción antes de
+   escribir, y comprobando antes de confirmar no solo que quede un único proveedor sino que ese
+   único proveedor sea, por ID, exactamente el elegido. No borra usuarios, no cambia
+   contraseñas, no toca `personal` ni `empresas` — solo la columna `usuarios.es_proveedor`.
+
+   Un ID que no tiene formato UUID, o que no es ninguno de los que aparecen en el conflicto
+   verificado en ese momento, se rechaza sin modificar nada.
+
+3. Recién ahora corre `migration:run` con normalidad. Con 0 o 1 proveedor, ambas migraciones de
+   H01 completan sin error, y el índice único (`IDX_un_proveedor_global`) queda protegiendo el
+   invariante hacia adelante — defensa en profundidad: el preflight resuelve el estado antes de
+   migrar, pero la migración sigue verificando por su cuenta y el índice sigue rechazando
+   cualquier segundo proveedor a nivel de base, sin importar por qué camino se intentara.
+
+`preflight-h01.ts` es una herramienta **exclusiva de esta recuperación excepcional** — no
+reemplaza a `proveedor:asignar`/`proveedor:quitar`/`proveedor:listar`, que sigue siendo el
+mecanismo normal para administrar el proveedor en cualquier instalación que ya corrió H01 una
+vez. No la uses fuera de este escenario.
+
 ---
 
 ## 4. Backend (Node + Express)
@@ -259,13 +339,17 @@ Es un monorepo pnpm, así que los comandos se ejecutan desde la **raíz**:
 
 4. Verificar: `curl https://TU-BACKEND/health` debe responder `{"success":true,...}`.
 5. Comprobar el usuario de arranque y cambiarle la contraseña de inmediato
-   (`admin@restaurant.local` / `CambiarInmediatamente123!`, ver `autenticacion.md`).
-6. Marcar tu cuenta como proveedor del sistema, si `PROVEEDOR_EMAIL` no coincidía con ningún
-   usuario existente al migrar:
+   (`admin@restaurant.local` / `CambiarInmediatamente123!`, ver `autenticacion.md`). Desde H01
+   esto ya no es solo una recomendación: la migración `NeutralizarProveedorSemilla` fija
+   `debe_cambiar_password = true` en esa cuenta mientras siga con la contraseña de arranque, y
+   `requireAuth` bloquea con 428 cualquier otra operación hasta que la rotes.
+6. Registrarte como un cliente normal desde `/registro` con tu propio correo y contraseña, y
+   marcarte como proveedor del sistema con el CLI administrativo — nunca con `UPDATE` directo
+   ni confiando en `PROVEEDOR_EMAIL` (que solo sirve como dato de contacto, no otorga el
+   privilegio por sí solo; ver `roles-y-permisos.md`):
 
-   ```sql
-   UPDATE usuarios SET es_proveedor = false;
-   UPDATE usuarios SET es_proveedor = true WHERE email = 'tu-correo@ejemplo.com';
+   ```bash
+   pnpm --filter @restaurant-erp/backend proveedor:asignar --email tu-correo@ejemplo.com
    ```
 
 7. Si el plan tiene disco persistente, montarlo en `apps/backend/uploads`.

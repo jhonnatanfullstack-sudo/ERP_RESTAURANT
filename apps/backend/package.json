@@ -14,7 +14,11 @@
     "migration:generate": "pnpm typeorm migration:generate",
     "migration:run": "pnpm typeorm migration:run",
     "migration:revert": "pnpm typeorm migration:revert",
-    "migration:show": "pnpm typeorm migration:show"
+    "migration:show": "pnpm typeorm migration:show",
+    "proveedor:asignar": "tsx src/scripts/cli-proveedor.ts asignar",
+    "proveedor:quitar": "tsx src/scripts/cli-proveedor.ts quitar",
+    "proveedor:listar": "tsx src/scripts/cli-proveedor.ts listar",
+    "preflight:h01": "tsx src/scripts/preflight-h01.ts"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

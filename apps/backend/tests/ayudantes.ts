@@ -62,12 +62,15 @@ let contador = 0;
 export async function crearEmpresaDePrueba(nombre = 'Restaurante'): Promise<Sesion> {
   contador += 1;
   const sufijo = String(contador).padStart(4, '0');
-  const admin = await sesionAdminInicial();
 
-  const tipos = await request(app)
-    .get('/api/catalogos/tipos-documento-identidad')
-    .set(admin.h)
-    .expect(200);
+  // Antes se resolvía con la sesión del admin semilla contra el catálogo general
+  // (`/api/catalogos/...`, que exige sesión). Eso acopla esta función a que esa cuenta
+  // siempre pueda operar — y H01 (`debe_cambiar_password`) puede dejarla bloqueada para
+  // cualquier otra ruta autenticada, precisamente lo que se busca. El propio formulario
+  // público de `/registro` tiene el mismo problema (todavía no hay sesión) y ya lo resuelve
+  // con este espejo público de solo lectura (`demo.controller.ts::tiposDocumento`); se
+  // reutiliza el mismo, sin inventar ni depender de ninguna sesión.
+  const tipos = await request(app).get('/api/demo/tipos-documento').expect(200);
 
   const respuesta = await request(app)
     .post('/api/demo/registrar')

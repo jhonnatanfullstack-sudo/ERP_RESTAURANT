@@ -157,9 +157,25 @@ export async function cambiarPassword(usuarioId: string, dto: CambiarPasswordDto
 
   const passwordValida = await bcrypt.compare(dto.passwordActual, usuario.passwordHash);
   if (!passwordValida) {
+    // Se lanza antes de tocar `usuario`: si la contraseña actual es incorrecta,
+    // `debeCambiarPassword` (H01) queda exactamente como estaba, nunca se limpia.
     throw new HttpError(401, 'La contraseña actual es incorrecta');
   }
 
+  // H01-R01: comparar contra el HASH guardado con bcrypt.compare, nunca la contraseña actual
+  // en texto plano contra la nueva en texto plano — dos contraseñas iguales no producen el
+  // mismo hash (la sal es aleatoria), así que la única comparación válida es esta. Sin este
+  // chequeo, "cambiar" la contraseña a la misma que ya tenía limpiaría `debeCambiarPassword`
+  // sin que la cuenta hubiera rotado nada de verdad.
+  const esLaMisma = await bcrypt.compare(dto.passwordNuevo, usuario.passwordHash);
+  if (esLaMisma) {
+    throw new HttpError(400, 'La nueva contraseña debe ser diferente de la actual');
+  }
+
   usuario.passwordHash = await bcrypt.hash(dto.passwordNuevo, 12);
+  // Un solo `UPDATE` para ambas columnas: la petición ya corre dentro de una única
+  // transacción por request (`tenant.middleware.ts`), así que esto es atómico con todo lo
+  // demás que haga esta operación.
+  usuario.debeCambiarPassword = false;
   await usuarioRepository.save(usuario);
 }

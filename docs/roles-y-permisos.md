@@ -87,11 +87,23 @@ Páginas `Usuarios`, `Personal` y `Roles`: lista + crear + **editar** + **elimin
 
 Desde que el sistema es multi-empresa, **los roles pertenecen a una empresa** (`roles.empresa_id`, único por `(empresa_id, nombre)`): cada restaurante arma los suyos y no puede ver ni asignar los de otro. El **catálogo de permisos sigue siendo global y controlado por código**, como hasta ahora — es la lista de lo que el sistema sabe verificar, no una pertenencia de nadie. Al crear una cuenta de prueba se genera automáticamente un rol `Administrador` con todos los permisos vigentes, y desde ahí el restaurante define roles más acotados.
 
-**El proveedor del sistema está fuera de este eje.** El panel `/plataforma` no se protege con un permiso sino con `usuarios.es_proveedor`, una marca que **solo se activa por migración, nunca por la API**. La razón es directa: si fuera un permiso, cualquier administrador de cualquier restaurante podría asignárselo a su propio rol y leer los datos de todos los demás — exactamente lo que el aislamiento existe para impedir. A quien no es proveedor el panel le responde 404, no 403: no se le confirma siquiera que exista.
+**El proveedor del sistema está fuera de este eje.** El panel `/plataforma` no se protege con un permiso sino con `usuarios.es_proveedor`. A quien no es proveedor el panel le responde 404, no 403: no se le confirma siquiera que exista.
 
-Para cambiar quién es el proveedor:
+**H01 (`docs/auditoria/BACKLOG-TECNICO.md`): la cuenta semilla (`admin@restaurant.local`) NUNCA es proveedor automáticamente.** Hasta antes de esa corrección, una migración marcaba como proveedor a `PROVEEDOR_EMAIL` o, si no coincidía con nadie, al usuario más antiguo de la base — que en una instalación nueva es siempre la cuenta semilla, sin que nadie lo hubiera decidido. Eso ya no ocurre: la migración `NeutralizarProveedorSemilla` revierte esa marca (y exige rotar la contraseña) si detecta que sigue siendo la de arranque. **`PROVEEDOR_EMAIL` no otorga privilegios por sí solo** — solo es el contacto que ve un restaurante cuando su prueba vence (`config/env.ts`).
 
-```sql
-UPDATE usuarios SET es_proveedor = false;
-UPDATE usuarios SET es_proveedor = true WHERE email = 'tu-correo@ejemplo.com';
+**Como máximo hay un proveedor a la vez** (sin soporte multi-proveedor), garantizado por un índice único en la base (`UnicoProveedorGlobal`) además de por el mecanismo de asignación.
+
+**La única vía normal para asignar o quitar el proveedor es el CLI administrativo** (`apps/backend/src/scripts/cli-proveedor.ts`), ejecutado por quien tiene acceso al servidor — nunca por la API, nunca con `UPDATE` directo a mano (un `UPDATE` que se salte el CLI no pasa por las validaciones de esa función, aunque el índice único de la base sigue protegiendo el invariante de "uno solo"):
+
+```bash
+# Ver quién es el proveedor actual
+pnpm --filter @restaurant-erp/backend proveedor:listar
+
+# Asignar (falla si el usuario no existe, está inactivo, tiene una rotación de
+# contraseña pendiente, o si ya hay un proveedor distinto)
+pnpm --filter @restaurant-erp/backend proveedor:asignar --email tu-correo@ejemplo.com
+
+# Reemplazar: primero quitarlo al actual, después asignar al nuevo
+pnpm --filter @restaurant-erp/backend proveedor:quitar --email el-actual@ejemplo.com
+pnpm --filter @restaurant-erp/backend proveedor:asignar --email el-nuevo@ejemplo.com
 ```

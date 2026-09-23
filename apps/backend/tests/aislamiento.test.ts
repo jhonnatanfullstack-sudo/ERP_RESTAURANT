@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { api, crearEmpresaDePrueba, sesionAdminInicial } from './ayudantes';
+import { api, crearEmpresaDePrueba } from './ayudantes';
 
 /**
  * El aislamiento entre empresas es la garantía más cara de romper del sistema: un fallo acá
@@ -60,16 +60,19 @@ describe('Aislamiento entre empresas', () => {
   });
 
   it('cada empresa solo ve sus propios usuarios y roles', async () => {
+    // Dos empresas de prueba ordinarias — H01 restringe a la cuenta semilla (nunca es
+    // proveedor y siempre exige rotar su contraseña primero), así que ya no sirve como sesión
+    // "de conveniencia" para una lectura genérica como esta.
     const a = await crearEmpresaDePrueba();
-    const admin = await sesionAdminInicial();
+    const b = await crearEmpresaDePrueba();
 
     const usuariosA = await api.get('/api/usuarios', a).expect(200);
-    const usuariosAdmin = await api.get('/api/usuarios', admin).expect(200);
+    const usuariosB = await api.get('/api/usuarios', b).expect(200);
 
-    // La empresa recién creada tiene exactamente un usuario: el que la registró.
+    // Cada empresa recién creada tiene exactamente un usuario: el que la registró.
     expect(usuariosA.body.data).toHaveLength(1);
     expect(
-      usuariosAdmin.body.data.some((u: { id: string }) => u.id === usuariosA.body.data[0].id),
+      usuariosB.body.data.some((u: { id: string }) => u.id === usuariosA.body.data[0].id),
     ).toBe(false);
   });
 

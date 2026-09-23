@@ -3,18 +3,55 @@ import { HttpError } from '../utils/http-error';
 import { verifyAccessToken } from '../utils/jwt';
 import { establecerEmpresaDeLaPeticion } from '../database/tenant-context';
 import { empresaRepository } from '../modules/empresa/empresa.repository';
+import { usuarioRepository } from '../modules/usuarios/usuario.repository';
 import {
   calcularSuscripcion,
   esEscritura,
   registrarUso,
 } from '../modules/suscripcion/suscripcion.service';
 
-/** Rutas que siguen disponibles con la cuenta vencida o suspendida: son justamente las que
- * el usuario necesita para entender qué pasó y para salir. */
-const RUTAS_SIEMPRE_PERMITIDAS = ['/auth/', '/suscripcion'];
+/**
+ * Rutas que siguen disponibles con la cuenta vencida o suspendida: son justamente las que el
+ * usuario necesita para entender qué pasó y para salir (H01-R05: incluye explícitamente
+ * `cambiar-password` — una cuenta obligada a rotar la contraseña tiene que poder hacerlo sin
+ * que la suscripción se lo impida).
+ *
+ * H01-R05 (revisión Codex): esto comparaba contra `req.path`, que **no** significa lo mismo
+ * según el nivel de anidamiento en el que corra `requireAuth` — para una ruta puntual como
+ * `authRouter.get('/me', requireAuth, ...)` o `authRouter.post('/cambiar-password', ...)`,
+ * Express ya recortó los prefijos `/api` y `/auth` antes de llegar acá, así que `req.path` es
+ * `/me` o `/cambiar-password`, nunca `/auth/algo` — el `startsWith('/auth/')` de abajo jamás
+ * coincidía para esas rutas exactas, y una cuenta suspendida no podía ni cambiar su contraseña
+ * ni consultar `/me`. Se cambia a `req.originalUrl`, que es siempre la URL completa desde el
+ * principio, sin importar cuántos routers se hayan atravesado.
+ */
+const RUTAS_SIEMPRE_PERMITIDAS = ['/api/auth/', '/api/suscripcion'];
 
 function esRutaSiemprePermitida(req: Request): boolean {
-  return RUTAS_SIEMPRE_PERMITIDAS.some((ruta) => req.path.startsWith(ruta));
+  const ruta = req.originalUrl.split('?')[0];
+  return RUTAS_SIEMPRE_PERMITIDAS.some((prefijo) => ruta.startsWith(prefijo));
+}
+
+/**
+ * Rutas del propio flujo de cambio de contraseña (H01), alcanzables incluso con
+ * `debe_cambiar_password = true`: iniciar sesión ya pasó (esto corre después del login),
+ * consultar quién es uno (`/me`), cambiar la contraseña, y poder cerrar sesión sin quedar
+ * atrapado si decide no cambiarla ahora.
+ *
+ * Se compara contra `req.originalUrl` y no `req.path`: `requireAuth` se usa tanto como
+ * middleware de router (`router.use(requireAuth)`, donde Express ya recortó el prefijo del
+ * montaje) como directamente en una ruta puntual (`authRouter.get('/me', requireAuth, ...)`,
+ * donde el recorte es distinto) — `req.originalUrl` es la única propiedad que significa lo
+ * mismo sin importar en qué nivel de anidamiento se ejecute este chequeo.
+ */
+const RUTAS_PERMITIDAS_CON_PASSWORD_PENDIENTE = new Set([
+  '/api/auth/cambiar-password',
+  '/api/auth/logout',
+  '/api/auth/me',
+]);
+
+function esRutaPermitidaConPasswordPendiente(req: Request): boolean {
+  return RUTAS_PERMITIDAS_CON_PASSWORD_PENDIENTE.has(req.originalUrl.split('?')[0]);
 }
 
 /**
@@ -62,6 +99,26 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
       const empresa = await empresaRepository.findOneBy({ id: payload.empresaId });
       if (!empresa || !empresa.activo) {
         throw new HttpError(403, 'La empresa está inactiva');
+      }
+
+      // Se lee de la base en cada petición, igual criterio que `requireProveedor`: si viajara
+      // en el JWT, cambiar la contraseña (que la pone en `false`) no surtiría efecto hasta que
+      // el token expire, dejando la sesión bloqueada pese a haber cumplido lo que se pedía.
+      const usuarioActual = await usuarioRepository.findOne({
+        where: { id: payload.sub },
+        select: { id: true, debeCambiarPassword: true },
+      });
+      if (usuarioActual?.debeCambiarPassword && !esRutaPermitidaConPasswordPendiente(req)) {
+        // 428 (Precondition Required) y no 401/403: no es que la sesión sea inválida ni que
+        // falte permiso — es que hay un paso obligatorio pendiente antes de cualquier otra
+        // operación. Un código propio en el body (`codigo`) evita que el frontend tenga que
+        // adivinarlo a partir del mensaje.
+        throw new HttpError(
+          428,
+          'Debes cambiar tu contraseña antes de continuar',
+          [],
+          'DEBE_CAMBIAR_PASSWORD',
+        );
       }
 
       const suscripcion = calcularSuscripcion(empresa);

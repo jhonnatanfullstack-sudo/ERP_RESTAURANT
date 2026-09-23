@@ -1,21 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { app } from '../src/app';
-import { api, crearEmpresaDePrueba, sesionAdminInicial } from './ayudantes';
+import { api, crearEmpresaDePrueba } from './ayudantes';
+import type { Sesion } from './ayudantes';
 
 /**
  * Geografía multi-país (FASE 27): catálogo de países/divisiones administrativas, y que
  * `Empresa.ubigeo` se derive del distrito elegido tanto en el registro público como al editar.
+ *
+ * H01-R06: estas lecturas de catálogo antes usaban `sesionAdminInicial()` como una sesión
+ * autenticada "de conveniencia" — cualquier empresa de prueba ordinaria sirve igual, y H01
+ * restringe deliberadamente a la cuenta semilla (nunca es proveedor, siempre exige rotar su
+ * contraseña antes de cualquier otra operación) para que la restricción siga siendo
+ * comprobable en el resto de la suite.
  */
 
-async function paisPeru(sesion: Awaited<ReturnType<typeof sesionAdminInicial>>) {
+async function paisPeru(sesion: Sesion) {
   const paises = await api.get('/api/catalogos/paises', sesion).expect(200);
   const peru = paises.body.data.find((p: { codigoIso2: string }) => p.codigoIso2 === 'PE');
   expect(peru).toBeDefined();
   return peru as { id: string };
 }
 
-async function unDistritoDePeru(sesion: Awaited<ReturnType<typeof sesionAdminInicial>>) {
+async function unDistritoDePeru(sesion: Sesion) {
   const peru = await paisPeru(sesion);
 
   const departamentos = await api
@@ -45,8 +52,8 @@ async function unDistritoDePeru(sesion: Awaited<ReturnType<typeof sesionAdminIni
 
 describe('Catálogo de geografía', () => {
   it('el catálogo de países incluye Perú y el árbol de divisiones tiene los tres niveles', async () => {
-    const admin = await sesionAdminInicial();
-    const { departamento, provincia, distrito } = await unDistritoDePeru(admin);
+    const empresa = await crearEmpresaDePrueba('GeografiaCatalogo');
+    const { departamento, provincia, distrito } = await unDistritoDePeru(empresa);
 
     expect(departamento.id).toBeDefined();
     expect(provincia.id).toBeDefined();
@@ -67,10 +74,12 @@ describe('Catálogo de geografía', () => {
 
 describe('Empresa: país y distrito derivan el ubigeo', () => {
   it('el registro público con distritoId guarda el ubigeo derivado del distrito', async () => {
-    const admin = await sesionAdminInicial();
-    const { peru, distrito } = await unDistritoDePeru(admin);
+    const cualquiera = await crearEmpresaDePrueba('GeografiaRegistroPublico');
+    const { peru, distrito } = await unDistritoDePeru(cualquiera);
 
-    const tipos = await api.get('/api/catalogos/tipos-documento-identidad', admin).expect(200);
+    const tipos = await api
+      .get('/api/catalogos/tipos-documento-identidad', cualquiera)
+      .expect(200);
     const sufijo = Date.now().toString().slice(-9);
 
     const registro = await request(app)
@@ -103,8 +112,8 @@ describe('Empresa: país y distrito derivan el ubigeo', () => {
   });
 
   it('editar la empresa con un distrito distinto actualiza el ubigeo, y quitarlo lo deja en null', async () => {
-    const admin = await sesionAdminInicial();
-    const { distrito } = await unDistritoDePeru(admin);
+    const cualquiera = await crearEmpresaDePrueba('GeografiaCatalogoEdicion');
+    const { distrito } = await unDistritoDePeru(cualquiera);
 
     // Empresa propia de esta prueba (no la del admin compartido con el resto de la suite):
     // editar geografía no debe dejar estado mutado que otra prueba dé por sentado.

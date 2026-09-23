@@ -9,6 +9,7 @@ export function sendError(
   statusCode: number,
   message: string,
   details: string[] = [],
+  codigo?: string,
 ): void {
-  res.status(statusCode).json({ success: false, message, details });
+  res.status(statusCode).json({ success: false, message, details, ...(codigo ? { codigo } : {}) });
 }
