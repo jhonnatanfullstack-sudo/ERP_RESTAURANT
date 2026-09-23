@@ -660,3 +660,39 @@ ambiente beta) desde `/facturacion-electronica` — sin eso, ninguna empresa pue
 comprobante que SUNAT realmente acepte. Es la misma limitación que ya se explicó al usuario
 antes de empezar esta fase: el código está completo y verificado hasta donde se puede sin una
 cuenta real.
+
+## Bug real: digest de la firma calculado distinto al verificado (2026-09-18)
+
+**Síntoma.** Con una cuenta de NubeFacT OSE real (credenciales válidas, no inventadas), el envío
+llegó más lejos que en la verificación manual anterior y NubeFacT respondió `"El documento
+electrónico ingresado ha sido alterado | signature validation status: true ref[0] validity
+status: false"`: la firma en sí es válida (la clave privada corresponde al certificado), pero el
+digest de la referencia no coincide con el documento recibido.
+
+**Causa raíz, confirmada sin red ni NubeFacT de por medio.** `firmador.ts` declaraba la
+referencia con un solo transform: `enveloped-signature`, sin canonicalización explícita después.
+`xml-crypto` (`signed-xml.js`) trata ese caso de forma asimétrica entre firmar y verificar:
+- **Al firmar** (`createReferences` → `getCanonXml`), si la lista de transforms no termina en un
+  algoritmo de canonicalización, el resultado del transform `enveloped-signature` (un nodo DOM)
+  se serializa con `Node.toString()` crudo — no es Canonical XML real.
+- **Al verificar** (`loadReference`), si detecta que el último transform es
+  `enveloped-signature`, **agrega automáticamente** `http://www.w3.org/TR/2001/REC-xml-c14n-20010315`
+  a la lista antes de recalcular el digest.
+
+Mismo documento, dos serializaciones distintas → el digest que se firma nunca coincide con el
+que cualquier verificador conforme al estándar (`xml-crypto` mismo, y por lo visto también
+NubeFacT/SUNAT) recalcula. Se reprodujo firmando un XML mínimo con `firmarXml` y
+auto-verificándolo con `SignedXml.checkSignature` de la misma librería, sin tocar la red: fallaba
+igual, confirmando que no es un problema de interoperabilidad con NubeFacT sino un bug propio.
+
+**Corrección.** Agregar la canonicalización (`http://www.w3.org/TR/2001/REC-xml-c14n-20010315`)
+como segundo transform explícito de la referencia en `firmador.ts`, después de
+`enveloped-signature`. Con eso la auto-verificación pasa. Verificado con el mismo script de
+reproducción, la suite de `facturacion.test.ts` (8/8) y `tsc --noEmit` de `src` y `tests`, todo en
+verde.
+
+**Por qué no se detectó en la verificación manual original de esta fase.** Aquella prueba usó
+credenciales de OSE inventadas: NubeFacT rechazó por autenticación (WS-Security) antes de llegar
+a validar la firma del XML en sí, así que el bug del digest nunca se ejerció de punta a punta.
+"El circuito llega y vuelve" no es lo mismo que "el documento que llega es válido" — con
+credenciales reales sí se llegó a esa validación y apareció el error real.

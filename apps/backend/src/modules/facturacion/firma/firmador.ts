@@ -44,7 +44,17 @@ export function firmarXml(xml: string, certificado: CertificadoDigital): Resulta
     // Sin esto xml-crypto le pone un `Id` al elemento raíz y referencia `URI="#_0"`. SUNAT
     // espera la forma canónica `URI=""` y no admite atributos extra en `<Invoice>`.
     isEmptyUri: true,
-    transforms: ['http://www.w3.org/2000/09/xmldsig#enveloped-signature'],
+    // La canonicalización explícita al final es obligatoria, no cosmética: sin ella
+    // `xml-crypto` calcula el digest de firma con un `toString()` de DOM crudo (no es
+    // Canonical XML real), pero al verificar sí aplica canonicalización real cuando detecta
+    // que el último transform es `enveloped-signature` — el digest firmado y el verificado
+    // quedan calculados con dos serializaciones distintas del mismo documento, y cualquier
+    // verificador que siga el estándar (SUNAT, NubeFacT) lo rechaza como "documento alterado"
+    // aunque la firma nunca se haya tocado.
+    transforms: [
+      'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+      CANONICALIZACION,
+    ],
     digestAlgorithm: ALGORITMO_DIGEST,
   });
 

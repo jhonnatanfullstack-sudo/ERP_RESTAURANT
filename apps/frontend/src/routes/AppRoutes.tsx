@@ -47,6 +47,7 @@ import { Configuracion } from '../pages/Configuracion';
 import { FacturacionElectronica } from '../pages/FacturacionElectronica';
 import { GuiasRemision } from '../pages/GuiasRemision';
 import { ProtectedRoute } from './ProtectedRoute';
+import LoginPage from '../pages/LoginPrueba';
 
 export function AppRoutes() {
   return (

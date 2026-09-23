@@ -113,9 +113,20 @@ export function AvisoSuscripcion() {
       <span className="font-semibold">
         {dias === 1 ? 'Te queda 1 día de prueba' : `Te quedan ${dias} días de prueba`}
       </span>
+      <a
+        href="/precios"
+        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-semibold underline-offset-2 hover:underline ${
+          urgente
+            ? 'border-amber-300 bg-amber-100 text-amber-900'
+            : 'border-zinc-300 bg-white text-zinc-700'
+        }`}
+      >
+        <CreditCard className="h-3.5 w-3.5" strokeWidth={2.25} />
+        Ver planes
+      </a>
       {urgente && (
         <>
-          <span>Activa el sistema con {suscripcion.contactoProveedor.nombre}:</span>
+          <span>o activa el sistema con {suscripcion.contactoProveedor.nombre}:</span>
           <Contacto contacto={suscripcion.contactoProveedor} />
         </>
       )}
