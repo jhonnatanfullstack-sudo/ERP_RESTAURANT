@@ -8,6 +8,7 @@ import { obtenerUsuarioParaLogin, obtenerUsuario } from '../usuarios/usuario.ser
 import { usuarioRepository } from '../usuarios/usuario.repository';
 import { usuarioPublico } from '../usuarios/usuario.mapper';
 import { refreshTokenRepository } from './refresh-token.repository';
+import { RefreshToken } from './refresh-token.entity';
 import { conBypassRls, establecerEmpresaDeLaPeticion } from '../../database/tenant-context';
 import type { LoginDto, CambiarPasswordDto } from './auth.dto';
 
@@ -83,6 +84,25 @@ export async function login(dto: LoginDto): Promise<SesionEmitida> {
   return { accessToken, refreshToken, usuario: usuarioPublico(usuario) };
 }
 
+/**
+ * H06 — Antes de leer o tocar `refresh_tokens`, se bloquea la fila del USUARIO
+ * (`SELECT ... FOR UPDATE`, `pessimistic_write`) con el mismo lock, sobre la misma fila y en el
+ * mismo orden que usa `cambiarPassword`. Postgres serializa así ambas operaciones del mismo
+ * usuario sin importar cuál llegó primero — sin este lock, un refresh que ya había leído "no
+ * revocado" antes de que un cambio de contraseña concurrente terminara podía seguir adelante y
+ * emitir una sesión nueva que sobrevivía a la revocación (la carrera que llevó a rechazar un
+ * simple `UPDATE` sin más como solución de H06).
+ *
+ * Sin `relations` en la consulta bloqueada: Postgres rechaza `FOR UPDATE` combinado con un
+ * `LEFT JOIN` ("cannot be applied to the nullable side of an outer join") — mismo motivo por
+ * el que `talonario.service.ts::reservarNumero` separa el `findOne` bloqueado de la carga de
+ * relaciones. Bypass de RLS por la misma razón que antes: todavía no se sabe la empresa hasta
+ * identificar al usuario del token.
+ *
+ * No se bloquea nada en `login()`: no hay ningún refresh previo con el que pueda chocar — la
+ * carrera de H06 es siempre "un refresh existente contra un cambio de contraseña", nunca contra
+ * un login nuevo.
+ */
 export async function refrescarSesion(refreshTokenRaw: string): Promise<SesionEmitida> {
   let payload;
   try {
@@ -91,6 +111,20 @@ export async function refrescarSesion(refreshTokenRaw: string): Promise<SesionEm
     throw new HttpError(401, 'Sesión inválida o expirada');
   }
 
+  const usuarioBloqueado = await conBypassRls(() =>
+    usuarioRepository.findOne({
+      where: { id: payload.sub },
+      lock: { mode: 'pessimistic_write' },
+    }),
+  );
+  if (!usuarioBloqueado || !usuarioBloqueado.activo) {
+    throw new HttpError(401, 'Sesión inválida o expirada');
+  }
+
+  // Revalidación DESPUÉS de obtener el lock: es la única lectura de `refresh_tokens` de toda
+  // la función. Si un cambio de contraseña concurrente ganó la carrera por la fila y ya revocó
+  // este token (o cualquiera del usuario) antes de que este refresh consiguiera el lock, acá
+  // se ve exactamente ese estado ya confirmado — nunca uno leído antes de esperar.
   const registro = await refreshTokenRepository.findOneBy({
     tokenHash: hashToken(refreshTokenRaw),
   });
@@ -107,7 +141,7 @@ export async function refrescarSesion(refreshTokenRaw: string): Promise<SesionEm
     }),
   );
 
-  if (!usuarioActual || !usuarioActual.activo || !usuarioActual.personal.empresa.activo) {
+  if (!usuarioActual || !usuarioActual.personal.empresa.activo) {
     throw new HttpError(401, 'Sesión inválida o expirada');
   }
 
@@ -144,10 +178,28 @@ export async function me(usuarioId: string) {
   return usuarioPublico(usuario);
 }
 
+/**
+ * H06 — Cambiar la contraseña revoca TODAS las sesiones (refresh tokens) previas del usuario,
+ * no solo la de la petición actual: quien cambia la contraseña por sospecha de robo de sesión
+ * necesita cerrar cualquier otro dispositivo, no únicamente el suyo (eso ya lo hace `logout`,
+ * que es una operación distinta y no se toca acá).
+ *
+ * `.setLock('pessimistic_write')` bloquea la fila del usuario (`SELECT ... FOR UPDATE`) con el
+ * mismo lock, misma fila y mismo orden que usa `refrescarSesion` — ver el comentario grande de
+ * esa función para el análisis completo de la carrera que esto cierra. El lock se mantiene
+ * hasta que termina la transacción de esta petición (`tenant.middleware.ts` confirma al final),
+ * así que todo lo que sigue —hashear, guardar, revocar— ocurre "protegido" frente a cualquier
+ * refresh concurrente del mismo usuario.
+ *
+ * Lo que NO hace: no invalida el access token ya emitido (JWT stateless, sigue vivo hasta su
+ * expiración natural — `JWT_ACCESS_EXPIRES_IN`, ~15 min por defecto). Revocar access tokens de
+ * inmediato exigiría una lista de revocación stateless-a-stateful distinta; queda fuera de H06.
+ */
 export async function cambiarPassword(usuarioId: string, dto: CambiarPasswordDto): Promise<void> {
   const usuario = await usuarioRepository
     .createQueryBuilder('usuario')
     .addSelect('usuario.passwordHash')
+    .setLock('pessimistic_write')
     .where('usuario.id = :id', { id: usuarioId })
     .getOne();
 
@@ -178,4 +230,16 @@ export async function cambiarPassword(usuarioId: string, dto: CambiarPasswordDto
   // demás que haga esta operación.
   usuario.debeCambiarPassword = false;
   await usuarioRepository.save(usuario);
+
+  // Revocación total: cualquier refresh token no revocado de este usuario, sin importar en qué
+  // dispositivo/sesión se emitió. Sigue dentro de la misma transacción de la petición (el lock
+  // de arriba la mantiene protegida hasta el commit) — un `UPDATE` masivo es idempotente y no
+  // necesita distinguir cuál fila es "la actual": el criterio de aceptación de H06 es revocar
+  // TODAS, sin excepción.
+  await refreshTokenRepository
+    .createQueryBuilder()
+    .update(RefreshToken)
+    .set({ revocado: true })
+    .where('usuario_id = :usuarioId AND revocado = false', { usuarioId })
+    .execute();
 }

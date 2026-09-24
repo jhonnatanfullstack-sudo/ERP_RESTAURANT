@@ -190,19 +190,72 @@ Durante la certificación, Codex señaló una observación de severidad BAJA sob
 - **ID:** H06
 - **Prioridad:** P0
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Autenticación
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/auth/auth.service.ts` (función `cambiarPassword`)
   - `apps/backend/src/modules/auth/auth.controller.ts`
   - Tabla `refresh_tokens` (columna `revocado`)
-- **Descripción:** La función de cambio de contraseña valida la contraseña actual, hashea la nueva y guarda el usuario, pero no revoca ningún registro en `refresh_tokens` del mismo usuario. No existe blacklist de access tokens (diseño JWT stateless).
-- **Evidencia encontrada:** Búsqueda exhaustiva de `revocado = true` en `src/` solo la encuentra en `refrescarSesion` y `logout` de `auth.service.ts` — ninguna referencia desde `cambiarPassword`.
-- **Impacto:** Cambiar la contraseña —el control que un usuario usa típicamente ante sospecha de robo de sesión— no cierra ninguna sesión existente: cualquier refresh token vigente en otro dispositivo sigue pudiendo renovar la sesión indefinidamente, y cualquier access token ya emitido sigue funcionando hasta su expiración natural.
-- **Escenario reproducible:** Usuario detecta actividad sospechosa y cambia su contraseña desde un dispositivo → un refresh token robado/vigente en otro dispositivo sigue llamando `POST /api/auth/refrescar` con éxito después del cambio.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería revocar todos los `refresh_tokens` activos del usuario al cambiar la contraseña.
-- **Pruebas necesarias:** Prueba de integración que verifique que, tras cambiar la contraseña, un refresh token emitido previamente ya no puede renovar la sesión.
-- **Criterio de aceptación:** Cambiar la contraseña revoca todas las sesiones (refresh tokens) previas del usuario, verificado con prueba automatizada.
+- **Descripción (hallazgo original):** La función de cambio de contraseña valida la contraseña actual, hashea la nueva y guarda el usuario, pero no revoca ningún registro en `refresh_tokens` del mismo usuario. No existe blacklist de access tokens (diseño JWT stateless).
+- **Evidencia encontrada (hallazgo original):** Búsqueda exhaustiva de `revocado = true` en `src/` solo la encuentra en `refrescarSesion` y `logout` de `auth.service.ts` — ninguna referencia desde `cambiarPassword`.
+- **Impacto (hallazgo original):** Cambiar la contraseña —el control que un usuario usa típicamente ante sospecha de robo de sesión— no cierra ninguna sesión existente: cualquier refresh token vigente en otro dispositivo sigue pudiendo renovar la sesión indefinidamente, y cualquier access token ya emitido sigue funcionando hasta su expiración natural.
+- **Escenario reproducible (hallazgo original):** Usuario detecta actividad sospechosa y cambia su contraseña desde un dispositivo → un refresh token robado/vigente en otro dispositivo sigue llamando `POST /api/auth/refrescar` con éxito después del cambio.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería revocar todos los `refresh_tokens` activos del usuario al cambiar la contraseña.
+- **Pruebas necesarias (hallazgo original):** Prueba de integración que verifique que, tras cambiar la contraseña, un refresh token emitido previamente ya no puede renovar la sesión.
+- **Criterio de aceptación:** Cambiar la contraseña revoca todas las sesiones (refresh tokens) previas del usuario, verificado con prueba automatizada. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+Un `UPDATE` simple sobre `refresh_tokens` sin más fue evaluado y **rechazado**: existe una carrera reproducible en la que un `refrescarSesion` concurrente con el cambio de contraseña podía dejar una sesión nueva sobreviviendo a la revocación. La solución final serializa ambas operaciones del mismo usuario con un lock de fila, además de la revocación:
+
+- **`cambiarPassword` adquiere `pessimistic_write` (`SELECT ... FOR UPDATE`) sobre la fila de `Usuario`**, antes de validar la contraseña actual.
+- **`refrescarSesion` adquiere el mismo lock, sobre la misma fila de `Usuario`**, con el mismo orden de adquisición que `cambiarPassword` (usuario primero, `refresh_tokens` después en ambas) — esto es lo que evita un deadlock cruzado entre ellas.
+- **Ambas operaciones quedan así serializadas por usuario:** usuarios distintos bloquean filas distintas y no se contienen entre sí; solo dos operaciones del **mismo** usuario compiten por el mismo lock.
+- **`refrescarSesion` consulta y revalida el refresh token DESPUÉS de adquirir el lock** — es la única lectura de `refresh_tokens` de toda la función, nunca una leída antes de esperar el lock.
+- Esa revalidación comprueba explícitamente `revocado = false` **y** `expiraEn > ahora`.
+- **El cambio de contraseña revoca TODOS los `refresh_tokens` activos del usuario** (`UPDATE ... WHERE usuario_id = :id AND revocado = false`), sin excluir la sesión desde la que se hizo el cambio — el criterio de aceptación exige revocar todas, sin excepción.
+- Todo el lock, la validación, el hash nuevo y la revocación ocurren **dentro de la misma transacción por petición** ya existente (`tenant.middleware.ts`); no se abrió ninguna transacción adicional.
+- **No se agregó Redis. No se agregó `tokenVersion`. No se agregó ninguna migración** — el mecanismo de revocación ya existía (`refresh_tokens.revocado`); solo hacía falta invocarlo con la serialización correcta.
+
+**Los dos órdenes de concurrencia posibles:**
+
+- **A. El refresh gana el lock primero:** adquiere el lock de `Usuario` → revalida el token (todavía válido) → rota (revoca la fila usada, crea el reemplazo) → confirma (`commit`), liberando el lock → **recién entonces** `cambiarPassword` obtiene el lock → cambia la contraseña → ejecuta el `UPDATE` masivo de revocación, que en ese momento ya ve confirmada la fila nueva que el refresh acababa de crear, y **también la revoca**.
+- **B. El cambio de contraseña gana el lock primero:** adquiere el lock de `Usuario` → cambia la contraseña → revoca todos los `refresh_tokens` → confirma (`commit`), liberando el lock → **recién entonces** el refresh obtiene el lock → reconsulta el token → lo observa `revocado = true` (ya confirmado) → `401`.
+
+En ambos órdenes, ninguna sesión previa al cambio de contraseña sobrevive.
+
+#### Limitación residual: access tokens ya emitidos
+
+H06 revoca **refresh tokens**. Los **access tokens** ya emitidos son stateless (JWT) y continúan siendo válidos hasta su expiración natural — configuración actual por defecto: ~15 minutos (`JWT_ACCESS_EXPIRES_IN`). Esta es una limitación residual conocida y **no bloquea el cierre de H06**, porque el hallazgo original (descripción, impacto, escenario y criterio de aceptación) se centraba explícitamente en la revocación de `refresh_tokens`, no en la invalidación inmediata de access tokens. No se abre un hallazgo nuevo sobre esto por no existir uno equivalente ya en el backlog y por tratarse de una característica de diseño (JWT stateless) documentada, no de un defecto.
+
+#### Evidencia de validación
+
+- `auth-sesiones.test.ts`: **12/12 PASS**
+- H06/H01/H02 dirigidos (`auth-sesiones.test.ts`, `auth.test.ts`, `h01-proveedor-semilla.test.ts`, `auditoria-secretos.test.ts` — 4 archivos): **56/56 PASS**
+- Suite backend completa: **217/217 PASS (28/28 archivos)**
+- typecheck backend: **PASS**
+- typecheck workspace: **FAIL únicamente** por `apps/frontend/src/routes/AppRoutes.tsx:50` (`LoginPage` sin usar) — **preexistente, fuera de alcance de H06**
+- lint: **PASS**, 0 errores, 2 warnings de frontend preexistentes
+- build backend: **PASS**
+- build frontend: **FAIL únicamente** por el mismo `LoginPage` preexistente
+- `git diff --check`: **PASS**
+- PostgreSQL real en toda la suite, incluido **T11** (concurrencia con transacciones y locks reales, sin mocks)
+
+**T01-T12** (resumen — el detalle completo vive en el propio archivo de test): T01-T03 y T06-T09 cubren el ciclo básico (login/refresh/rotación/logout/tokens inválidos/aislamiento), antes sin ninguna cobertura. **T04** reproduce la vulnerabilidad original (refresh previo al cambio de contraseña queda rechazado). **T05** confirma que se revocan **múltiples** sesiones del mismo usuario, no solo una. **T10** confirma la interacción correcta con H01 (`debeCambiarPassword`). **T11** ejercita la **concurrencia real** (ambos órdenes A y B, con transacciones controladas manualmente y locks genuinos de Postgres, sin `sleep` como sincronización). **T12** es la regresión de H02 (la auditoría del cambio de contraseña exitoso sigue redactando `passwordActual`/`passwordNuevo`).
+
+#### Certificación Codex
+
+`CERTIFICACIÓN CODEX — H06 APROBADO PARA CIERRE`. Codex verificó de forma independiente: la vulnerabilidad original; el modelo de transacción por petición; los locks agregados y su orden de adquisición; la revalidación del refresh posterior al lock; la revocación total; ambos órdenes de la carrera (A y B); T01-T12; la no interferencia con H01, H02 y H04; la ausencia de deadlocks; la limitación residual de los access tokens; el estado de H07; y la suite completa.
+
+Durante la revisión, Codex señaló tres observaciones adicionales, ninguna bloqueante para el cierre de H06:
+
+- **H06-R01** (severidad BAJA) — registrada como hallazgo independiente **H23** (ver P2, sección de Autenticación).
+- **H06-R02** (severidad BAJA) — registrada como hallazgo independiente **H24** (ver P2, sección de Autenticación).
+- **H06-R03** (informativo, calidad de prueba, no vulnerabilidad de producción) — documentada abajo, sin abrir un hallazgo nuevo.
+
+##### Observación de calidad de prueba (H06-R03)
+
+`T11` detecta la espera por el lock sondeando `pg_stat_activity` (`wait_event_type = 'Lock'` + texto de la consulta), pero no correlaciona un PID/conexión concreta con la operación bajo prueba. En la suite actual esto es suficiente: los archivos de test corren en serie (`fileParallelism: false`), la base es de uso exclusivo de la suite, y la operación que se espera bloquear es creada expresamente por el propio test — sin el lock productivo esperado, el sondeo simplemente expira y T11 falla (no da un falso positivo). Si en el futuro la suite pasara a ejecutarse contra una base compartida o con verdadera concurrencia entre archivos de test, convendría endurecer el sondeo correlacionando el PID/conexión exacta de la petición bloqueada. No se trata de una vulnerabilidad de producción, solo de una precisión posible del arnés de pruebas.
 
 ---
 
@@ -440,6 +493,55 @@ Durante la certificación, Codex señaló una observación de severidad BAJA sob
 - **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería usar `SELECT ... FOR UPDATE` o una condición `WHERE revocado = false` en el `UPDATE` de revocación, para que solo una de las peticiones concurrentes tenga éxito.
 - **Pruebas necesarias:** Prueba de integración que dispare dos refrescos concurrentes con el mismo token y verifique que solo uno tiene éxito.
 - **Criterio de aceptación:** Un refresh token solo puede usarse exitosamente una vez, incluso bajo peticiones concurrentes, verificado con prueba automatizada.
+
+#### Nota posterior a H06
+
+La implementación de H06 introduce `SELECT ... FOR UPDATE` (`pessimistic_write`) sobre la fila de `Usuario` en `refrescarSesion`, adquirido antes de leer o tocar `refresh_tokens`. Esto serializa, para el mismo usuario, cualquier `refrescarSesion` concurrente: dos peticiones de refresco simultáneas con el mismo token ya no pueden intercalar sus lecturas libremente, porque ambas compiten por el mismo lock de fila.
+
+Codex clasificó el efecto sobre H07 como **APARENTEMENTE RESUELTO POR EFECTO COLATERAL**, con el siguiente razonamiento:
+
+```
+R1 obtiene el lock → revalida → revoca R1 → crea reemplazo → commit
+R2 espera el lock → lo obtiene → revalida el token ORIGINAL → lo observa revocado → 401
+```
+
+**Pero H07 permanece PENDIENTE.** El lock que agregó H06 protege la propiedad que H06 necesitaba (serializar `cambiarPassword` contra `refrescarSesion`), no fue diseñado ni auditado específicamente para la garantía de "un solo uso" de H07 (dos refrescos concurrentes con el **mismo** token). Antes de poder cerrarlo, H07 debe recibir su propia auditoría dedicada, sus propios tests específicos (incluida la variante exacta de su escenario reproducible: dos `POST /api/auth/refrescar` simultáneos con el mismo token) y verificación de todas sus variantes — no se afirma que H07 esté formalmente resuelto por este efecto colateral.
+
+### H23 — Revalidación del refresh no filtra explícitamente por usuario_id
+
+- **ID:** H23
+- **Prioridad:** P2
+- **Severidad:** BAJO
+- **Estado:** PENDIENTE
+- **Módulo afectado:** Autenticación
+- **Archivos implicados:**
+  - `apps/backend/src/modules/auth/auth.service.ts` (función `refrescarSesion`, revalidación posterior al lock)
+- **Descripción:** Detectado por Codex durante la certificación de H06 (H06-R01). La consulta que revalida el refresh token después de obtener el lock de `Usuario` identifica la fila únicamente por `tokenHash` (`refreshTokenRepository.findOneBy({ tokenHash: ... })`), sin expresar también, a nivel de consulta, que esa fila pertenezca al mismo `usuario_id` que ya se bloqueó (`payload.sub`).
+- **Evidencia encontrada:** Lectura directa de `refrescarSesion`. Hoy el invariante "el `tokenHash` pertenece al usuario bloqueado" se sostiene por construcción, no por la consulta: el JWT de refresh está firmado (no falsificable sin el secreto), `sub` identifica al usuario dueño del token, `token_hash` es único (índice `UNIQUE` en `refresh_tokens`), la fila se crea siempre para ese mismo usuario en `emitirSesion`, y no existe ningún flujo en el sistema que reasigne `usuario_id` de una fila de `refresh_tokens` ya creada. No se encontró ningún camino de bypass real: **no es una vulnerabilidad demostrada**, y no bloqueó el cierre de H06.
+- **Impacto:** Ninguno demostrado actualmente. Es un endurecimiento defensivo: expresar `usuario_id = :usuarioId` explícitamente en la consulta de revalidación haría que la invariante quedara verificada por la base de datos en cada lectura, en vez de depender únicamente de que ningún otro flujo del sistema pueda romperla en el futuro.
+- **Escenario reproducible:** No reproducible con el código actual — no existe ningún flujo que produzca un `tokenHash` válido asociado a un `usuario_id` distinto del firmante del JWT.
+- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería agregar `usuario_id: payload.sub` (o el id del usuario ya bloqueado) a la condición `WHERE` de la consulta de revalidación en `refrescarSesion`.
+- **Pruebas necesarias:** Prueba que confirme que la consulta de revalidación exige explícitamente la coincidencia de `usuario_id`, y prueba de regresión que confirme que el flujo normal de refresco no se ve afectado.
+- **Criterio de aceptación:** La revalidación del refresh token, tras el lock, verifica explícitamente en la consulta que el token pertenece al usuario bloqueado, verificado con prueba automatizada. No bloquea el cierre de H06 (ver H06, Certificación Codex).
+
+### H24 — Inconsistencia entre JWT_REFRESH_EXPIRES_IN y refreshExpiresInMs
+
+- **ID:** H24
+- **Prioridad:** P2
+- **Severidad:** BAJO
+- **Estado:** PENDIENTE
+- **Módulo afectado:** Autenticación / Configuración
+- **Archivos implicados:**
+  - `apps/backend/src/config/env.ts` (línea 56-57: `refreshExpiresIn` vs. `refreshExpiresInMs`)
+  - `apps/backend/src/modules/auth/auth.service.ts` (`emitirSesion`, uso de `refreshExpiresInMs`)
+  - `apps/backend/src/config/cookies.ts` (`maxAge` de la cookie de refresh)
+- **Descripción:** Confirmado durante la certificación de H06 (H06-R02). `JWT_REFRESH_EXPIRES_IN` controla el `exp` criptográfico firmado dentro del propio JWT de refresh, mientras que `refreshExpiresInMs` está hardcodeado a `7 * 24 * 60 * 60 * 1000` (7 días) en `env.ts:57` y controla, por separado, `refresh_tokens.expira_en` (la expiración que valida `refrescarSesion` contra la base) y el `maxAge` de la cookie de refresh. Si se cambia `JWT_REFRESH_EXPIRES_IN` sin tocar `refreshExpiresInMs`, ambos valores divergen.
+- **Evidencia encontrada:** `env.ts:52-57` — `refreshExpiresIn` lee `process.env.JWT_REFRESH_EXPIRES_IN` con default `'7d'`; `refreshExpiresInMs` es un literal numérico fijo, sin relación con la variable anterior. `emitirSesion` (`auth.service.ts:39`) usa `refreshExpiresInMs` para `expiraEn` de la fila en base; `cookies.ts:26` usa el mismo valor para `maxAge`.
+- **Impacto:** Configuración engañosa y comportamiento inconsistente, no un bypass de seguridad — no existe ningún camino que permita superar simultáneamente ambos controles (el JWT y la fila en base deben seguir siendo válidos a la vez para que un refresh tenga éxito, `refrescarSesion` comprueba ambos). Dos casos: (a) si `JWT_REFRESH_EXPIRES_IN` se configura más corto que 7 días, la firma del JWT expira antes de que la cookie/base lo hicieran, y el usuario pierde la sesión antes de lo que la configuración sugiere; (b) si se configura más largo, la fila en base y la cookie expiran a los 7 días igual, cortando la sesión antes de lo que `JWT_REFRESH_EXPIRES_IN` sugiere — en ambos casos el operador que configuró la variable ve un comportamiento distinto al que esperaba.
+- **Escenario reproducible:** Configurar `JWT_REFRESH_EXPIRES_IN=30d`, iniciar sesión, y observar que la cookie de refresh y la fila de `refresh_tokens` igualmente expiran a los 7 días (`refreshExpiresInMs` sigue hardcodeado), no a los 30 configurados.
+- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería derivar `refreshExpiresInMs` de `JWT_REFRESH_EXPIRES_IN` (parseando la misma cadena de duración) en vez de mantener un literal separado, o exponer una única fuente de verdad para ambos.
+- **Pruebas necesarias:** Prueba que configure `JWT_REFRESH_EXPIRES_IN` con un valor distinto del default y verifique que `refresh_tokens.expira_en` y el `maxAge` de la cookie coinciden con esa configuración.
+- **Criterio de aceptación:** La expiración efectiva de la sesión (JWT, fila en base y cookie) responde de forma consistente a una única configuración, verificado con prueba automatizada. No bloquea el cierre de H06.
 
 ### H08 — Socket.IO sin autorización granular
 

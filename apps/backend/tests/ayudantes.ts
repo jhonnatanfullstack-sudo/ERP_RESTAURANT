@@ -59,7 +59,9 @@ let contador = 0;
  * El límite de 5 registros por hora y por IP se desactiva en las pruebas (ver
  * `demo.routes.ts`): si no, a partir del sexto caso todo empezaría a fallar con 429.
  */
-export async function crearEmpresaDePrueba(nombre = 'Restaurante'): Promise<Sesion> {
+export async function crearEmpresaDePrueba(
+  nombre = 'Restaurante',
+): Promise<Sesion & { email: string; password: string }> {
   contador += 1;
   const sufijo = String(contador).padStart(4, '0');
 
@@ -71,6 +73,9 @@ export async function crearEmpresaDePrueba(nombre = 'Restaurante'): Promise<Sesi
   // con este espejo público de solo lectura (`demo.controller.ts::tiposDocumento`); se
   // reutiliza el mismo, sin inventar ni depender de ninguna sesión.
   const tipos = await request(app).get('/api/demo/tipos-documento').expect(200);
+
+  const email = `prueba.${Date.now()}.${sufijo}@ejemplo.test`;
+  const password = 'ClaveDePrueba2026!';
 
   const respuesta = await request(app)
     .post('/api/demo/registrar')
@@ -85,8 +90,8 @@ export async function crearEmpresaDePrueba(nombre = 'Restaurante'): Promise<Sesi
       apellidoPaterno: 'Automatizada',
       tipoDocumentoIdentidadId: tipos.body.data[0].id,
       numeroDocumento: `4000${sufijo}`,
-      email: `prueba.${Date.now()}.${sufijo}@ejemplo.test`,
-      password: 'ClaveDePrueba2026!',
+      email,
+      password,
     });
 
   if (respuesta.status !== 201) {
@@ -94,7 +99,10 @@ export async function crearEmpresaDePrueba(nombre = 'Restaurante'): Promise<Sesi
       `No se pudo crear la empresa de prueba (${respuesta.status}): ${JSON.stringify(respuesta.body)}`,
     );
   }
-  return sesionDesde(respuesta.body.data.accessToken);
+  // Email/password se devuelven además de la sesión: los tests de H06 (`auth-sesiones.test.ts`)
+  // necesitan volver a iniciar sesión con las mismas credenciales para obtener la cookie de
+  // refresh real, que `crearEmpresaDePrueba` no expone por sí sola.
+  return { ...sesionDesde(respuesta.body.data.accessToken), email, password };
 }
 
 /** Atajo para las peticiones autenticadas más habituales en las pruebas. */
