@@ -2,40 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { AccionAuditoria } from './registro-auditoria.entity';
 import { registrarAuditoria } from './auditoria.service';
 import { logger } from '../../utils/logger';
-
-/**
- * Campos que nunca deben quedar escritos en la bitácora. La auditoría guarda el cuerpo de la
- * petición para poder reconstruir qué se hizo, y sin esta lista un `POST /auth/login` dejaría
- * la contraseña en claro dentro de la base de datos, a la vista de cualquiera que pueda leer
- * la auditoría. La comparación es en minúsculas para que no dependa de cómo se escribió.
- */
-const CAMPOS_SENSIBLES = [
-  'password',
-  'passwordactual',
-  'passwordnuevo',
-  'contrasena',
-  'token',
-  'accesstoken',
-  'refreshtoken',
-  'authorization',
-  'clavePrivada'.toLowerCase(),
-];
-
-const REDACTADO = '[redactado]';
-
-/** Reemplaza recursivamente cualquier campo sensible por un marcador, conservando el resto
- * de la estructura para que el registro siga siendo útil. */
-function redactar(valor: unknown): unknown {
-  if (Array.isArray(valor)) return valor.map(redactar);
-  if (valor === null || typeof valor !== 'object') return valor;
-
-  return Object.fromEntries(
-    Object.entries(valor as Record<string, unknown>).map(([clave, contenido]) => [
-      clave,
-      CAMPOS_SENSIBLES.includes(clave.toLowerCase()) ? REDACTADO : redactar(contenido),
-    ]),
-  );
-}
+import { redactar } from './campos-sensibles';
 
 /** Primer segmento de la ruta bajo `/api`: `/api/ventas/123/anular` → `ventas`. */
 function moduloDe(ruta: string): string {

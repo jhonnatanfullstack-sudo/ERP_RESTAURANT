@@ -58,19 +58,52 @@ Implementación por etapas, con revisión independiente de Codex en cada ronda (
 - **ID:** H02
 - **Prioridad:** P0
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Auditoría / Facturación electrónica
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/auditoria/auditoria.middleware.ts` (líneas 12-22, lista `CAMPOS_SENSIBLES`; línea 87)
   - `apps/backend/src/modules/facturacion/facturacion.dto.ts` (línea 10, campo `oseClave`)
   - `apps/backend/src/modules/facturacion/facturacion.routes.ts` (líneas 21-26)
-- **Descripción:** La lista `CAMPOS_SENSIBLES` de redacción del middleware de auditoría compara por igualdad exacta (en minúsculas) y no incluye `oseclave`. El campo `oseClave` del DTO de configuración de facturación (credencial del proveedor OSE) no coincide con ninguno de los nombres de la lista.
-- **Evidencia encontrada:** `express.json()` parsea el body antes de que `auditoriaMiddleware` lo copie (`app.ts`, orden de middlewares); `redactar(req.body)` no aplica ninguna transformación a `oseClave` porque no está en `CAMPOS_SENSIBLES`. El cifrado AES-256-GCM de `utils/cifrado.ts` protege la tabla `configuraciones_facturacion`, pero eso ocurre en una capa posterior y distinta de la bitácora de auditoría.
-- **Impacto:** La contraseña/credencial del proveedor OSE (NubeFacT) queda registrada en texto plano en `registro_auditoria` cada vez que un administrador actualiza `PUT /api/facturacion/configuracion`, accesible a cualquiera con permiso de lectura de auditoría, acceso directo a la base o a un respaldo/dump.
-- **Escenario reproducible:** Un administrador con permiso `facturacion.configurar` llama `PUT /api/facturacion/configuracion` con `oseClave` en el body → la fila de auditoría resultante contiene `oseClave` en claro dentro de la columna `datos` (jsonb).
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente, agregar `oseclave` (y revisar nombres equivalentes) a `CAMPOS_SENSIBLES`, o redactar por patrón en vez de por igualdad exacta.
-- **Pruebas necesarias:** Prueba de integración que verifique que al llamar `PUT /api/facturacion/configuracion` con `oseClave`, la fila de auditoría resultante no contiene ese valor en claro.
-- **Criterio de aceptación:** Ninguna fila de `registro_auditoria` contiene la credencial del OSE en texto plano, verificado con una prueba automatizada.
+- **Descripción (hallazgo original):** La lista `CAMPOS_SENSIBLES` de redacción del middleware de auditoría compara por igualdad exacta (en minúsculas) y no incluye `oseclave`. El campo `oseClave` del DTO de configuración de facturación (credencial del proveedor OSE) no coincide con ninguno de los nombres de la lista.
+- **Evidencia encontrada (hallazgo original):** `express.json()` parsea el body antes de que `auditoriaMiddleware` lo copie (`app.ts`, orden de middlewares); `redactar(req.body)` no aplica ninguna transformación a `oseClave` porque no está en `CAMPOS_SENSIBLES`. El cifrado AES-256-GCM de `utils/cifrado.ts` protege la tabla `configuraciones_facturacion`, pero eso ocurre en una capa posterior y distinta de la bitácora de auditoría.
+- **Impacto (hallazgo original):** La contraseña/credencial del proveedor OSE (NubeFacT) queda registrada en texto plano en `registro_auditoria` cada vez que un administrador actualiza `PUT /api/facturacion/configuracion`, accesible a cualquiera con permiso de lectura de auditoría, acceso directo a la base o a un respaldo/dump.
+- **Escenario reproducible (hallazgo original):** Un administrador con permiso `facturacion.configurar` llama `PUT /api/facturacion/configuracion` con `oseClave` en el body → la fila de auditoría resultante contiene `oseClave` en claro dentro de la columna `datos` (jsonb).
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente, agregar `oseclave` (y revisar nombres equivalentes) a `CAMPOS_SENSIBLES`, o redactar por patrón en vez de por igualdad exacta.
+- **Pruebas necesarias (hallazgo original):** Prueba de integración que verifique que al llamar `PUT /api/facturacion/configuracion` con `oseClave`, la fila de auditoría resultante no contiene ese valor en claro.
+- **Criterio de aceptación:** Ninguna fila de `registro_auditoria` contiene la credencial del OSE en texto plano, verificado con una prueba automatizada. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+- **Denylist centralizada:** `apps/backend/src/modules/auditoria/campos-sensibles.ts` (nuevo) reúne `CAMPOS_SENSIBLES`, `REDACTADO`, `normalizarNombreCampo()` y `redactar()`, antes duplicados dentro de `auditoria.middleware.ts`. Se agregó `oseclave` a la lista.
+- **Normalización:** `nombre.toLowerCase().replace(/[_-]/g, '')` — minúsculas más eliminación de `_` y `-`, idéntica en TypeScript y en la migración histórica. La comparación contra la denylist sigue siendo por **igualdad exacta** (nunca `includes`/`startsWith`/regex), para no redactar por error campos legítimos como `tokenExpiraEn` o `claveProducto`.
+- **Redacción recursiva de peticiones nuevas:** `redactar()` sigue recorriendo objetos y arrays de forma recursiva; ahora compara cada clave ya normalizada.
+- **Valor estándar:** se reutilizó `'[redactado]'`, el único formato ya usado en el proyecto — no se introdujo uno nuevo.
+- **PFX/P12:** `contrasena` (contraseña del certificado subido en `POST /facturacion/configuracion/certificado`) queda documentada explícitamente en la denylist como protección también para ese campo, independiente del orden actual de middlewares (no se modificó ese orden).
+- **Saneamiento histórico:** migración `apps/backend/src/database/migrations/1789015000000-SanearOseClaveAuditoriaHistorica.ts`. Usa una función PL/pgSQL recursiva (creada y eliminada dentro de la propia migración) que reconstruye objetos y arrays a cualquier profundidad, redactando únicamente el valor de las propiedades cuya clave normaliza a `oseclave`.
+- **Alcance histórico:** limitado deliberadamente a `modulo = 'facturacion'` y a la clave normalizada `oseclave` — no se amplió a todo `CAMPOS_SENSIBLES` ni a otros módulos, por no existir evidencia de fuga equivalente (ver razonamiento en el comentario de la propia migración).
+- **Preservación:** el `UPDATE` solo toca la columna `datos`; usuario, empresa, acción, módulo, método, ruta, estado HTTP y fecha quedan intactos, igual que cualquier propiedad no secreta dentro de `datos`.
+- **RLS:** `activarBypassRls(queryRunner)` local a la transacción de la migración — no se desactivó RLS de forma global.
+- **Idempotencia:** el `UPDATE` solo escribe filas donde el valor recalculado difiere del actual; una segunda ejecución no modifica nada.
+- **`down()`:** no-op documentado — irreversible por seguridad, nunca restaura un secreto.
+
+#### Evidencia de validación
+
+- `auditoria-secretos.test.ts`: **12/12 PASS**
+- `auditoria.test.ts`: **2/2 PASS**
+- `facturacion.test.ts`: **8/8 PASS**
+- Suite completa backend: **200/200 PASS (27/27 archivos)**
+- typecheck backend: **PASS**
+- lint: **0 errores**, 2 warnings preexistentes de frontend sin relación
+- build backend: **PASS**
+- `git diff --check`: **PASS**
+- Codex: `CERTIFICACIÓN CODEX — H02 APROBADO PARA CIERRE`
+
+`typecheck`/`build` de frontend siguen fallando exclusivamente por `apps/frontend/src/routes/AppRoutes.tsx:50` (`LoginPage` declarado sin usar) — confirmado como **preexistente / fuera de alcance de H02** (reproducido también en la rama base sin los cambios de H02). H02 no modificó ningún archivo de frontend.
+
+#### Correcciones durante revisión independiente
+
+- **H02-R01 — RESUELTO.** La primera versión de la migración solo saneaba el primer nivel de `datos`. Codex detectó que peticiones históricas rechazadas por `validateBody` podían contener `oseClave` anidado o dentro de arrays, porque `auditoriaMiddleware` captura el body antes de la validación. Se sustituyó por el saneamiento PL/pgSQL recursivo descrito arriba y se fortalecieron T09-T11 para cubrir objetos anidados, arrays, primitivos JSON y `NULL`.
+- **H02-R02 — RESUELTO.** T12 podía dar un falso positivo por la escritura de auditoría asíncrona (ver nuevo hallazgo de auditoría fire-and-forget más abajo): comprobaba que la Empresa B no veía nada sin haber confirmado antes que la entrada de la Empresa A ya existía. Se corrigió la secuencia: primero se confirma (con espera acotada) que la entrada de A existe y está redactada, y solo después se verifica que B no puede verla.
 
 ### H04 — Autopedido público y exposición de PII
 
@@ -189,6 +222,24 @@ Implementación por etapas, con revisión independiente de Codex en cada ronda (
 - **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería vincular cada venta/propina repartida a su reparto (o registrar el rango ya cubierto) e impedir la creación de un reparto nuevo sobre fechas ya cubiertas o superpuestas.
 - **Pruebas necesarias:** Prueba de integración que ejecute dos repartos sobre el mismo rango de fechas y verifique que el segundo es rechazado o no duplica el monto entregado.
 - **Criterio de aceptación:** No es posible repartir dos veces las propinas del mismo período (o de períodos superpuestos), verificado con prueba automatizada.
+
+### H21 — Auditoría fire-and-forget puede perder registros
+
+- **ID:** H21
+- **Prioridad:** P1
+- **Severidad:** MEDIO
+- **Estado:** PENDIENTE
+- **Módulo afectado:** Auditoría / Infraestructura
+- **Archivos implicados:**
+  - `apps/backend/src/modules/auditoria/auditoria.middleware.ts` (`res.on('finish')`, `void registrarAuditoria(...)`)
+  - `apps/backend/src/database/tenant-context.ts` (`ejecutarFueraDeLaPeticion`)
+- **Descripción:** La escritura de la bitácora de auditoría se dispara de forma asíncrona ("fire and forget") después de finalizar la respuesta HTTP (`res.on('finish')`), en una conexión propia y sin que la petición del cliente espere a que esa escritura termine. La operación de negocio puede haber respondido exitosamente al cliente mientras la persistencia de su entrada de auditoría todavía está en curso.
+- **Evidencia encontrada:** Detectado por Codex durante la revisión independiente de H02. `auditoriaMiddleware` llama `void registrarAuditoria(...)` sin `await` dentro del callback de `finish`; `ejecutarFueraDeLaPeticion` abre una conexión y transacción propias para esa escritura, ya desacopladas de la petición original. Durante el desarrollo de las pruebas de H02 se reprodujo una carrera real de esta naturaleza bajo la carga de la suite completa (un `GET /api/auditoria` disparado inmediatamente después de la acción auditada podía no encontrar todavía la entrada); se necesitó un helper de espera acotada (`esperarEntradaAuditoria`, en `apps/backend/tests/auditoria-secretos.test.ts`) para sincronizar esos tests de forma determinista.
+- **Impacto:** Existe una ventana de tiempo, entre que la respuesta ya fue enviada al cliente y la escritura de auditoría todavía no se confirmó en la base, en la que una caída del proceso, un corte de conexión con la base o una terminación abrupta del servidor puede hacer que el registro de auditoría de una operación ya aceptada no llegue a persistirse nunca. No se afirma que esto ocurra de forma habitual en operación normal — es una ventana de pérdida bajo condiciones específicas de fallo, no una pérdida sistemática observada en producción.
+- **Escenario reproducible:** Provocar la terminación del proceso (o un fallo de conexión a Postgres) exactamente en el intervalo entre `res.on('finish')` y la confirmación de la transacción abierta por `ejecutarFueraDeLaPeticion`, y observar que la operación de negocio ya respondida al cliente no tiene ninguna entrada correspondiente en `registros_auditoria`.
+- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería evaluar una estrategia de persistencia más durable que no comprometa la latencia ni la respuesta de la operación de negocio — por ejemplo, una cola/outbox, un mecanismo de reintento con confirmación, u otro diseño equivalente. No se elige todavía una arquitectura definitiva.
+- **Pruebas necesarias:** Prueba que confirme que la auditoría de una operación queda eventualmente persistida; prueba del comportamiento ante un error de persistencia; prueba del comportamiento durante un shutdown del proceso; y, si se introducen reintentos, prueba de que no se generan registros duplicados.
+- **Criterio de aceptación:** Una operación que requiere auditoría no puede perder silenciosamente su registro después de haber sido aceptada, dentro del modelo de durabilidad que se defina para el sistema.
 
 ---
 
