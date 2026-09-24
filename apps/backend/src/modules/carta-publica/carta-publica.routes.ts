@@ -10,6 +10,7 @@ import { obtenerConfiguracionPublica } from '../configuracion/configuracion.serv
 import { obtenerMesa } from '../mesas/mesa.service';
 import { crearPedidoPublico } from '../pedidos/pedido.service';
 import { crearPedidoPublicoSchema } from '../pedidos/pedido.dto';
+import { pedidoPublico } from '../pedidos/pedido.mapper';
 import { crearReclamacionPublica } from '../reclamaciones/reclamacion.service';
 import { crearReclamacionPublicaSchema } from '../reclamaciones/reclamacion.dto';
 import { resolverEmpresaPorSlug } from './carta-publica.middleware';
@@ -82,7 +83,7 @@ cartaPublicaRouter.post(
   validateBody(crearPedidoPublicoSchema),
   (req, res, next) => {
     crearPedidoPublico(req.body)
-      .then((pedido) => sendSuccess(res, pedido, 'Pedido enviado', 201))
+      .then((pedido) => sendSuccess(res, pedidoPublico(pedido), 'Pedido enviado', 201))
       .catch(next);
   },
 );

@@ -167,10 +167,16 @@ export async function crearPedido(dto: CrearPedidoDto): Promise<Pedido> {
  * de salón: un mesero lo revisa y recién ahí lo envía a cocina (`POST /api/comandas`, que
  * sigue exigiendo sesión), así que un aluvión de autopedidos falsos no llega solo a la cocina.
  *
- * En autopedido, si la mesa ya tiene un pedido abierto (alguien pidió antes en la misma
+ * En autopedido, si la mesa ya tiene un AUTOPEDIDO abierto (alguien pidió antes en la misma
  * sesión de mesa), las líneas nuevas se agregan a ESE pedido en vez de fallar con "la mesa ya
  * tiene un pedido abierto": es el caso normal de "pedir algo más" a mitad de la comida, no un
  * conflicto. Delivery/recojo, al no tener mesa, siempre crean un pedido nuevo.
+ *
+ * H04: si la mesa tiene un pedido abierto de OTRO canal (típicamente `SALON`, abierto por un
+ * mesero autenticado, posiblemente con un `cliente` asociado), la petición se RECHAZA — nunca
+ * se reutiliza ni se le agregan líneas. Antes de este cambio, `findOneBy` no filtraba por
+ * `canalOrigen`, así que un tercero sin autenticarse podía terminar agregando líneas al pedido
+ * de un mesero y recibiendo esa entidad completa (con su `cliente`) en la respuesta.
  */
 const ETIQUETA_CANAL_ORIGEN: Record<CanalOrigenPedido, string> = {
   [CanalOrigenPedido.SALON]: 'Salón',
@@ -178,6 +184,11 @@ const ETIQUETA_CANAL_ORIGEN: Record<CanalOrigenPedido, string> = {
   [CanalOrigenPedido.DELIVERY]: 'Delivery',
   [CanalOrigenPedido.RECOJO]: 'Recojo',
 };
+
+/** Mensaje deliberadamente genérico: no debe filtrar el id del pedido ajeno, el id del cliente
+ * asociado, el canal interno que lo abrió, ni el nombre de quien lo atiende. */
+const MENSAJE_MESA_ATENDIDA_POR_OTRO_CANAL =
+  'La mesa ya está siendo atendida. Solicita ayuda al personal.';
 
 export async function crearPedidoPublico(dto: CrearPedidoPublicoDto): Promise<Pedido> {
   let pedido: Pedido;
@@ -188,13 +199,31 @@ export async function crearPedidoPublico(dto: CrearPedidoPublicoDto): Promise<Pe
 
   if (dto.canalOrigen === CanalOrigenPedido.AUTOPEDIDO) {
     const mesa = await resolverMesa(dto.mesaId!);
-    const abierto = await pedidoRepository.findOneBy({
+
+    // Se traen TODOS los pedidos abiertos de la mesa (no el primero que devuelva la consulta)
+    // para distinguir sin ambigüedad los tres casos posibles — incluido el estado inconsistente
+    // que H12 todavía no impide a nivel de base de datos: más de un pedido abierto a la vez en
+    // la misma mesa (ej. un AUTOPEDIDO y un SALON simultáneos por una carrera). Ese caso NO se
+    // resuelve aquí (no es responsabilidad de H04 elegir cuál de los dos es el "correcto"): se
+    // trata igual que "hay un pedido de otro canal" y se rechaza.
+    const pedidosAbiertosEnMesa = await pedidoRepository.findBy({
       mesa: { id: mesa.id },
       estado: EstadoPedido.ABIERTO,
     });
-    esPedidoNuevo = !abierto;
+    const autopedidoAbierto = pedidosAbiertosEnMesa.find(
+      (p) => p.canalOrigen === CanalOrigenPedido.AUTOPEDIDO,
+    );
+    const hayOtroCanalAbierto = pedidosAbiertosEnMesa.some(
+      (p) => p.canalOrigen !== CanalOrigenPedido.AUTOPEDIDO,
+    );
+
+    if (hayOtroCanalAbierto) {
+      throw new HttpError(409, MENSAJE_MESA_ATENDIDA_POR_OTRO_CANAL);
+    }
+
+    esPedidoNuevo = !autopedidoAbierto;
     pedido =
-      abierto ??
+      autopedidoAbierto ??
       (await pedidoRepository.save(
         pedidoRepository.create({
           mesa,

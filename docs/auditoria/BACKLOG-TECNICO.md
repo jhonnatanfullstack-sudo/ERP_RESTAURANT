@@ -110,21 +110,80 @@ Implementación por etapas, con revisión independiente de Codex en cada ronda (
 - **ID:** H04
 - **Prioridad:** P0
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Pedidos / Carta pública
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/carta-publica/carta-publica.routes.ts` (líneas 79-88)
   - `apps/backend/src/modules/pedidos/pedido.service.ts` (líneas 182-244, función `crearPedidoPublico`)
   - `apps/backend/src/modules/pedidos/pedido.entity.ts`
   - `apps/backend/src/modules/clientes/cliente.entity.ts` (líneas 28-56)
   - `apps/backend/src/utils/api-response.ts` (líneas 3-5)
-- **Descripción:** El endpoint público `POST /:slug/pedidos` (autopedido, sin autenticación) busca cualquier pedido `abierto` en la mesa indicada sin filtrar por canal de origen (`canalOrigen`), y lo reutiliza si existe — incluso si ese pedido fue abierto por un mesero autenticado con un `cliente` asociado. La respuesta se serializa completa, sin mapper que oculte datos de contacto.
-- **Evidencia encontrada:** `pedido.service.ts:191-194`, `findOneBy({ mesa: {id}, estado: ABIERTO })` sin condición sobre `canalOrigen`; `RELACIONES` de la consulta incluye `cliente: true`; `sendSuccess` (`api-response.ts`) serializa el objeto tal cual sin filtrar campos.
-- **Impacto:** Cualquier persona con el enlace/QR de una mesa (UUID compartible sin expiración) puede recibir en la respuesta datos personales del cliente asociado al pedido existente (nombres/razón social, documento de identidad, teléfono, email, dirección) y ver/agregar líneas a un pedido ajeno, sin autenticarse ni estar físicamente presente.
-- **Escenario reproducible:** Un mesero abre un pedido de salón en la Mesa 5 con un cliente fidelizado asociado → un tercero con el enlace `/carta/:slug?mesa=<uuid>` llama `POST /api/publico/:slug/pedidos` con `canalOrigen: AUTOPEDIDO` y el mismo `mesaId` → recibe en la respuesta el pedido completo, incluyendo el objeto `cliente` con sus datos personales.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería filtrar la reutilización de pedido por canal de origen y/o aplicar un mapper público que excluya datos de `cliente`/PII en la respuesta del autopedido.
-- **Pruebas necesarias:** Prueba de integración que confirme que el endpoint público de autopedido nunca devuelve datos de `cliente` (documento, teléfono, email, dirección) ni permite modificar un pedido abierto por otro canal de origen.
-- **Criterio de aceptación:** El endpoint público de autopedido no expone PII de clientes en su respuesta y no permite modificar pedidos abiertos por meseros/otros comensales sin un mecanismo de verificación, con evidencia de prueba automatizada.
+- **Descripción (hallazgo original):** El endpoint público `POST /:slug/pedidos` (autopedido, sin autenticación) busca cualquier pedido `abierto` en la mesa indicada sin filtrar por canal de origen (`canalOrigen`), y lo reutiliza si existe — incluso si ese pedido fue abierto por un mesero autenticado con un `cliente` asociado. La respuesta se serializa completa, sin mapper que oculte datos de contacto.
+- **Evidencia encontrada (hallazgo original):** `pedido.service.ts:191-194`, `findOneBy({ mesa: {id}, estado: ABIERTO })` sin condición sobre `canalOrigen`; `RELACIONES` de la consulta incluye `cliente: true`; `sendSuccess` (`api-response.ts`) serializa el objeto tal cual sin filtrar campos.
+- **Impacto (hallazgo original):** Cualquier persona con el enlace/QR de una mesa (UUID compartible sin expiración) puede recibir en la respuesta datos personales del cliente asociado al pedido existente (nombres/razón social, documento de identidad, teléfono, email, dirección) y ver/agregar líneas a un pedido ajeno, sin autenticarse ni estar físicamente presente.
+- **Escenario reproducible (hallazgo original):** Un mesero abre un pedido de salón en la Mesa 5 con un cliente fidelizado asociado → un tercero con el enlace `/carta/:slug?mesa=<uuid>` llama `POST /api/publico/:slug/pedidos` con `canalOrigen: AUTOPEDIDO` y el mismo `mesaId` → recibe en la respuesta el pedido completo, incluyendo el objeto `cliente` con sus datos personales.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería filtrar la reutilización de pedido por canal de origen y/o aplicar un mapper público que excluya datos de `cliente`/PII en la respuesta del autopedido.
+- **Pruebas necesarias (hallazgo original):** Prueba de integración que confirme que el endpoint público de autopedido nunca devuelve datos de `cliente` (documento, teléfono, email, dirección) ni permite modificar un pedido abierto por otro canal de origen.
+- **Criterio de aceptación:** El endpoint público de autopedido no expone PII de clientes en su respuesta y no permite modificar pedidos abiertos por meseros/otros comensales sin un mecanismo de verificación, con evidencia de prueba automatizada. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+Dos controles independientes, ambos necesarios (uno no sustituye al otro):
+
+- **Integridad — `crearPedidoPublico()` ya no reutiliza indiscriminadamente cualquier pedido abierto de la mesa.** Para `canalOrigen: AUTOPEDIDO` se listan **todos** los pedidos `ABIERTO` de la mesa (no el primero que devuelva `findOne`, para no depender de un orden arbitrario) y se distinguen cuatro casos de forma inequívoca:
+  - **A.** Solo existe un `AUTOPEDIDO` abierto → se reutiliza ese pedido.
+  - **B.** Existe cualquier pedido abierto de OTRO canal → se responde `409` antes de cualquier mutación (no se le agregan líneas, no se lee su `cliente`, no se lo toca).
+  - **C.** No existe ningún pedido abierto → se crea un `AUTOPEDIDO` nuevo.
+  - **D.** Coexisten un `AUTOPEDIDO` y un pedido de otro canal abiertos a la vez en la misma mesa (estado que la aplicación normal no debería alcanzar, pero que H12 todavía no impide a nivel de base de datos) → se responde `409` igual que en B, sin fusionar ni elegir arbitrariamente cuál es el válido, y sin modificar ninguno de los dos.
+- **Confidencialidad — nuevo `apps/backend/src/modules/pedidos/pedido.mapper.ts` (`pedidoPublico()`).** Construye la respuesta pública propiedad por propiedad, con una **allowlist explícita** — nunca `{ ...pedido }`, nunca `Object.assign` de la entidad, nunca serializar completo y después `delete`. `cliente` y `clienteId` quedan excluidos **estructuralmente**: la función no los lee en ningún punto de su código, así que no depende de que `cliente` sea `null` para ser segura. `carta-publica.routes.ts` pasa la respuesta de `POST /:slug/pedidos` por este mapper para los tres canales públicos (`AUTOPEDIDO`, `DELIVERY`, `RECOJO`), que comparten el mismo handler.
+- **Riesgo residual (H12, sin resolver aquí):** H04 no agregó índice único, lock, `SELECT FOR UPDATE`, advisory lock ni ninguna transacción nueva. La ausencia de una garantía a nivel de base de datos de "un solo pedido abierto por mesa" sigue siendo H12, íntegramente pendiente; H04 solo asegura que, si esa condición de carrera llegara a producir el estado inconsistente D descrito arriba, el endpoint público lo trata de forma segura (rechazo, sin fusión), sin depender de que H12 ya esté resuelto.
+
+##### Contrato público resultante (`pedidoPublico()`)
+
+```
+id
+estado
+canalOrigen
+mesa: { id, numero, salon } | null   ← `salon` es únicamente `pedido.mesa.salon.nombre` (string), NO la entidad Salon completa
+detalles: [{ productoId, cantidad, precioUnitario, subtotal, notas }]
+total
+direccionEntrega
+```
+
+**Nunca se exponen:** `cliente`, `clienteId`, la entidad `Empresa`, ningún usuario interno, el objeto `Producto` completo (costos, stock, margen, proveedor) ni ninguna otra relación interna — la allowlist solo copia los campos escalares/planos listados arriba.
+
+#### Evidencia de validación
+
+- `carta-publica.test.ts` (H04/carta pública): **13/13 PASS**
+- `pedidos-comandas.test.ts` (relacionado): **19/19 PASS**
+- Ejecución conjunta verificada por Codex (2 archivos): **32/32 PASS**
+- Suite backend completa: **205/205 PASS (27/27 archivos)**
+- typecheck backend: **PASS**
+- typecheck workspace: **FAIL únicamente** por `apps/frontend/src/routes/AppRoutes.tsx:50` (`LoginPage` declarado sin usar) — **preexistente, fuera de alcance de H04**
+- lint: **PASS**, 0 errores, 2 warnings de frontend preexistentes sin relación
+- build backend: **PASS**
+- build frontend: **FAIL únicamente** por el mismo `LoginPage` preexistente
+- `git diff --check`: **PASS**
+
+##### Casos de seguridad verificados (T01-T11)
+
+- **T01:** autopedido nuevo funciona (`201`).
+- **T02:** autopedido + autopedido (mismo canal) reutiliza correctamente y acumula detalles.
+- **T03:** SALON abierto + intento de AUTOPEDIDO → `409`; el pedido SALON permanece intacto (mismos `detalles`, mismo `total`).
+- **T04:** SALON con `cliente` asociado (PII real) + intento de AUTOPEDIDO → `409` y la respuesta no contiene ningún dato del cliente.
+- **T05:** el mapper recibe deliberadamente un objeto con `cliente`/PII cargado y no lo serializa — frontera de serialización probada, no una coincidencia del caso feliz.
+- **T06:** DELIVERY sigue funcionando sin cambios.
+- **T07:** RECOJO sigue funcionando sin cambios.
+- **T08:** aislamiento RLS multiempresa permanece intacto.
+- **T09:** autopedido sin `mesaId` → `400`.
+- **T10:** el `409` es genérico — no filtra ids, PII ni el canal interno.
+- **T11:** estado inconsistente (AUTOPEDIDO y SALON abiertos a la vez) → `409` y ninguno de los dos se modifica.
+
+#### Certificación Codex
+
+`CERTIFICACIÓN CODEX — H04 APROBADO PARA CIERRE`. Codex verificó de forma independiente: la vulnerabilidad original; la lógica A/B/C/D de conflicto de canal; el orden de las mutaciones (el rechazo ocurre antes de cualquier escritura); el aislamiento RLS; la allowlist del mapper, incluidos objetos anidados; el contrato consumido por el frontend; T01-T11; intentos de bypass; delivery/recojo; la ausencia de cambios en H01/H02; y la suite completa.
+
+Durante la certificación, Codex señaló una observación de severidad BAJA sobre `detalle.notas` en el mapper público, que **no bloquea** el cierre de H04 — registrada como hallazgo independiente **H22** (ver P2 más abajo).
 
 ### H06 — Cambio de contraseña no revoca sesiones
 
@@ -420,6 +479,23 @@ Implementación por etapas, con revisión independiente de Codex en cada ronda (
 - **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería agregar un índice único parcial sobre `(mesa_id)` con `WHERE estado = 'abierto'`, igual patrón que el ya usado en `cajas`/`turnos`.
 - **Pruebas necesarias:** Prueba de integración que dispare dos creaciones de pedido concurrentes para la misma mesa y verifique que solo una tiene éxito.
 - **Criterio de aceptación:** Nunca existen dos pedidos en estado `abierto` para la misma mesa, garantizado a nivel de base de datos y verificado con prueba automatizada.
+
+### H22 — Notas de detalle expuestas en el contrato público de pedidos
+
+- **ID:** H22
+- **Prioridad:** P2
+- **Severidad:** BAJO
+- **Estado:** PENDIENTE
+- **Módulo afectado:** Pedidos / Carta pública
+- **Archivos implicados:**
+  - `apps/backend/src/modules/pedidos/pedido.mapper.ts` (campo `notas` dentro de `detalles`, allowlist de `pedidoPublico()`)
+- **Descripción:** Detectado por Codex durante la certificación de H04. El mapper público `pedidoPublico()` incluye `detalle.notas` en cada línea del pedido. Hoy ese campo representa exclusivamente instrucciones del propio detalle escritas por quien creó la línea (ej. "sin cebolla") — no hay evidencia de que el staff lo use como anotación interna. Pero si en el futuro el personal (mesero/cocina) llegara a reutilizar ese mismo campo para un comentario interno sobre esa línea, ese comentario quedaría visible en la respuesta pública de un autopedido posterior que se una al mismo pedido (ver H04-T02, el mecanismo de "unirse a un pedido ya abierto" sigue vigente para el mismo canal).
+- **Evidencia encontrada:** Lectura de `pedido.mapper.ts`: `notas: detalle.notas` sin distinción de origen. No se encontró, en el código actual, ningún flujo que escriba en `detalle.notas` desde una pantalla interna de staff distinta a la que ya usa el propio pedido (`agregarDetalle`/`actualizarDetalle`, ambos con el mismo campo para cualquier origen). Es una observación preventiva, no una fuga demostrada con el código de hoy.
+- **Impacto:** Ninguno demostrado actualmente. Es un endurecimiento preventivo ante un uso futuro del campo (comentario interno) que hoy no ocurre.
+- **Escenario reproducible:** No reproducible con el comportamiento actual — `notas` de detalle solo contiene hoy lo que el propio remitente (cliente o mesero) escribió para esa línea, dato que ya conoce.
+- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería decidir explícitamente uno de dos caminos: (a) documentar formalmente `detalle.notas` como un campo siempre visible al cliente, dejando constancia de que el staff no debe usarlo para comentarios internos; o (b) separar en el modelo una nota pública (la del pedido) de una nota interna del staff, y excluir esta última de `pedidoPublico()`.
+- **Pruebas necesarias:** Prueba automatizada que confirme el comportamiento que se decida (visibilidad explícita de `notas`, o separación de campos público/interno).
+- **Criterio de aceptación:** El contrato de `notas` de detalle queda documentado explícitamente como público, o separado en dos campos sin ambigüedad, verificado con prueba automatizada. No bloquea el cierre de H04.
 
 ---
 
