@@ -381,18 +381,75 @@ Durante la revisión, Codex señaló tres observaciones adicionales, ninguna blo
 - **ID:** H14
 - **Prioridad:** P1
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Facturación electrónica / Ventas
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/facturacion/facturacion.service.ts` (función `emitirComprobante`, líneas 179-231)
   - `apps/backend/src/modules/ventas/venta.service.ts` (función `anularVenta`, líneas 515-551)
-- **Descripción:** `emitirComprobante()` valida que la venta exista y que no tenga ya un comprobante en un estado distinto de `ERROR_ENVIO`, pero nunca lee ni compara `venta.estado`. Por su parte, `anularVenta()` permite anular una venta que no tiene comprobante emitido (o que tiene uno en `ERROR_ENVIO`/`RECHAZADO`/`PENDIENTE`).
-- **Evidencia encontrada:** Confirmado por lectura directa de ambas funciones: ninguna de las dos impide, en conjunto, que una venta ya anulada sea posteriormente facturada.
-- **Impacto:** Se puede generar y enviar a SUNAT/OSE un comprobante electrónico legalmente válido correspondiente a una venta que el propio sistema marcó como anulada — inconsistencia fiscal grave, y una vez aceptado por SUNAT, la venta ya no podría anularse directamente sin una Nota de Crédito.
-- **Escenario reproducible:** Crear una venta → anularla sin emitir comprobante (caso de uso normal en un POS) → llamar `POST /api/facturacion/ventas/:id/emitir` para esa venta anulada: el sistema construye, firma y envía el comprobante igual.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería que `emitirComprobante()` rechace explícitamente la emisión si `venta.estado === ANULADA`.
-- **Pruebas necesarias:** Prueba de integración que intente emitir un comprobante para una venta anulada y verifique que la operación es rechazada.
-- **Criterio de aceptación:** No es posible emitir un comprobante electrónico para una venta en estado anulado, verificado con prueba automatizada.
+- **Descripción (hallazgo original):** `emitirComprobante()` valida que la venta exista y que no tenga ya un comprobante en un estado distinto de `ERROR_ENVIO`, pero nunca lee ni compara `venta.estado`. Por su parte, `anularVenta()` permite anular una venta que no tiene comprobante emitido (o que tiene uno en `ERROR_ENVIO`/`RECHAZADO`/`PENDIENTE`).
+- **Evidencia encontrada (hallazgo original):** Confirmado por lectura directa de ambas funciones: ninguna de las dos impide, en conjunto, que una venta ya anulada sea posteriormente facturada.
+- **Impacto (hallazgo original):** Se puede generar y enviar a SUNAT/OSE un comprobante electrónico legalmente válido correspondiente a una venta que el propio sistema marcó como anulada — inconsistencia fiscal grave, y una vez aceptado por SUNAT, la venta ya no podría anularse directamente sin una Nota de Crédito.
+- **Escenario reproducible (hallazgo original):** Crear una venta → anularla sin emitir comprobante (caso de uso normal en un POS) → llamar `POST /api/facturacion/ventas/:id/emitir` para esa venta anulada: el sistema construye, firma y envía el comprobante igual.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería que `emitirComprobante()` rechace explícitamente la emisión si `venta.estado === ANULADA`.
+- **Pruebas necesarias (hallazgo original):** Prueba de integración que intente emitir un comprobante para una venta anulada y verifique que la operación es rechazada.
+- **Criterio de aceptación:** No es posible emitir un comprobante electrónico para una venta en estado anulado, verificado con prueba automatizada. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+- **`emitirComprobante()` ahora valida el estado actual de la venta.** Si `venta.estado === EstadoVenta.ANULADA`, responde `409`. La guarda ocurre inmediatamente después de confirmar que la venta existe (`if (!venta) throw 404`) y **antes** de: consultar la configuración/credenciales/certificado del OSE, generar o firmar el XML UBL, crear un nuevo `ComprobanteElectronico`, y llamar al OSE.
+- **`reintentarEnvio()` quedó incluido dentro de H14** — no se dejó una ruta equivalente abierta. Ahora carga la relación actual `venta` (`relations: { venta: true }`) y exige, con la misma guarda, que la venta siga siendo facturable. Una venta anulada devuelve `409` **antes** de un nuevo envío al OSE, y el comprobante existente en `ERROR_ENVIO` no queda mutado por el intento de reintento rechazado.
+- Ambas funciones reutilizan una única guarda pequeña, `validarVentaFacturable(venta: Pick<Venta, 'estado'>)`, basada en el enum ya existente `EstadoVenta.ANULADA` (sin comparaciones de string mágicas).
+- **No se afirma que H14 bloquee cualquier posible condición de carrera** — ver "Concurrencia residual" más abajo.
+
+##### Alcance conseguido
+
+```
+venta ANULADA ya confirmada y visible → emisión inicial  = 409, OSE no llamado, ComprobanteElectronico no creado
+venta ANULADA ya confirmada y visible → reintento         = 409, OSE no llamado, ComprobanteElectronico existente no mutado indebidamente
+```
+
+##### Concurrencia residual
+
+H14 **no resuelve completamente** la carrera entre `emitir`/`reintentar` y `anular` cuando ambas operaciones ocurren de forma concurrente:
+
+1. La emisión/reintento lee el estado de la venta como `EMITIDA` (la anulación concurrente, en otra transacción, todavía no confirmó).
+2. La otra transacción confirma `ANULADA`.
+3. La primera operación conserva la lectura previa — no vuelve a comprobar el estado.
+4. Puede continuar hasta llamar al OSE real.
+
+No existe hoy ningún `SELECT ... FOR UPDATE` sobre `Venta` que cierre esa ventana; H14 no agregó ningún lock. Este residual **no se oculta** y **no fue introducido por H14** — ya existía exactamente igual antes de este cierre. Resolverlo requeriría estudiar conjuntamente locks/revalidación y los límites transaccionales del envío externo al OSE, lo cual está directamente vinculado a **H13** (que ya analiza el envío al OSE antes del commit local y los límites entre la transacción de base de datos y el efecto externo). **H13 permanece PENDIENTE, sin cambio de prioridad, severidad ni estado**, y no se abre un hallazgo `Hxx` nuevo para esta carrera mientras quede documentada como residual asociado a H13.
+
+##### Evidencia T01-T05
+
+- **T01:** venta real creada → anulada → intento de emisión → `409`; el proveedor OSE mockeado recibe **0 llamadas**; **0 filas** de `ComprobanteElectronico` para esa venta, verificado con una consulta directa a PostgreSQL. Comprobado además contra la versión previa de producción (revirtiendo temporalmente solo el archivo de servicio, con los tests ya en su lugar): sin la guarda, este mismo test obtenía `200` — confirma que el test detecta la vulnerabilidad real, no un caso vacío.
+- **T02:** comprobante en `ERROR_ENVIO` → venta anulada → reintento → `409`; OSE con **0 llamadas** durante el reintento; el comprobante existente permanece exactamente igual (sin mutación indebida). También tuvo RED confirmado contra la versión previa (`200` sin la guarda).
+- **T03:** venta vigente — la emisión sigue funcionando con normalidad (`200`), el OSE es llamado una vez, sin cambio de contrato HTTP respecto al comportamiento previo.
+- **T04:** venta con comprobante `aceptado` — la anulación sigue rechazada y la venta permanece `EMITIDA`; la protección existente de `anularVenta()` (que también cubre `OBSERVADO`) no fue modificada.
+- **T05:** el rechazo `409` es funcional y seguro — sin `stack`, sin credenciales OSE, sin contraseña ni certificado, sin XML firmado; OSE con **0 llamadas**.
+
+#### Evidencia de validación
+
+- `facturacion.test.ts`: **13/13 PASS**
+- Relacionados (`ventas.test.ts`, `notas-venta.test.ts`, `guias-remision.test.ts`): **20/20 PASS**
+- Suite backend completa: **222/222 PASS (28/28 archivos)**
+- typecheck backend: **PASS**
+- typecheck workspace: **FAIL únicamente** por `apps/frontend/src/routes/AppRoutes.tsx(50,1)` (`LoginPage` sin usar) — **preexistente, fuera de alcance de H14**
+- lint: **PASS**, 0 errores, 2 warnings de frontend preexistentes
+- build backend: **PASS**
+- build frontend: **FAIL únicamente** por el mismo `LoginPage` preexistente
+- `git diff --check`: **PASS** (la advertencia de Git sobre conversión LF→CRLF en `apps/backend/tests/facturacion.test.ts` es informativa del entorno Windows, no un fallo de espacios en blanco)
+
+##### RLS / multiempresa
+
+Codex verificó: el uso de `tenantRepository` (sin bypass de RLS), que la nueva carga de la relación `venta` en `reintentarEnvio()` corre sobre el manager de la transacción de la petición ya existente, que es carga de relación estándar de TypeORM (no SQL manual nuevo), sin ningún `empresaId` manual agregado, y sin regresión de aislamiento multiempresa demostrada.
+
+#### Certificación Codex
+
+`CERTIFICACIÓN CODEX — H14 APROBADO PARA CIERRE`. Codex verificó de forma independiente: el hallazgo original; el diff completo contra `HEAD`; la guarda `validarVentaFacturable`; el flujo de emisión; el flujo de reintento; el orden de los efectos (guarda antes que cualquier efecto OSE); RLS; T01-T05; la suite relacionada; la suite completa; typecheck/lint/build; la concurrencia residual; la relación con H13; y la ausencia de cambios inesperados en el resto del código.
+
+##### Anomalía de trazabilidad
+
+Codex comparó el working tree directamente contra el commit `7b2c85c` y confirmó que los cambios sin confirmar existentes en ese momento (`facturacion.service.ts`, `facturacion.test.ts`) correspondían exclusivamente a H14, sin contenido ajeno a este hallazgo. No se especula sobre el origen de esos cambios.
 
 ### H15 — PaymentTerms/cuotas ausentes en ventas al crédito
 

@@ -3,6 +3,7 @@ import { empresaIdActual } from '../../database/tenant-context';
 import { cifrar, descifrar, descifrarTexto } from '../../utils/cifrado';
 import { resolverTasaIgv } from '../empresa/igv.service';
 import { ventaRepository } from '../ventas/venta.repository';
+import { EstadoVenta, type Venta } from '../ventas/venta.entity';
 import { construirXmlFactura, nombreArchivo } from './ubl/factura.builder';
 import { firmarXml } from './firma/firmador';
 import { cargarPkcs12DesdeBuffer } from './firma/certificado';
@@ -127,6 +128,12 @@ function mapearEstado(codigoRespuesta: string | null): EstadoComprobante {
   return EstadoComprobante.RECHAZADO;
 }
 
+function validarVentaFacturable(venta: Pick<Venta, 'estado'>): void {
+  if (venta.estado === EstadoVenta.ANULADA) {
+    throw new HttpError(409, 'No se puede emitir un comprobante para una venta anulada');
+  }
+}
+
 async function enviarYRegistrar(
   comprobante: ComprobanteElectronico,
   xmlFirmado: string,
@@ -184,6 +191,7 @@ export async function emitirComprobante(ventaId: string): Promise<ComprobanteEle
   if (!venta) {
     throw new HttpError(404, 'Venta no encontrada');
   }
+  validarVentaFacturable(venta);
 
   const existente = await comprobanteElectronicoRepository.findOneBy({ venta: { id: venta.id } });
   if (existente && existente.estado !== EstadoComprobante.ERROR_ENVIO) {
@@ -233,13 +241,17 @@ export async function emitirComprobante(ventaId: string): Promise<ComprobanteEle
 /** Reenvía un comprobante que quedó en `error_envio` — reusa el mismo XML ya firmado, no
  * reconstruye nada (un XML re-firmado con otro `DigestValue` sería, para SUNAT, otro documento). */
 export async function reintentarEnvio(comprobanteId: string): Promise<ComprobanteElectronico> {
-  const comprobante = await comprobanteElectronicoRepository.findOneBy({ id: comprobanteId });
+  const comprobante = await comprobanteElectronicoRepository.findOne({
+    where: { id: comprobanteId },
+    relations: { venta: true },
+  });
   if (!comprobante) {
     throw new HttpError(404, 'Comprobante no encontrado');
   }
   if (comprobante.estado !== EstadoComprobante.ERROR_ENVIO) {
     throw new HttpError(409, 'Solo se puede reintentar un comprobante en error_envio');
   }
+  validarVentaFacturable(comprobante.venta);
 
   const config = await configuracionDeLaEmpresa();
   if (!config?.oseProveedor || !config.oseUsuario || !config.oseCredencialCifrada) {

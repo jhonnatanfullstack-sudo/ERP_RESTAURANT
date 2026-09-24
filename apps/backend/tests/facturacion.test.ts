@@ -2,6 +2,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import request from 'supertest';
 import forge from 'node-forge';
 import { app } from '../src/app';
+import { AppDataSource } from '../src/database/data-source';
 import { NubefactOseProvider } from '../src/modules/facturacion/ose/nubefact-ose.provider';
 import { api, empresaConProducto } from './ayudantes';
 import type { RespuestaOse } from '../src/modules/facturacion/ose/ose-provider.interface';
@@ -69,6 +70,56 @@ async function empresaConFacturacionConfigurada(precio = 70) {
     .expect(200);
 
   return { sesion, catalogos, productoId };
+}
+
+async function leerComprobantesDeVentaDirecto(ventaId: string): Promise<
+  Array<{
+    id: string;
+    estado: string;
+    intentos: number;
+    codigo_respuesta: string | null;
+    mensaje_respuesta: string | null;
+    cdr_xml: string | null;
+    enviado_en: string | null;
+    xml_firmado: string;
+    hash_firma: string;
+  }>
+> {
+  const queryRunner = AppDataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+  try {
+    await queryRunner.query(`SELECT set_config('app.bypass_rls', 'on', true)`);
+    const filas = await queryRunner.query(
+      `SELECT "id", "estado", "intentos", "codigo_respuesta", "mensaje_respuesta", "cdr_xml",
+              "enviado_en", "xml_firmado", "hash_firma"
+       FROM "comprobantes_electronicos"
+       WHERE "venta_id" = $1`,
+      [ventaId],
+    );
+    await queryRunner.commitTransaction();
+    return filas;
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    throw error;
+  } finally {
+    await queryRunner.release();
+  }
+}
+
+async function crearVentaFacturable(
+  sesion: Awaited<ReturnType<typeof empresaConFacturacionConfigurada>>['sesion'],
+  catalogos: Awaited<ReturnType<typeof empresaConFacturacionConfigurada>>['catalogos'],
+  productoId: string,
+) {
+  return api
+    .post('/api/ventas', sesion, {
+      detalles: [{ productoId, cantidad: 1 }],
+      tipoComprobanteId: catalogos.boletaId,
+      formaPago: 'contado',
+      medioPagoId: catalogos.efectivoId,
+    })
+    .expect(201);
 }
 
 describe('Configuración de facturación electrónica', () => {
@@ -239,5 +290,95 @@ describe('Emisión de comprobantes electrónicos', () => {
       .post(`/api/facturacion/ventas/${ventaRechazada.body.data.id}/emitir`, sesion)
       .expect(200);
     expect(rechazado.body.data.estado).toBe('rechazado');
+  });
+});
+
+describe('H14 — una venta anulada no puede enviarse al OSE', () => {
+  it('T01 — rechaza la emisión inicial sin crear comprobante ni llamar al OSE', async () => {
+    const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
+    const espia = mockearRespuestaOse({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    const venta = await crearVentaFacturable(sesion, catalogos, productoId);
+    const ventaId = venta.body.data.id as string;
+
+    await api.delete(`/api/ventas/${ventaId}`, sesion).expect(200);
+    const respuesta = await api.post(`/api/facturacion/ventas/${ventaId}/emitir`, sesion).expect(409);
+
+    expect(espia).not.toHaveBeenCalled();
+    expect(await leerComprobantesDeVentaDirecto(ventaId)).toHaveLength(0);
+    expect(respuesta.body.message.toLowerCase()).toContain('anulada');
+  });
+
+  it('T02 — rechaza reintentar un error_envio tras anular y conserva el comprobante', async () => {
+    const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
+    const espia = mockearRespuestaOse({
+      codigoRespuesta: null,
+      mensaje: 'Fallo de transporte controlado',
+      cdrXml: null,
+    });
+    const venta = await crearVentaFacturable(sesion, catalogos, productoId);
+    const ventaId = venta.body.data.id as string;
+
+    const primerIntento = await api
+      .post(`/api/facturacion/ventas/${ventaId}/emitir`, sesion)
+      .expect(200);
+    expect(primerIntento.body.data.estado).toBe('error_envio');
+
+    await api.delete(`/api/ventas/${ventaId}`, sesion).expect(200);
+    const antes = await leerComprobantesDeVentaDirecto(ventaId);
+    expect(antes).toHaveLength(1);
+    espia.mockClear();
+
+    await api
+      .post(`/api/facturacion/comprobantes/${antes[0].id}/reintentar`, sesion)
+      .expect(409);
+
+    expect(espia).not.toHaveBeenCalled();
+    expect(await leerComprobantesDeVentaDirecto(ventaId)).toEqual(antes);
+  });
+
+  it('T03 — una venta vigente continúa emitiéndose normalmente', async () => {
+    const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
+    const espia = mockearRespuestaOse({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    const venta = await crearVentaFacturable(sesion, catalogos, productoId);
+
+    const respuesta = await api
+      .post(`/api/facturacion/ventas/${venta.body.data.id}/emitir`, sesion)
+      .expect(200);
+
+    expect(respuesta.body.data.estado).toBe('aceptado');
+    expect(espia).toHaveBeenCalledTimes(1);
+  });
+
+  it('T04 — una venta con comprobante aceptado conserva la protección de anulación', async () => {
+    const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
+    mockearRespuestaOse({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    const venta = await crearVentaFacturable(sesion, catalogos, productoId);
+    const ventaId = venta.body.data.id as string;
+
+    await api.post(`/api/facturacion/ventas/${ventaId}/emitir`, sesion).expect(200);
+    await api.delete(`/api/ventas/${ventaId}`, sesion).expect(409);
+
+    const ventaActual = await api.get(`/api/ventas/${ventaId}`, sesion).expect(200);
+    expect(ventaActual.body.data.estado).toBe('emitida');
+  });
+
+  it('T05 — el rechazo 409 es funcional y no expone secretos ni detalles internos', async () => {
+    const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
+    const espia = mockearRespuestaOse({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    const venta = await crearVentaFacturable(sesion, catalogos, productoId);
+    const ventaId = venta.body.data.id as string;
+
+    await api.delete(`/api/ventas/${ventaId}`, sesion).expect(200);
+    const respuesta = await api.post(`/api/facturacion/ventas/${ventaId}/emitir`, sesion).expect(409);
+    const cuerpo = JSON.stringify(respuesta.body).toLowerCase();
+
+    expect(respuesta.body.success).toBe(false);
+    expect(respuesta.body.message.toLowerCase()).toContain('anulada');
+    expect(respuesta.body.details).toEqual([]);
+    expect(cuerpo).not.toContain('clave-prueba');
+    expect(cuerpo).not.toContain(CONTRASENA_CERTIFICADO.toLowerCase());
+    expect(cuerpo).not.toContain('stack');
+    expect(cuerpo).not.toContain('xml_firmado');
+    expect(espia).not.toHaveBeenCalled();
   });
 });
