@@ -5,8 +5,10 @@ import { AppDataSource } from '../src/database/data-source';
 import { app } from '../src/app';
 import { transaccionPorPeticionMiddleware } from '../src/middlewares/tenant.middleware';
 import { errorHandlerMiddleware } from '../src/middlewares/error-handler.middleware';
+import { confirmarTransaccionDeLaPeticion, alConfirmar } from '../src/database/tenant-context';
 import { api, crearEmpresaDePrueba, ADMIN_INICIAL } from './ayudantes';
 import type { QueryRunner } from 'typeorm';
+import type { Response as ExpressResponse } from 'express';
 
 /**
  * H09 — un COMMIT fallido no puede terminar enviando al cliente el 2xx que el controlador ya
@@ -33,6 +35,11 @@ interface FallaComoRastro {
   commitLlamado: boolean;
   rollbackLlamado: boolean;
   releaseLlamado: boolean;
+  /** Cuántas veces se llamó realmente cada paso — `commitLlamado`/etc. arriba solo dicen "al
+   * menos una vez"; estos conteos permiten afirmar "exactamente una vez" (T-A03). */
+  vecesCommit: number;
+  vecesRollback: number;
+  vecesRelease: number;
 }
 
 /**
@@ -51,16 +58,19 @@ function fallarProximoCommit(rastro: Partial<FallaComoRastro> = {}): void {
 
     queryRunner.commitTransaction = (async () => {
       rastro.commitLlamado = true;
+      rastro.vecesCommit = (rastro.vecesCommit ?? 0) + 1;
       throw new Error('Fallo de commit inyectado por el test (simulación de corte con Postgres)');
     }) as QueryRunner['commitTransaction'];
 
     queryRunner.rollbackTransaction = (async () => {
       rastro.rollbackLlamado = true;
+      rastro.vecesRollback = (rastro.vecesRollback ?? 0) + 1;
       return rollbackOriginal();
     }) as QueryRunner['rollbackTransaction'];
 
     queryRunner.release = (async () => {
       rastro.releaseLlamado = true;
+      rastro.vecesRelease = (rastro.vecesRelease ?? 0) + 1;
       return releaseOriginal();
     }) as QueryRunner['release'];
 
@@ -132,6 +142,151 @@ function commitControlado(): { liberar: () => void; llegoACommit: Promise<void> 
   });
 
   return { liberar, llegoACommit };
+}
+
+interface ContadoresCierre {
+  commits: number;
+  rollbacks: number;
+  releases: number;
+}
+
+/**
+ * Espía la PRÓXIMA petición que abra una transacción, sin fallar nada — solo cuenta cuántas
+ * veces se llama realmente a `commitTransaction`/`rollbackTransaction`/`release` en esa
+ * conexión concreta. Para H13-A: verificar que un commit anticipado confirma exactamente una
+ * vez y que `res.end()` posterior no repite ningún paso de la máquina de cierre.
+ */
+function contarCierre(): ContadoresCierre {
+  const contadores: ContadoresCierre = { commits: 0, rollbacks: 0, releases: 0 };
+  const original = AppDataSource.createQueryRunner.bind(AppDataSource);
+  espiaActivo = vi.spyOn(AppDataSource, 'createQueryRunner').mockImplementationOnce(() => {
+    const queryRunner = original();
+    const commitOriginal = queryRunner.commitTransaction.bind(queryRunner);
+    const rollbackOriginal = queryRunner.rollbackTransaction.bind(queryRunner);
+    const releaseOriginal = queryRunner.release.bind(queryRunner);
+    queryRunner.commitTransaction = (async () => {
+      contadores.commits += 1;
+      return commitOriginal();
+    }) as QueryRunner['commitTransaction'];
+    queryRunner.rollbackTransaction = (async () => {
+      contadores.rollbacks += 1;
+      return rollbackOriginal();
+    }) as QueryRunner['rollbackTransaction'];
+    queryRunner.release = (async () => {
+      contadores.releases += 1;
+      return releaseOriginal();
+    }) as QueryRunner['release'];
+    return queryRunner;
+  });
+  return contadores;
+}
+
+/**
+ * Combina `commitControlado` (barrera) con `contarCierre` (conteo real) en un solo espía —
+ * necesario porque ambos usan el mismo `mockImplementationOnce` y no pueden coexistir por
+ * separado sobre la misma petición. Para T-A18: verificar que un `close` durante CERRANDO no
+ * duplica ningún paso de la máquina de cierre.
+ */
+function commitControladoConContadores(): {
+  liberar: () => void;
+  llegoACommit: Promise<void>;
+  contadores: ContadoresCierre;
+} {
+  const contadores: ContadoresCierre = { commits: 0, rollbacks: 0, releases: 0 };
+  let liberar!: () => void;
+  const barrera = new Promise<void>((resolve) => {
+    liberar = resolve;
+  });
+  let resolverLlego!: () => void;
+  const llegoACommit = new Promise<void>((resolve) => {
+    resolverLlego = resolve;
+  });
+
+  const original = AppDataSource.createQueryRunner.bind(AppDataSource);
+  espiaActivo = vi.spyOn(AppDataSource, 'createQueryRunner').mockImplementationOnce(() => {
+    const queryRunner = original();
+    const commitOriginal = queryRunner.commitTransaction.bind(queryRunner);
+    const rollbackOriginal = queryRunner.rollbackTransaction.bind(queryRunner);
+    const releaseOriginal = queryRunner.release.bind(queryRunner);
+    queryRunner.commitTransaction = (async () => {
+      resolverLlego();
+      await barrera;
+      contadores.commits += 1;
+      return commitOriginal();
+    }) as QueryRunner['commitTransaction'];
+    queryRunner.rollbackTransaction = (async () => {
+      contadores.rollbacks += 1;
+      return rollbackOriginal();
+    }) as QueryRunner['rollbackTransaction'];
+    queryRunner.release = (async () => {
+      contadores.releases += 1;
+      return releaseOriginal();
+    }) as QueryRunner['release'];
+    return queryRunner;
+  });
+
+  return { liberar, llegoACommit, contadores };
+}
+
+/**
+ * Igual que `commitControlado`, pero el `commitTransaction()` suspendido en la barrera
+ * termina FALLANDO (en vez de completarse) al liberarla — para T-A17: el commit anticipado
+ * está en curso (CERRANDO) y termina rechazando.
+ */
+function commitControladoQueFalla(rastro: Partial<FallaComoRastro> = {}): {
+  liberar: () => void;
+  llegoACommit: Promise<void>;
+} {
+  let liberar!: () => void;
+  const barrera = new Promise<void>((resolve) => {
+    liberar = resolve;
+  });
+  let resolverLlego!: () => void;
+  const llegoACommit = new Promise<void>((resolve) => {
+    resolverLlego = resolve;
+  });
+
+  const original = AppDataSource.createQueryRunner.bind(AppDataSource);
+  espiaActivo = vi.spyOn(AppDataSource, 'createQueryRunner').mockImplementationOnce(() => {
+    const queryRunner = original();
+    const rollbackOriginal = queryRunner.rollbackTransaction.bind(queryRunner);
+    const releaseOriginal = queryRunner.release.bind(queryRunner);
+    queryRunner.commitTransaction = (async () => {
+      resolverLlego();
+      await barrera;
+      rastro.commitLlamado = true;
+      rastro.vecesCommit = (rastro.vecesCommit ?? 0) + 1;
+      throw new Error('Fallo de commit inyectado por el test (T-A17, tras liberar la barrera)');
+    }) as QueryRunner['commitTransaction'];
+    queryRunner.rollbackTransaction = (async () => {
+      rastro.rollbackLlamado = true;
+      rastro.vecesRollback = (rastro.vecesRollback ?? 0) + 1;
+      return rollbackOriginal();
+    }) as QueryRunner['rollbackTransaction'];
+    queryRunner.release = (async () => {
+      rastro.releaseLlamado = true;
+      rastro.vecesRelease = (rastro.vecesRelease ?? 0) + 1;
+      return releaseOriginal();
+    }) as QueryRunner['release'];
+    return queryRunner;
+  });
+
+  return { liberar, llegoACommit };
+}
+
+/** Arnés mínimo con el middleware REAL de producción, para las pruebas de H13-A que llaman a
+ * `confirmarTransaccionDeLaPeticion()` directamente desde una ruta de prueba (todavía no hay
+ * ningún código de negocio real que la use — esa es la fase siguiente). */
+function appConfirmacionAnticipada(
+  manejador: (req: express.Request, res: express.Response) => Promise<void>,
+): express.Express {
+  const appDePrueba = express();
+  appDePrueba.use('/api', transaccionPorPeticionMiddleware);
+  appDePrueba.get('/api/harness-anticipado', (req, res, next) => {
+    manejador(req, res).catch(next);
+  });
+  appDePrueba.use(errorHandlerMiddleware);
+  return appDePrueba;
 }
 
 async function crearCategoria(sesion: Awaited<ReturnType<typeof crearEmpresaDePrueba>>, nombre: string) {
@@ -451,5 +606,340 @@ describe('H09 — commit fallido no puede devolver una respuesta exitosa', () =>
     const otraEmpresa = await crearEmpresaDePrueba();
     const normal = await crearCategoria(otraEmpresa, `H09-T09-otra-${Date.now()}`);
     expect(normal.status).toBe(201);
+  });
+});
+
+/**
+ * H13-A — infraestructura de "commit anticipado": `confirmarTransaccionDeLaPeticion()` deja
+ * confirmada la transacción de la petición ANTES de que `res.end()` se llame, reutilizando la
+ * misma máquina de cierre de H09 (`cerrar()`), sin degradarla. Todavía no existe ningún
+ * workflow de negocio real que la use (esa es la fase siguiente) — estas pruebas ejercitan la
+ * infraestructura directamente, con rutas de arnés mínimas.
+ */
+describe('H13-A — infraestructura de commit anticipado', () => {
+  it('T-A01 — commit anticipado exitoso: commit exactamente una vez', async () => {
+    const contadores = contarCierre();
+    const appDePrueba = appConfirmacionAnticipada(async (_req, res) => {
+      await confirmarTransaccionDeLaPeticion();
+      res.status(200).json({ ok: true });
+    });
+
+    const respuesta = await request(appDePrueba).get('/api/harness-anticipado');
+
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body).toEqual({ ok: true });
+    expect(contadores.commits).toBe(1);
+  });
+
+  it('T-A02 — después del commit anticipado, res.end no produce un segundo commit ni un segundo release', async () => {
+    const contadores = contarCierre();
+    const appDePrueba = appConfirmacionAnticipada(async (_req, res) => {
+      await confirmarTransaccionDeLaPeticion();
+      // Dos llamadas reales a res.end (json + un end() extra) para forzar el camino de
+      // "segunda llamada" del middleware — ninguna de las dos debe tocar commit/release.
+      res.status(200).json({ ok: true });
+      res.end();
+    });
+
+    const respuesta = await request(appDePrueba).get('/api/harness-anticipado');
+
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body).toEqual({ ok: true });
+    expect(contadores.commits).toBe(1);
+    expect(contadores.releases).toBe(1);
+  });
+
+  it('T-A03 — commit anticipado falla: commit intentado una vez, rollback de recuperación una vez, release una vez, 500, sin respuesta de éxito previa', async () => {
+    const rastro: Partial<FallaComoRastro> = {};
+    fallarProximoCommit(rastro);
+    let seArmoElExito = false;
+    const appDePrueba = appConfirmacionAnticipada(async (_req, res) => {
+      await confirmarTransaccionDeLaPeticion(); // debe lanzar — nunca llega a lo de abajo
+      seArmoElExito = true;
+      res.status(200).json({ ok: true });
+    });
+
+    const respuesta = await request(appDePrueba).get('/api/harness-anticipado');
+
+    expect(respuesta.status).toBe(500);
+    expect(respuesta.body.success).toBe(false);
+    // Nunca se llegó a armar el body de éxito: el `throw` de `confirmarTransaccionDeLaPeticion`
+    // corta el flujo ANTES de esa línea — no es que se armara y luego se descartara.
+    expect(seArmoElExito).toBe(false);
+    // commit intentado EXACTAMENTE una vez.
+    expect(rastro.vecesCommit).toBe(1);
+    // rollback de recuperación intentado EXACTAMENTE una vez (la transacción seguía activa
+    // tras el commit fallido — ver `cerrar()` en `tenant.middleware.ts`).
+    expect(rastro.vecesRollback).toBe(1);
+    // release intentado EXACTAMENTE una vez.
+    expect(rastro.vecesRelease).toBe(1);
+  });
+
+  it('T-A04 — release falla después de un commit anticipado exitoso: el commit sigue considerado confirmado', async () => {
+    fallarProximoRelease();
+    const appDePrueba = appConfirmacionAnticipada(async (_req, res) => {
+      await confirmarTransaccionDeLaPeticion(); // NO debe lanzar: el commit sí tuvo éxito
+      res.status(200).json({ ok: true });
+    });
+
+    const respuesta = await request(appDePrueba).get('/api/harness-anticipado');
+
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body).toEqual({ ok: true });
+  });
+
+  it('T-A05 — callback alConfirmar registrado ANTES del commit anticipado corre exactamente una vez', async () => {
+    let llamadas = 0;
+    const appDePrueba = appConfirmacionAnticipada(async (_req, res) => {
+      alConfirmar(() => {
+        llamadas += 1;
+      });
+      expect(llamadas).toBe(0); // todavía no confirmó nada
+      await confirmarTransaccionDeLaPeticion();
+      expect(llamadas).toBe(1); // ya corrió, apenas se confirmó
+      res.status(200).json({ ok: true });
+    });
+
+    const respuesta = await request(appDePrueba).get('/api/harness-anticipado');
+
+    expect(respuesta.status).toBe(200);
+  });
+
+  it('T-A06 — callback alConfirmar registrado DESPUÉS del commit anticipado corre de inmediato, una sola vez', async () => {
+    const appDePrueba = appConfirmacionAnticipada(async (_req, res) => {
+      await confirmarTransaccionDeLaPeticion();
+      let llamadas = 0;
+      alConfirmar(() => {
+        llamadas += 1;
+      });
+      // Síncrono: si quedara encolado en vez de ejecutarse de inmediato, `llamadas` seguiría
+      // en 0 acá (nadie volvería a drenar esa cola nunca).
+      expect(llamadas).toBe(1);
+      res.status(200).json({ ok: true });
+    });
+
+    const respuesta = await request(appDePrueba).get('/api/harness-anticipado');
+
+    expect(respuesta.status).toBe(200);
+  });
+
+  it('T-A14 — dos llamadas reales a res.end después del commit anticipado: exactamente un envío real (no solo un body observado por Supertest)', async () => {
+    // Supertest/superagent solo entrega el ÚLTIMO body que Node terminó de mandar sobre la
+    // conexión — si hubiera habido dos envíos reales concatenados o corruptos, Supertest podría
+    // no distinguirlo de un envío único. Por eso acá se cuenta la llamada real al `res.end`
+    // NATIVO (parcheado a nivel de INSTANCIA, antes de que `transaccionPorPeticionMiddleware`
+    // capture `enviarOriginal` — mismo patrón, ya probado, de `sección 6` en H09; nunca se
+    // parchea `http.ServerResponse.prototype` globalmente, que en este entorno interactúa mal
+    // con el propio mecanismo de sockets de Vitest).
+    let enviosReales = 0;
+    let resCapturada: ExpressResponse | null = null;
+    const appDePrueba = express();
+    appDePrueba.use('/api', (_req, res, next) => {
+      const nativo = res.end.bind(res) as (...args: unknown[]) => typeof res;
+      res.end = ((...args: unknown[]) => {
+        enviosReales += 1;
+        return nativo(...args);
+      }) as typeof res.end;
+      next();
+    });
+    appDePrueba.use('/api', transaccionPorPeticionMiddleware);
+    appDePrueba.get('/api/harness-anticipado', (_req, res, next) => {
+      (async () => {
+        resCapturada = res;
+        await confirmarTransaccionDeLaPeticion();
+        res.status(200).json({ ok: true, primero: true });
+        // Segunda llamada real, explícita, después de que la primera ya envió — no debe
+        // alterar lo que el cliente ya recibió, ni producir un segundo envío real.
+        resCapturada!.end();
+      })().catch(next);
+    });
+    appDePrueba.use(errorHandlerMiddleware);
+
+    const respuesta = await request(appDePrueba).get('/api/harness-anticipado');
+
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body).toEqual({ ok: true, primero: true });
+    expect(enviosReales).toBe(1);
+  });
+
+  it('T-A15 — abort del cliente después del commit anticipado: no reintenta rollback ni un segundo release', async () => {
+    const contadores = contarCierre();
+    let resolverListo!: () => void;
+    const listo = new Promise<void>((resolve) => {
+      resolverListo = resolve;
+    });
+
+    const appDePrueba = appConfirmacionAnticipada(async (_req, res) => {
+      await confirmarTransaccionDeLaPeticion();
+      // Simula el abort del cliente DESPUÉS del commit anticipado, antes de que esta función
+      // termine de responder — mismo evento que dispara `res.on('close')` en producción.
+      res.emit('close');
+      resolverListo();
+      res.status(200).json({ ok: true });
+    });
+
+    const peticion = request(appDePrueba).get('/api/harness-anticipado');
+    void peticion.then(
+      () => undefined,
+      () => undefined,
+    );
+    await peticion;
+    await listo;
+
+    // El commit anticipado ya confirmó y liberó; el 'close' simulado, disparado después,
+    // encuentra `estado === 'CERRADO'` y no repite nada.
+    expect(contadores.commits).toBe(1);
+    expect(contadores.rollbacks).toBe(0);
+    expect(contadores.releases).toBe(1);
+  });
+
+  it('T-A16 — res.end() llamado mientras el commit anticipado sigue EN CURSO (CERRANDO): no envía bytes hasta que el commit resuelve; exactamente una respuesta final (Bloqueante 1)', async () => {
+    // Contador de envíos reales a nivel de INSTANCIA (no del prototipo global de
+    // `http.ServerResponse` — ver la nota de `sección 6` en H09 sobre por qué eso produce una
+    // recursión/cuelgue ajena en este entorno). Montado ANTES de
+    // `transaccionPorPeticionMiddleware`, para que `enviarOriginal` (capturado dentro de ese
+    // middleware) termine siendo este wrapper.
+    let enviosReales = 0;
+    let resCapturada: ExpressResponse | null = null;
+    const appDePrueba = express();
+    appDePrueba.use('/api', (_req, res, next) => {
+      const nativo = res.end.bind(res) as (...args: unknown[]) => typeof res;
+      res.end = ((...args: unknown[]) => {
+        enviosReales += 1;
+        return nativo(...args);
+      }) as typeof res.end;
+      next();
+    });
+    appDePrueba.use('/api', transaccionPorPeticionMiddleware);
+    appDePrueba.get('/api/harness-cerrando', (_req, res, next) => {
+      resCapturada = res;
+      confirmarTransaccionDeLaPeticion()
+        .then(() => res.status(200).json({ ok: true, origen: 'ruta-tras-confirmar' }))
+        .catch(next);
+    });
+    appDePrueba.use(errorHandlerMiddleware);
+
+    const { liberar, llegoACommit } = commitControlado();
+    const peticion = request(appDePrueba).get('/api/harness-cerrando');
+    void peticion.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    // Se resuelve justo cuando la ejecución real entra a `commitTransaction()` — el commit
+    // anticipado ya puso `estado` en CERRANDO, y sigue ahí, suspendido en la barrera.
+    await llegoACommit;
+    expect(enviosReales).toBe(0);
+
+    // "res.end()" disparado por otra vía (simulando cualquier código que llegara a llamarlo)
+    // MIENTRAS el commit anticipado sigue pendiente — exactamente el escenario del
+    // Bloqueante 1. Con el defecto que Codex encontró, esto habría enviado de inmediato.
+    resCapturada!.status(200).json({ ok: true, origen: 'segunda-llamada-durante-cerrando' });
+
+    // Sigue sin salir nada: el cierre real (la promesa `cierre` compartida) todavía no
+    // resolvió — la llamada de arriba debe haber quedado esperándola, no haber mandado bytes.
+    expect(enviosReales).toBe(0);
+
+    liberar();
+    const respuesta = await peticion;
+
+    // Exactamente un envío real, con el body de la PRIMERA llamada real (la que ocurrió
+    // durante CERRANDO) — la de la propia ruta, que llegó después, quedó como no-op.
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body).toEqual({ ok: true, origen: 'segunda-llamada-durante-cerrando' });
+    expect(enviosReales).toBe(1);
+  });
+
+  it('T-A17 — éxito preparado mientras el commit anticipado (CERRANDO) TERMINA FALLANDO: nunca se envía el éxito, responde 500, un solo envío real, con recovery rollback y release', async () => {
+    const rastro: Partial<FallaComoRastro> = {};
+    let enviosReales = 0;
+    let resCapturada: ExpressResponse | null = null;
+    const appDePrueba = express();
+    appDePrueba.use('/api', (_req, res, next) => {
+      const nativo = res.end.bind(res) as (...args: unknown[]) => typeof res;
+      res.end = ((...args: unknown[]) => {
+        enviosReales += 1;
+        return nativo(...args);
+      }) as typeof res.end;
+      next();
+    });
+    appDePrueba.use('/api', transaccionPorPeticionMiddleware);
+    appDePrueba.get('/api/harness-cerrando-falla', (_req, res, next) => {
+      resCapturada = res;
+      confirmarTransaccionDeLaPeticion()
+        .then(() => res.status(200).json({ ok: true }))
+        .catch(next);
+    });
+    appDePrueba.use(errorHandlerMiddleware);
+
+    const { liberar, llegoACommit } = commitControladoQueFalla(rastro);
+    const peticion = request(appDePrueba).get('/api/harness-cerrando-falla');
+    void peticion.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    await llegoACommit;
+    expect(enviosReales).toBe(0);
+
+    // El "éxito" queda preparado (llamado) mientras el commit anticipado sigue pendiente —
+    // igual que T-A16, pero acá ese commit va a terminar fallando al liberar la barrera.
+    resCapturada!.status(200).json({ ok: true, origen: 'preparado-antes-de-que-falle' });
+    expect(enviosReales).toBe(0);
+
+    liberar();
+    const respuesta = await peticion;
+
+    // El éxito preparado NUNCA se envió — se sustituyó por un 500 coherente (misma filosofía
+    // H09: limpieza de headers ya cubierta por `limpiarHeadersDeExito`, JSON de error genérico,
+    // sin detalle interno).
+    expect(respuesta.status).toBe(500);
+    expect(respuesta.body.success).toBe(false);
+    expect(respuesta.body.message).not.toMatch(/postgres|commit|inyectado|query/i);
+    expect(enviosReales).toBe(1);
+
+    expect(rastro.vecesCommit).toBe(1);
+    expect(rastro.vecesRollback).toBe(1); // recovery rollback, transacción seguía activa
+    expect(rastro.vecesRelease).toBe(1);
+  });
+
+  it('T-A18 — close() del cliente mientras el commit anticipado sigue EN CURSO (CERRANDO): reutiliza la misma promesa `cierre`, sin rollback/commit/release duplicados', async () => {
+    let resCapturada: ExpressResponse | null = null;
+    const appDePrueba = express();
+    appDePrueba.use('/api', transaccionPorPeticionMiddleware);
+    appDePrueba.get('/api/harness-close-cerrando', (_req, res, next) => {
+      resCapturada = res;
+      confirmarTransaccionDeLaPeticion()
+        .then(() => res.status(200).json({ ok: true }))
+        .catch(next);
+    });
+    appDePrueba.use(errorHandlerMiddleware);
+
+    const { liberar, llegoACommit, contadores } = commitControladoConContadores();
+    const peticion = request(appDePrueba).get('/api/harness-close-cerrando');
+    void peticion.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    await llegoACommit;
+    // El commit real sigue suspendido en la barrera: todavía no se contó ningún commit.
+    expect(contadores.commits).toBe(0);
+
+    // Simula el abort del cliente MIENTRAS el commit anticipado sigue pendiente — el mismo
+    // evento que `res.on('close')` ya escucha en producción.
+    resCapturada!.emit('close');
+
+    liberar();
+    const respuesta = await peticion;
+
+    // El `close` no disparó ni un rollback concurrente ni un segundo commit/release: todo lo
+    // que ocurrió fue el ÚNICO ciclo commit→release del commit anticipado, ya en curso antes
+    // de que el `close` llegara. La respuesta final la termina de resolver la propia ruta,
+    // cuando `confirmarTransaccionDeLaPeticion()` por fin resuelve.
+    expect(respuesta.status).toBe(200);
+    expect(contadores.commits).toBe(1);
+    expect(contadores.rollbacks).toBe(0);
+    expect(contadores.releases).toBe(1);
   });
 });

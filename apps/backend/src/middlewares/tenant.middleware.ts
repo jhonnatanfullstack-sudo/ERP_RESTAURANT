@@ -115,6 +115,14 @@ export function transaccionPorPeticionMiddleware(
     let estado: EstadoCierre = 'ABIERTO';
     let cierre: Promise<boolean> | null = null;
     let autorizadoParaEnviar = false;
+    // H13 — commit anticipado: se pone en `true` la PRIMERA vez que `interceptada` decide qué
+    // hacer, sea por el camino normal (arrancar el cierre) o porque la transacción ya se
+    // cerró de antemano vía `confirmarTransaccionDeLaPeticion()`. Sin este flag, `estado !==
+    // 'ABIERTO'` por sí solo es ambiguo: no distingue "esta es la primera llamada real, pero
+    // la transacción ya se confirmó anticipadamente" (debe enviar tal cual) de "esta es una
+    // segunda llamada mientras la primera todavía está cerrando" (no debe hacer nada — mismo
+    // caso que protegía el Bloqueante 1 de H09).
+    let respuestaDecidida = false;
 
     /** Devuelve si la transacción quedó realmente CONFIRMADA (no si "se intentó confirmar").
      * Como máximo un commit/rollback real por petición: si ya hay un cierre en curso o
@@ -159,6 +167,13 @@ export function transaccionPorPeticionMiddleware(
         } finally {
           await queryRunner.release().catch((error) => registrarFallo('liberar', error));
           estado = 'CERRADO';
+          // H13 — a partir de acá la conexión ya no existe (liberada arriba, con éxito o no):
+          // ningún código debe poder seguir usándola. `tenantRepository`/`enTransaccion`
+          // (`tenant-context.ts`) leen este contexto y lanzan explícitamente en vez de caer a
+          // `AppDataSource.manager` (sin RLS) cuando lo encuentran así — sea que esto haya
+          // corrido por el cierre normal al final de la petición o por un commit anticipado.
+          contexto.manager = null;
+          contexto.queryRunner = null;
         }
 
         // Recién acá es seguro avisar por WebSocket u otro canal en vivo: lo que se guardó ya
@@ -179,6 +194,13 @@ export function transaccionPorPeticionMiddleware(
       return cierre;
     }
 
+    // H13 — permite que código de negocio (dentro de la misma petición) confirme la
+    // transacción ANTES de que termine, vía `confirmarTransaccionDeLaPeticion()`
+    // (`tenant-context.ts`). Reutiliza literalmente `cerrar(true)` — el mismo commit, el
+    // mismo release, los mismos callbacks post-commit, la misma guarda contra un segundo
+    // commit — nunca una segunda implementación de esa máquina.
+    contexto.confirmarAhora = () => cerrar(true);
+
     // Se retrasa el envío hasta que la transacción esté confirmada. Una respuesta de error
     // (>= 400) revierte: un 500 a mitad de una escritura no debe dejar media operación
     // grabada. Si la respuesta iba a ser de éxito pero el COMMIT termina fallando, el body ya
@@ -194,15 +216,32 @@ export function transaccionPorPeticionMiddleware(
         autorizadoParaEnviar = false;
         return enviarOriginal(...args);
       }
-      // Cualquier llamada mientras ya hay un cierre en curso o terminado (disparado por ESTA
-      // misma función en una invocación anterior, o por `res.on('close')`) no es la
-      // autorizada: no arranca un segundo commit/rollback, no decide de nuevo qué responder,
-      // y sobre todo — a diferencia del código anterior — NO manda bytes por su cuenta. Si el
-      // cierre todavía está en curso (COMMIT pendiente), esta llamada simplemente no hace
-      // nada: la respuesta real la termina de resolver la primera llamada, cuando su propio
-      // `cerrar(...)` se resuelva.
-      if (estado !== 'ABIERTO') return res;
+      // Segunda llamada real a `res.end()` para esta petición (por la razón que sea): la
+      // primera ya decidió qué mandar (o ya lo está decidiendo). No hace nada — ni un segundo
+      // commit/rollback, ni un segundo envío.
+      if (respuestaDecidida) return res;
+      respuestaDecidida = true;
 
+      // Primera llamada real — sin importar en qué estado esté la transacción. `cerrar(...)`
+      // ya sabe qué hacer en los tres casos, y NO hay que repetir esa lógica acá (Bloqueante 1
+      // de la revisión de Codex sobre H13-A: `estado !== 'ABIERTO'` NO puede tratarse como
+      // "ya terminó" — CERRANDO significa que el commit anticipado sigue en curso, y enviar
+      // bytes en ese momento adelantaría una respuesta antes de conocer su resultado real):
+      //
+      // - ABIERTO   → `cerrar(eraExitosa)` arranca el cierre real (commit o rollback), como
+      //               siempre hizo H09.
+      // - CERRANDO  → la guarda que ya existe dentro de `cerrar()` (`if (estado !== 'ABIERTO')
+      //               return cierre ?? ...`) devuelve la MISMA promesa `cierre` que el commit
+      //               anticipado ya puso en marcha, sin arrancar un segundo commit/rollback.
+      //               El `.then(...)` de abajo simplemente ESPERA esa promesa antes de decidir
+      //               nada — los `args` de ESTA llamada quedan preservados en el closure
+      //               (`argsOriginales`) hasta que el cierre real termine.
+      // - CERRADO   → la misma guarda devuelve la promesa YA resuelta — el `.then(...)` corre
+      //               en el siguiente microtask, con el resultado ya conocido.
+      //
+      // En los tres casos, la decisión de qué mandar (`eraExitosa && !confirmada` → sustituir
+      // por 500; si no, enviar `argsOriginales` tal cual) es EXACTAMENTE la misma, y nunca se
+      // duplica la máquina de cierre.
       const eraExitosa = res.statusCode < 400;
       const argsOriginales = args;
       cerrar(eraExitosa)

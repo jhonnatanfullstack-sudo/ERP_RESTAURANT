@@ -1,6 +1,7 @@
 import { AppDataSource } from './data-source';
-import { empresaIdActualOpcional, managerActual } from './tenant-context';
-import type { EntityTarget, ObjectLiteral, Repository } from 'typeorm';
+import { HttpError } from '../utils/http-error';
+import { contextoActual, empresaIdActualOpcional } from './tenant-context';
+import type { EntityManager, EntityTarget, ObjectLiteral, Repository } from 'typeorm';
 
 /** Nombre de la propiedad de relación con la empresa dueña en las entidades multi-empresa. */
 const PROPIEDAD_EMPRESA = 'empresa';
@@ -29,6 +30,30 @@ function estampar(entidad: unknown, empresaId: string | null): void {
 }
 
 /**
+ * Resuelve el manager correcto para esta llamada. Distingue dos `null` muy distintos:
+ *
+ * - **Sin contexto en absoluto** (`contextoActual()` es `undefined`): fuera de una petición
+ *   HTTP — arranque, migraciones, scripts. Cae a `AppDataSource.manager` legítimamente, como
+ *   siempre: ahí no hay ninguna empresa que asumir y las políticas RLS no aplican a ese rol.
+ * - **Contexto presente pero `manager` en `null`**: la transacción de esta petición ya se
+ *   confirmó (al final, o anticipadamente vía `confirmarTransaccionDeLaPeticion()`, ver H13).
+ *   Caer a `AppDataSource.manager` acá sería un bypass silencioso de RLS — se lanza en su
+ *   lugar. El único camino seguro para seguir accediendo a datos después de ese punto es
+ *   `ejecutarEnTransaccionPropia` (`tenant-context.ts`).
+ */
+function managerParaEstaLlamada(): EntityManager {
+  const contexto = contextoActual();
+  if (!contexto) return AppDataSource.manager;
+  if (!contexto.manager) {
+    throw new HttpError(
+      500,
+      'La transacción de esta petición ya fue confirmada; usa ejecutarEnTransaccionPropia para acceder a datos',
+    );
+  }
+  return contexto.manager;
+}
+
+/**
  * Repositorio consciente de la empresa de la petición. Reemplaza a
  * `AppDataSource.getRepository(X)` en todas las entidades multi-empresa.
  *
@@ -44,11 +69,11 @@ function estampar(entidad: unknown, empresaId: string | null): void {
  *
  * Fuera de una petición (arranque, migraciones, scripts) cae al manager por defecto y no
  * estampa nada — ahí no hay empresa que asumir, y las migraciones corren como dueño de las
- * tablas, que no está sujeto a RLS.
+ * tablas, que no está sujeto a RLS. Dentro de una petición cuya transacción ya se confirmó,
+ * lanza en vez de caer a ese mismo manager por defecto — ver `managerParaEstaLlamada`.
  */
 export function tenantRepository<T extends ObjectLiteral>(entidad: EntityTarget<T>): Repository<T> {
-  const resolver = (): Repository<T> =>
-    (managerActual() ?? AppDataSource.manager).getRepository(entidad);
+  const resolver = (): Repository<T> => managerParaEstaLlamada().getRepository(entidad);
 
   return new Proxy({} as Repository<T>, {
     get(_objetivo, propiedad, receptor) {
