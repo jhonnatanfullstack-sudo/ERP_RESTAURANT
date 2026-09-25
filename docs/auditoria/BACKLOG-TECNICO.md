@@ -266,17 +266,60 @@ Durante la revisión, Codex señaló tres observaciones adicionales, ninguna blo
 - **ID:** H09
 - **Prioridad:** P1
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Infraestructura transaccional (transversal a todo el backend)
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/middlewares/tenant.middleware.ts` (líneas 63-106)
-- **Descripción:** La función `cerrar()` que confirma o revierte la transacción por petición atrapa cualquier error de `commitTransaction()` únicamente con `logger.error(...)`, sin relanzarlo ni alterar la respuesta. El `res.end` interceptado siempre llama a la función original de envío tras `cerrar()`, sin importar si el commit tuvo éxito.
-- **Evidencia encontrada:** `tenant.middleware.ts:77-78` (`catch` que solo registra el fallo) y `tenant.middleware.ts:101-106` (el `.then()` del `res.end` interceptado se ejecuta siempre, incluso si `cerrar()` no logró confirmar). Verificado independientemente por ambos auditores con conclusión idéntica.
-- **Impacto:** Si `commitTransaction()` falla (p. ej. por un corte de conexión con Postgres en el instante del commit), el cliente recibe una respuesta 200/201 de éxito con un body que describe una operación como completada, mientras que en la base de datos esa operación no existe en absoluto (un COMMIT de Postgres es atómico: no hay persistencia parcial, sino "éxito fantasma").
-- **Escenario reproducible:** Provocar un fallo transitorio de conexión a Postgres exactamente durante el `COMMIT` de una petición de escritura (ej. crear una venta) y observar que el cliente recibe 200 pese a que la fila no queda en la base.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería que, si el commit falla tras haberse preparado una respuesta de éxito, la respuesta enviada se sustituya por un error (5xx) antes de llamar a la función original de envío.
-- **Pruebas necesarias:** Prueba que simule un fallo de `commitTransaction()` (mock/inyección de fallo) y verifique que la respuesta HTTP resultante refleja el error, no el éxito original del controlador.
-- **Criterio de aceptación:** Ante un fallo de `commitTransaction()`, el cliente nunca recibe una respuesta de éxito para esa petición, verificado con prueba automatizada.
+- **Descripción (hallazgo original):** La función `cerrar()` que confirma o revierte la transacción por petición atrapa cualquier error de `commitTransaction()` únicamente con `logger.error(...)`, sin relanzarlo ni alterar la respuesta. El `res.end` interceptado siempre llama a la función original de envío tras `cerrar()`, sin importar si el commit tuvo éxito.
+- **Evidencia encontrada (hallazgo original):** `tenant.middleware.ts:77-78` (`catch` que solo registra el fallo) y `tenant.middleware.ts:101-106` (el `.then()` del `res.end` interceptado se ejecuta siempre, incluso si `cerrar()` no logró confirmar). Verificado independientemente por ambos auditores con conclusión idéntica.
+- **Impacto (hallazgo original):** Si `commitTransaction()` falla (p. ej. por un corte de conexión con Postgres en el instante del commit), el cliente recibe una respuesta 200/201 de éxito con un body que describe una operación como completada, mientras que en la base de datos esa operación no existe en absoluto (un COMMIT de Postgres es atómico: no hay persistencia parcial, sino "éxito fantasma").
+- **Escenario reproducible (hallazgo original):** Provocar un fallo transitorio de conexión a Postgres exactamente durante el `COMMIT` de una petición de escritura (ej. crear una venta) y observar que el cliente recibe 200 pese a que la fila no queda en la base.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería que, si el commit falla tras haberse preparado una respuesta de éxito, la respuesta enviada se sustituya por un error (5xx) antes de llamar a la función original de envío.
+- **Pruebas necesarias (hallazgo original):** Prueba que simule un fallo de `commitTransaction()` (mock/inyección de fallo) y verifique que la respuesta HTTP resultante refleja el error, no el éxito original del controlador.
+- **Criterio de aceptación:** Ante un fallo de `commitTransaction()`, el cliente nunca recibe una respuesta de éxito para esa petición, verificado con prueba automatizada. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+Único archivo de producción tocado: `apps/backend/src/middlewares/tenant.middleware.ts`. Dos rondas de revisión independiente de Codex — la primera detectó tres bloqueantes sobre la implementación inicial (ver "Correcciones durante revisión independiente" más abajo), la segunda certificó el cierre.
+
+- **Causa raíz original:** `cerrar()` atrapaba el error de `commitTransaction()` solo con `logger.error(...)` sin relanzarlo, y el `.then()` del `res.end` interceptado llamaba siempre a la función original de envío (`enviarOriginal(...args)`) con el body de éxito que el controlador ya había preparado, sin importar si el commit realmente se confirmó.
+- **Máquina de estados de cierre — `ABIERTO → CERRANDO → CERRADO`.** Reemplaza el booleano único `cerrada` de la primera versión (que confundía "ya arrancó un cierre" con "ya es seguro enviar bytes" — ver Bloqueante 1 más abajo). `estado` gobierna exclusivamente si corresponde arrancar (o reutilizar) el commit/rollback real; una segunda llamada mientras `estado !== 'ABIERTO'` nunca abre un segundo commit/rollback.
+- **Respuesta exitosa retenida hasta confirmar el commit.** El body de éxito armado por el controlador (`args` de `res.end`) no se envía de inmediato: `interceptada` espera a que `cerrar(...)` resuelva antes de decidir qué mandar. Esto es seguro porque, hasta ese momento, `res.headersSent` sigue en `false` (`res.status`/`res.set`/`res.json` no tocan el socket, solo lo hace esta función) — verificado leyendo el código fuente de Express instalado.
+- **Sustitución por 500 cuando el commit falla.** Si la respuesta iba a ser de éxito (`res.statusCode < 400`) pero `cerrar(...)` resuelve con `confirmada = false`, el body original se descarta por completo y se envía `500 { success:false, message:'Error interno del servidor' }` — mismo contrato que usa `error-handler.middleware.ts`, sin exponer nunca el detalle interno de Postgres/TypeORM.
+- **Limpieza de headers del éxito descartado (`limpiarHeadersDeExito`, nueva función).** Antes de sustituir el body, se eliminan `ETag`, `Location`, `Content-Disposition`, `Last-Modified` y `Set-Cookie` — headers ligados al payload de éxito abortado que Express no recalcula por sí solo (`ETag` solo se regenera si el header no existe todavía; `Set-Cookie` se elimina con `removeHeader`, no con `clearCookie`, porque este último *agrega* al array en vez de reemplazarlo). `Content-Type`/`Content-Length` no necesitan limpieza explícita: `res.send()` los recalcula siempre. Los headers transversales (`x-request-id`, los de `helmet()`, los de `cors()`) no se tocan.
+- **Protección contra una segunda llamada a `res.end()` mientras el estado es `CERRANDO`.** Una señal separada, `autorizadoParaEnviar`, de un solo uso, es la única que habilita el envío real (`enviarOriginal`); una segunda llamada mientras el cierre está en curso no envía nada por su cuenta y no interfiere con la primera.
+- **Manejo final de Promise / sin `unhandledRejection`.** La cadena `cerrar(...).then(...)` tiene un `.catch(...)` explícito: si el envío posterior al cierre falla (headers aún no enviados), intenta una respuesta 500 de emergencia envuelta en su propio try/catch; si los headers ya salieron, solo registra el error, sin intentar un segundo body.
+- **Rollback defensivo tras un commit rechazado.** Si `commitTransaction()` falla y `queryRunner.isTransactionActive` sigue activo, se intenta un `rollbackTransaction()` de recuperación antes de liberar la conexión — para no devolver al pool una conexión con una transacción abortada sin resetear. Un fallo de ese rollback se registra aparte y nunca se afirma como una reversión confirmada.
+- **Semántica preservada: `commit exitoso + release fallido = operación durable`.** Un fallo de `release()` después de un commit ya confirmado nunca convierte la respuesta en `500` — la operación ya es durable en Postgres independientemente de si la conexión se devolvió correctamente al pool de la aplicación.
+- **RLS/multiempresa:** sin cambios. `tenantRepository`, `empresaId`, `AsyncLocalStorage` y las políticas RLS no fueron tocados; verificado con la suite de aislamiento y con pruebas que ejercitan dos empresas distintas tras un fallo de commit.
+
+##### Limitación conocida (no bloquea el cierre, no es un hallazgo nuevo)
+
+PostgreSQL puede responder al `COMMIT` de una transacción previamente abortada por una consulta anterior como si fuera un `ROLLBACK`, **sin lanzar** — y TypeORM no inspecciona el "command tag" de esa respuesta, así que puede interpretarlo como una resolución exitosa. Verificado empíricamente contra Postgres real durante esta implementación (una consulta inválida dentro de la transacción, seguida de `COMMIT`, resuelve en silencio como `ROLLBACK`). En ese escenario específico `commitTransaction()` ni siquiera llega a lanzar, así que el rollback defensivo descrito arriba no se activa. No existe ninguna solución mínima y pública de TypeORM para este caso concreto; no fue introducida por H09 y queda fuera de su alcance.
+
+#### Correcciones durante revisión independiente
+
+Codex certificó `H09 REQUIERE CORRECCIONES` sobre la primera implementación, con tres bloqueantes — los tres corregidos antes de la certificación final:
+
+- **Bloqueante 1 (estado de cierre incorrecto):** el booleano único `cerrada` permitía que una segunda llamada a `res.end()`, mientras el commit de la primera todavía estaba pendiente, tomara el atajo de "ya está cerrada" y enviara bytes sin esperar el resultado real del commit. Resuelto con la máquina de estados `ABIERTO/CERRANDO/CERRADO` más la señal separada `autorizadoParaEnviar`, descritas arriba.
+- **Bloqueante 2 (headers heredados del éxito):** la primera versión no limpiaba ningún header antes de sustituir el body por el error — un `ETag`/`Set-Cookie` de la respuesta de éxito abortada podía sobrevivir a la respuesta de error. Resuelto con `limpiarHeadersDeExito`.
+- **Bloqueante 3 (Promise sin manejador final):** el `.then()` de `cerrar(...).then(...)` no tenía ningún `.catch()` — un fallo en el envío posterior al cierre quedaba como una Promise rechazada sin manejar y, en la práctica, dejaba la conexión colgada sin ninguna respuesta. Resuelto con el `.catch()` explícito descrito arriba.
+
+#### Evidencia de validación
+
+- **RED→GREEN:** revirtiendo temporalmente el archivo del fix a HEAD (`git stash`, sin tocar el commit del repositorio), el test principal (T02) reproducía el "éxito fantasma" exacto del hallazgo original (`201` con la fila ausente); con el fix, `500` y fila ausente. Para los tres bloqueantes de Codex se repitió el mismo patrón, reconstruyendo temporalmente la versión intermedia que Codex revisó: `T02b`/`T02c` (Bloqueante 2) mostraban el `Location`/`Set-Cookie` de éxito sobreviviendo a la respuesta de error; `T08b` (Bloqueante 1) terminaba en `Error: aborted` (conexión corrupta por doble envío); la prueba de `unhandledRejection` (Bloqueante 3) agotaba el timeout de 30s con el cliente sin recibir ninguna respuesta.
+- **Tests específicos H09:** `apps/backend/tests/tenant-middleware-commit.test.ts` — **13/13 PASS** (T01, T02, T02b, T02c, T03, T04, T05, T06, T07, T08a, T08b, sección 6/unhandledRejection, T09).
+- Suite backend completa: **235/235 PASS (29/29 archivos)**.
+- typecheck backend: **PASS**.
+- typecheck workspace: **FAIL únicamente** por `apps/frontend/src/routes/AppRoutes.tsx(50,1)` (`LoginPage` sin usar) — **preexistente, fuera de alcance de H09**.
+- lint: **PASS**, 0 errores, 2 warnings de frontend preexistentes sin relación.
+- build backend: **PASS**.
+- build frontend: **FAIL únicamente** por el mismo `LoginPage` preexistente.
+- `git diff --check`: **PASS**.
+
+#### Certificación Codex
+
+`CERTIFICACIÓN CODEX — H09 APROBADO PARA CIERRE` (segunda revisión, tras corregir los tres bloqueantes de la primera). No se afirma que H09 resuelva la atomicidad entre PostgreSQL y el envío al OSE — ese problema permanece íntegramente en **H13**.
 
 ### H11 — Corrupción de stock al editar compras repetidamente
 
