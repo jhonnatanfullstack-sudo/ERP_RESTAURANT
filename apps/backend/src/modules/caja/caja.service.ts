@@ -3,7 +3,7 @@ import { HttpError } from '../../utils/http-error';
 import { usuarioRepository } from '../usuarios/usuario.repository';
 import { medioPagoRepository } from '../catalogos/catalogos.repository';
 import { ventaRepository } from '../ventas/venta.repository';
-import { EstadoVenta } from '../ventas/venta.entity';
+import { EstadoVenta, FormaPago } from '../ventas/venta.entity';
 import { pagoVentaRepository } from '../cobranzas/cobranza.repository';
 import { cajaRepository, movimientoCajaRepository } from './caja.repository';
 import { Caja, EstadoCaja } from './caja.entity';
@@ -57,9 +57,21 @@ async function resolverUsuario(usuarioId: string) {
   return usuario;
 }
 
-/** Suma de ventas emitidas en efectivo dentro del rango de una sesión de caja. No se agrega
- * un `caja_id` a Ventas para no tocar ese módulo (Regla 3 de CLAUDE.md): basta con el rango
- * de fecha de la sesión y el medio de pago para reconstruir el efectivo esperado al cerrar. */
+/**
+ * Suma de ventas AL CONTADO emitidas en efectivo dentro del rango de una sesión de caja. No se
+ * agrega un `caja_id` a Ventas para no tocar ese módulo (Regla 3 de CLAUDE.md): basta con el
+ * rango de fecha de la sesión y el medio de pago para reconstruir el efectivo esperado al
+ * cerrar.
+ *
+ * H18: exige explícitamente `formaPago = CONTADO`. En una venta al crédito el dinero no entra
+ * en el momento de crearla (ver `venta.service.ts: crearVenta`, donde por el mismo motivo
+ * `banco` se fuerza a `null` si no es al contado) — su `medioPago` puede describir cómo se
+ * pagará, nunca dinero ya recibido. Sin este filtro, una venta al crédito con `medioPago =
+ * efectivo` se contaba acá como efectivo entrante en el momento de la venta, y el cobro real
+ * posterior (`PagoVenta`, ver `calcularPagosCreditoEfectivo`) se volvía a sumar aparte — doble
+ * conteo del mismo dinero. El filtro protege también filas históricas que ya pudieran tener
+ * esa combinación inconsistente (`formaPago=credito` + `medioPago=efectivo`).
+ */
 async function calcularVentasEfectivo(desde: Date, hasta: Date): Promise<number> {
   const medioEfectivo = await medioPagoRepository.findOneBy({
     codigo: CODIGO_MEDIO_PAGO_EFECTIVO,
@@ -69,6 +81,7 @@ async function calcularVentasEfectivo(desde: Date, hasta: Date): Promise<number>
   const ventas = await ventaRepository.find({
     where: {
       estado: EstadoVenta.EMITIDA,
+      formaPago: FormaPago.CONTADO,
       medioPago: { id: medioEfectivo.id },
       creadoEn: Between(desde, hasta),
     },

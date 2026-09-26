@@ -502,8 +502,11 @@ export function Caja() {
   const ventasSesion = cajaActual
     ? ventasEnPeriodo(ventasQuery.data ?? [], cajaActual.creadoEn, null)
     : [];
+  // H18: una venta al crédito no mueve el cajón en el momento de crearla (el dinero real entra
+  // después, vía cobranza) — mismo criterio que `caja.service.ts: calcularVentasEfectivo` en el
+  // backend, que es la fuente autoritativa; esto solo recalcula lo mismo para la vista en vivo.
   const efectivoVentasTurno = ventasSesion
-    .filter((v) => v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO)
+    .filter((v) => v.formaPago === 'contado' && v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO)
     .reduce((suma, v) => suma + v.total, 0);
   const segmentosPagoSesion = segmentosMedioPago(ventasSesion);
   // Cobros de deudas (ventas al crédito) pagados en efectivo durante la sesión: mismo criterio

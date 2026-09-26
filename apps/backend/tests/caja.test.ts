@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { api, empresaConProducto } from './ayudantes';
+import { ejecutarEnTransaccionPropia } from '../src/database/tenant-context';
+import { ventaRepository } from '../src/modules/ventas/venta.repository';
+import { medioPagoRepository } from '../src/modules/catalogos/catalogos.repository';
 
 /**
  * Caja: apertura, cierre y el arqueo de efectivo. El caso base (venta al contado + propina
@@ -118,6 +121,195 @@ describe('Caja: cobros de crédito en efectivo cuentan en el arqueo', () => {
       .expect(200);
 
     expect(cierre.body.data.montoEsperado).toBe(200);
+  });
+});
+
+/**
+ * H18 — a diferencia de los tests de arriba (que nunca envían `medioPagoId` al crear una venta
+ * al crédito), estos tests reproducen exactamente la combinación que el DTO/service no
+ * bloquean: `formaPago: 'credito'` CON `medioPagoId` apuntando a "efectivo". Antes de la
+ * corrección, `calcularVentasEfectivo` contaba esa venta como efectivo real en el momento de
+ * crearla (sin haber entrado ni un sol), y el cobro posterior (`PagoVenta`) se sumaba aparte —
+ * doble conteo.
+ */
+describe('H18 — una venta a crédito con medioPago efectivo no duplica el efectivo del arqueo', () => {
+  it('RED-1: sin cobranza, la venta a crédito no aporta nada al efectivo esperado', async () => {
+    const ctx = await empresaConProducto(100);
+    const cajaId = await abrirCaja(ctx, 200);
+
+    await api
+      .post('/api/ventas', ctx.sesion, {
+        detalles: [{ productoId: ctx.productoId, cantidad: 1 }],
+        tipoComprobanteId: ctx.catalogos.boletaId,
+        formaPago: 'credito',
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
+    const cierre = await api
+      .post(`/api/cajas/${cajaId}/cerrar`, ctx.sesion, { montoDeclarado: 200 })
+      .expect(200);
+
+    // La venta a crédito no debe aportar nada al efectivo esperado, aunque su medioPago sea
+    // "efectivo": el dinero no entró todavía.
+    expect(cierre.body.data.montoEsperado).toBe(200);
+    expect(cierre.body.data.diferencia).toBe(0);
+  });
+
+  it('RED-2: con cobranza total, el efectivo esperado es apertura + cobro real, nunca el doble', async () => {
+    const ctx = await empresaConProducto(100);
+    const cajaId = await abrirCaja(ctx, 200);
+
+    const venta = await api
+      .post('/api/ventas', ctx.sesion, {
+        detalles: [{ productoId: ctx.productoId, cantidad: 1 }],
+        tipoComprobanteId: ctx.catalogos.boletaId,
+        formaPago: 'credito',
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
+    await api
+      .post(`/api/cuentas-por-cobrar/${venta.body.data.id}/pagos`, ctx.sesion, {
+        fechaPago: '2026-01-15',
+        monto: 100,
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
+    const cierre = await api
+      .post(`/api/cajas/${cajaId}/cerrar`, ctx.sesion, { montoDeclarado: 300 })
+      .expect(200);
+
+    // 200 apertura + 100 cobro real = 300. NUNCA 200 + 100 (venta fantasma) + 100 (cobro) = 400.
+    expect(cierre.body.data.montoEsperado).toBe(300);
+    expect(cierre.body.data.diferencia).toBe(0);
+  });
+
+  it('RED-3: con cobranza parcial, el efectivo esperado refleja solo lo cobrado y el saldo es correcto', async () => {
+    const ctx = await empresaConProducto(100);
+    const cajaId = await abrirCaja(ctx, 200);
+
+    const venta = await api
+      .post('/api/ventas', ctx.sesion, {
+        detalles: [{ productoId: ctx.productoId, cantidad: 1 }],
+        tipoComprobanteId: ctx.catalogos.boletaId,
+        formaPago: 'credito',
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
+    const cobro = await api
+      .post(`/api/cuentas-por-cobrar/${venta.body.data.id}/pagos`, ctx.sesion, {
+        fechaPago: '2026-01-15',
+        monto: 40,
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
+    expect(cobro.body.data.saldo).toBe(60);
+    expect(cobro.body.data.estadoCobranza).toBe('parcial');
+
+    const cierre = await api
+      .post(`/api/cajas/${cajaId}/cerrar`, ctx.sesion, { montoDeclarado: 240 })
+      .expect(200);
+
+    // 200 apertura + 40 cobrado = 240. NUNCA 200 + 100 (venta fantasma) + 40 (cobro) = 340.
+    expect(cierre.body.data.montoEsperado).toBe(240);
+    expect(cierre.body.data.diferencia).toBe(0);
+  });
+});
+
+/**
+ * H18-B.1 — refuerzo pedido por la revisión independiente de Codex (H18-OBS-01): los tests de
+ * arriba solo infieren la normalización de `Venta.medioPago` a través del resultado de Caja.
+ * Estos dos comprueban, por separado:
+ * 1. que `crearVenta()` realmente persiste `medioPago = null` en una venta al crédito (no solo
+ *    que Caja "se comporta bien" por casualidad);
+ * 2. que la defensa real está en `calcularVentasEfectivo` (`formaPago = CONTADO`), no solo en
+ *    la normalización de `resolverMedioPago()` — simulando deliberadamente una fila histórica
+ *    con la combinación inconsistente que existía antes del fix (`formaPago=credito` +
+ *    `medioPago=efectivo`), imposible de crear hoy vía `crearVenta()`.
+ */
+describe('H18-B.1 — Venta.medioPago normalizado a null en crédito (revisión Codex)', () => {
+  it('H18-OBS-01a: crearVenta() persiste medioPago=null en una venta al crédito, verificado en la fila real', async () => {
+    const ctx = await empresaConProducto(100);
+
+    const venta = await api
+      .post('/api/ventas', ctx.sesion, {
+        detalles: [{ productoId: ctx.productoId, cantidad: 1 }],
+        tipoComprobanteId: ctx.catalogos.boletaId,
+        formaPago: 'credito',
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+    const ventaId = venta.body.data.id as string;
+
+    // No se infiere desde Caja: se relee la fila persistida directamente, con `app.empresa_id`
+    // real (RLS real, no bypass) — mismo mecanismo que usan los tests de H13-A
+    // (`ejecutarEnTransaccionPropia` + repositorio tenant-aware).
+    const persistida = await ejecutarEnTransaccionPropia(ctx.sesion.empresaId, () =>
+      ventaRepository.findOneOrFail({ where: { id: ventaId }, relations: { medioPago: true } }),
+    );
+
+    expect(persistida.formaPago).toBe('credito');
+    expect(persistida.medioPago).toBeNull();
+  });
+
+  it('H18-OBS-01b: una fila histórica formaPago=credito + medioPago=efectivo (previa al fix) nunca incrementa el efectivo — la defensa real está en calcularVentasEfectivo', async () => {
+    const ctx = await empresaConProducto(100);
+    const cajaId = await abrirCaja(ctx, 200);
+
+    const venta = await api
+      .post('/api/ventas', ctx.sesion, {
+        detalles: [{ productoId: ctx.productoId, cantidad: 1 }],
+        tipoComprobanteId: ctx.catalogos.boletaId,
+        formaPago: 'credito',
+      })
+      .expect(201);
+    const ventaId = venta.body.data.id as string;
+
+    // Simula deliberadamente el estado histórico previo al fix — hoy `crearVenta()` normaliza
+    // `medioPago` a `null` en cualquier venta al crédito, así que esta combinación ya no se
+    // puede producir por la vía normal. Se fuerza directamente en la fila con el repositorio
+    // tenant-aware dentro de `ejecutarEnTransaccionPropia` (app.empresa_id real), nunca con SQL
+    // crudo ni bypass de RLS.
+    await ejecutarEnTransaccionPropia(ctx.sesion.empresaId, async () => {
+      const medioEfectivo = await medioPagoRepository.findOneByOrFail({ codigo: 'efectivo' });
+      const ventaPersistida = await ventaRepository.findOneByOrFail({ id: ventaId });
+      ventaPersistida.medioPago = medioEfectivo;
+      await ventaRepository.save(ventaPersistida);
+    });
+
+    // Antes de cualquier cobro: no hay endpoint que exponga el efectivo esperado en vivo sin
+    // cerrar la caja, así que se prueba contra el límite real de `registrarMovimiento` (que
+    // reusa `calcularEfectivoDisponible`, la misma función que `cerrarCaja` congela). Si la
+    // fila histórica todavía contara (el bug de H18), la disponibilidad sería 300 y este egreso
+    // de 200.01 se aceptaría; con la defensa `formaPago=CONTADO` en `calcularVentasEfectivo`,
+    // la disponibilidad sigue en 200 y debe rechazarse.
+    const egresoSobreElLimite = await api.post(`/api/cajas/${cajaId}/movimientos`, ctx.sesion, {
+      tipo: 'egreso',
+      monto: 200.01,
+      concepto: 'Prueba de límite H18-OBS-01b',
+    });
+    expect(egresoSobreElLimite.status).toBe(400);
+
+    await api
+      .post(`/api/cuentas-por-cobrar/${ventaId}/pagos`, ctx.sesion, {
+        fechaPago: '2026-01-15',
+        monto: 100,
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+
+    const cierre = await api
+      .post(`/api/cajas/${cajaId}/cerrar`, ctx.sesion, { montoDeclarado: 300 })
+      .expect(200);
+
+    // 200 apertura + 100 cobro real = 300 — la fila histórica nunca contó, ni antes ni después
+    // del cobro. Si `calcularVentasEfectivo` no filtrara por `formaPago`, sería 400.
+    expect(cierre.body.data.montoEsperado).toBe(300);
+    expect(cierre.body.data.diferencia).toBe(0);
   });
 });
 

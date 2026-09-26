@@ -388,20 +388,108 @@ MEDIUM: ninguno
 - **ID:** H18
 - **Prioridad:** P1
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Caja / Ventas / Cobranzas
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/caja/caja.service.ts` (líneas 63-121)
   - `apps/backend/src/modules/ventas/venta.service.ts` (líneas 148-163, `resolverMedioPago`)
   - `apps/backend/src/modules/ventas/venta.dto.ts` (líneas 11-44)
   - `apps/backend/src/modules/cobranzas/cobranza.service.ts` (líneas 206-287)
-- **Descripción:** Ninguna capa (DTO, service, entidad, constraint de BD) impide crear una venta con `formaPago: 'credito'` y `medioPagoId` apuntando a "efectivo". El cálculo de efectivo del turno (`calcularVentasEfectivo`) filtra únicamente por `medioPago = efectivo`, sin excluir `formaPago = credito`, y por separado se suma también el cobro posterior de esa cuota en `cobranzas`.
-- **Evidencia encontrada:** `caja.service.ts:63-79` — el `where` de la consulta de ventas en efectivo no incluye `formaPago: CONTADO`. `venta.service.ts:148-163` — la validación de "medio de pago obligatorio" solo se dispara cuando `formaPago === CONTADO` y falta el medio; no hay ningún bloqueo inverso. El frontend (`Ventas.tsx`) no limpia el campo de medio de pago al cambiar la forma de pago a Crédito.
-- **Impacto:** Una venta a crédito registrada con medio de pago "efectivo" (por descuido de UI, sin necesidad de intención maliciosa) se cuenta como efectivo del turno en el momento de la emisión, y su cobro posterior se vuelve a sumar cuando se registra en `cobranzas` — el `montoEsperado` del arqueo queda inflado, pudiendo enmascarar un faltante real o permitir un egreso superior al efectivo físicamente disponible en el cajón.
-- **Escenario reproducible:** Crear una venta con `formaPago: credito` y `medioPagoId` = efectivo → cerrar caja en ese turno: el monto esperado incluye esa venta como efectivo entrante → registrar el cobro de la cuota en efectivo vía `cobranzas`: se contabiliza una segunda vez en el siguiente cierre de caja que abarque esa fecha.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería impedir la combinación `formaPago: credito` + `medioPago: efectivo` en la creación de la venta, y/o excluir explícitamente `formaPago = CREDITO` del cálculo de ventas en efectivo del arqueo.
-- **Pruebas necesarias:** Prueba de integración que cree una venta a crédito con medio de pago efectivo, registre su cobro, y verifique que el efectivo esperado del arqueo no cuenta el monto dos veces.
-- **Criterio de aceptación:** El cálculo de efectivo esperado del cierre de caja nunca cuenta el mismo dinero dos veces entre una venta a crédito y el cobro de su cuota, verificado con prueba automatizada.
+- **Descripción (hallazgo original):** Ninguna capa (DTO, service, entidad, constraint de BD) impide crear una venta con `formaPago: 'credito'` y `medioPagoId` apuntando a "efectivo". El cálculo de efectivo del turno (`calcularVentasEfectivo`) filtra únicamente por `medioPago = efectivo`, sin excluir `formaPago = credito`, y por separado se suma también el cobro posterior de esa cuota en `cobranzas`.
+- **Evidencia encontrada (hallazgo original):** `caja.service.ts:63-79` — el `where` de la consulta de ventas en efectivo no incluye `formaPago: CONTADO`. `venta.service.ts:148-163` — la validación de "medio de pago obligatorio" solo se dispara cuando `formaPago === CONTADO` y falta el medio; no hay ningún bloqueo inverso. El frontend (`Ventas.tsx`) no limpia el campo de medio de pago al cambiar la forma de pago a Crédito.
+- **Impacto (hallazgo original):** Una venta a crédito registrada con medio de pago "efectivo" (por descuido de UI, sin necesidad de intención maliciosa) se cuenta como efectivo del turno en el momento de la emisión, y su cobro posterior se vuelve a sumar cuando se registra en `cobranzas` — el `montoEsperado` del arqueo queda inflado, pudiendo enmascarar un faltante real o permitir un egreso superior al efectivo físicamente disponible en el cajón.
+- **Escenario reproducible (hallazgo original):** Crear una venta con `formaPago: credito` y `medioPagoId` = efectivo → cerrar caja en ese turno: el monto esperado incluye esa venta como efectivo entrante → registrar el cobro de la cuota en efectivo vía `cobranzas`: se contabiliza una segunda vez en el siguiente cierre de caja que abarque esa fecha.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería impedir la combinación `formaPago: credito` + `medioPago: efectivo` en la creación de la venta, y/o excluir explícitamente `formaPago = CREDITO` del cálculo de ventas en efectivo del arqueo.
+- **Pruebas necesarias (hallazgo original):** Prueba de integración que cree una venta a crédito con medio de pago efectivo, registre su cobro, y verifique que el efectivo esperado del arqueo no cuenta el monto dos veces.
+- **Criterio de aceptación:** El cálculo de efectivo esperado del cierre de caja nunca cuenta el mismo dinero dos veces entre una venta a crédito y el cobro de su cuota, verificado con prueba automatizada. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+**Causa raíz:** `calcularVentasEfectivo` sumaba toda `Venta` `EMITIDA` con `medioPago = efectivo`, sin exigir `formaPago = CONTADO`, mientras `calcularPagosCreditoEfectivo` sumaba por separado el `PagoVenta` efectivo de la cobranza de esa misma venta. Con una venta al crédito con `medioPago = efectivo` (nada lo impedía):
+
+```
+venta crédito 100 + medio efectivo → +100 fantasma (contado en el momento de crear la venta)
+cobranza efectivo 100              → +100 real (contado al registrar el PagoVenta)
+Caja resultante: +200 por solo 100 realmente ingresados al cajón
+```
+
+Con cobro parcial, el efecto era aún peor (la venta completa se contaba fantasma, no solo la parte pendiente):
+
+```
+venta crédito 100, cobro efectivo 40
+antes:    Caja += 140  (100 fantasma + 40 real)
+correcto: Caja += 40
+```
+
+**Corrección backend:** `calcularVentasEfectivo` (`caja.service.ts`) ahora exige explícitamente `estado = EMITIDA` **y** `formaPago = CONTADO` **y** `medioPago = efectivo`, dentro de la fecha de la sesión de caja. Esta es la **defensa autoritativa**: protege también cualquier fila histórica que ya tuviera la combinación inconsistente `formaPago = credito` + `medioPago = efectivo` (persistida antes del fix) — por eso **no fue necesaria ninguna migración de datos** para cerrar H18.
+
+**Normalización de `Venta` (complementaria, no es la defensa histórica principal):** para ventas nuevas, `resolverMedioPago` (`venta.service.ts`) ahora persiste `Venta.medioPago = null` en cualquier venta al crédito (mismo criterio ya aplicado a `banco`), sin importar qué `medioPagoId` se haya enviado. El medio real de un crédito queda únicamente en `PagoVenta.medioPago`, al momento de la cobranza.
+
+**Corrección frontend:** `Caja.tsx` y `ReporteCaja.tsx` aplican ahora el mismo criterio (`venta.formaPago === 'contado' && venta.medioPago?.codigo === 'efectivo'`) al calcular el efectivo del turno en vivo y en el reporte impreso, evitando que una venta al crédito se presente como ingreso de efectivo directo.
+
+##### Evidencia RED → GREEN
+
+| Escenario | Antes del fix | Correcto (después) |
+|---|---|---|
+| RED-1: apertura 200, crédito 100 + medio efectivo, sin cobro | `montoEsperado = 300` | `montoEsperado = 200` |
+| RED-2: apertura 200, crédito 100 + medio efectivo, cobro efectivo 100 | `montoEsperado = 400` | `montoEsperado = 300` |
+| RED-3: apertura 200, crédito 100 + medio efectivo, cobro efectivo 40 | `montoEsperado = 340` | `montoEsperado = 240`, saldo pendiente `60`, `estadoCobranza = 'parcial'` |
+
+##### Evidencia H18-B.1 (refuerzo tras revisión Codex)
+
+- **H18-OBS-01a:** crea una venta `formaPago = credito` + `medioPagoId = efectivo` y relee la fila **persistida** directamente (no inferido desde Caja) — confirma `Venta.medioPago === null`.
+- **H18-OBS-01b:** simula deliberadamente una fila histórica `formaPago = credito` + `medioPago = efectivo` (imposible de producir hoy vía `crearVenta()`, forzada directamente sobre la entidad ya persistida) y confirma que, sin cobranza, no incrementa Caja, y que con un `PagoVenta` efectivo=100 posterior, Caja incrementa únicamente esos 100. Prueba directamente que la defensa `formaPago = CONTADO` en `calcularVentasEfectivo` es la que protege, independientemente de si `resolverMedioPago()` normaliza o no en el momento de creación — protegiendo contra una futura regresión que eliminara accidentalmente ese filtro.
+
+##### Evidencia de validación
+
+```
+caja.test.ts:             11/11 PASS
+cobranzas.test.ts:        10/10 PASS
+pagos-digitales.test.ts:   6/6 PASS
+ventas.test.ts:            6/6 PASS
+Backend completo:        301/301 PASS (32/32 archivos)
+Backend typecheck:       PASS
+Backend build:           PASS
+```
+Frontend: `typecheck`/`build` **FAIL únicamente** por `apps/frontend/src/routes/AppRoutes.tsx(50,1)` (`LoginPage` declarado y no utilizado, `TS6133`) — preexistente, **no relacionado con H18**. Lint dirigido de `Caja.tsx`/`ReporteCaja.tsx`: **PASS**, sin errores ni warnings nuevos.
+
+#### Certificación Codex
+
+```
+CODEX: H18 APROBABLE CON OBSERVACIONES
+```
+Sin `BLOCKER`. Sin `HIGH`.
+
+**H18-OBS-01 (MEDIUM)** — cobertura de datos históricos/normalización insuficiente (solo se probaba indirectamente vía el resultado de Caja). Estado: **CORREGIDO mediante H18-B.1**, con los dos tests adicionales (`H18-OBS-01a`, `H18-OBS-01b`) descritos arriba.
+
+**H18-OBS-02 (MEDIUM)** — discrepancia preexistente entre backend (`venta.total + venta.propina`) y frontend (`venta.total`, sin propina) en el cálculo de efectivo de ventas. Estado: **PENDIENTE INDEPENDIENTE — FUERA DEL ALCANCE DE H18.** No se declara resuelto. Registrado como hallazgo nuevo — ver **H17** más abajo.
+
+**H18-OBS-03 (LOW)** — `formaPago = credito` con `medioPagoId` inválido: el backend lo normaliza a `null` en vez de responder `400`. Estado: **ACEPTADO — observación de contrato, no bloqueante.**
+
+**H18-OBS-04 (LOW)** — el frontend todavía puede enviar `medioPagoId` en una venta al crédito, aunque el backend lo descarte. Estado: **ACEPTADO — mejora UX futura, no bloqueante.**
+
+**H18-OBS-05 (INFO)** — continúa el riesgo preexistente de concurrencia en `Caja` (`registrarMovimiento`/`cerrarCaja` sin `pessimistic_write`). Estado: **FUERA DEL ALCANCE DE H18.**
+
+**H18-OBS-06 (INFO)** — `PagoVenta.creadoEn` determina la ventana temporal en la que un cobro cuenta para una sesión de caja. Estado: **comportamiento preexistente, documentado, no es un defecto de H18.**
+
+### H17 — Desalineación de propinas entre arqueo backend y frontend
+
+- **ID:** H17
+- **Prioridad:** P1
+- **Severidad:** MEDIO
+- **Estado:** PENDIENTE
+- **Módulo afectado:** Caja
+- **Archivos implicados:**
+  - `apps/backend/src/modules/caja/caja.service.ts` (función `calcularVentasEfectivo`)
+  - `apps/frontend/src/pages/Caja.tsx` (`efectivoVentasTurno`)
+  - `apps/frontend/src/pages/ReporteCaja.tsx` (`efectivoVentas`)
+- **Descripción:** El backend calcula el efectivo de las ventas al contado como `venta.total + venta.propina`, mientras que `Caja.tsx` y `ReporteCaja.tsx` calculan la misma métrica únicamente como `venta.total`, sin sumar la propina.
+- **Evidencia encontrada:** Detectado durante la investigación y corrección de H18 (revisión independiente de Codex, observación H18-OBS-02). `caja.service.ts`: `ventas.reduce((suma, venta) => suma + venta.total + venta.propina, 0)`. `Caja.tsx`/`ReporteCaja.tsx`: `.reduce((suma, v) => suma + v.total, 0)` — sin `v.propina` en ninguno de los dos.
+- **Impacto:** Cuando una venta al contado en efectivo tiene propina, la interfaz en vivo (`Caja.tsx`) y el reporte impreso (`ReporteCaja.tsx`) pueden mostrar un efectivo esperado **menor** al monto autoritativo que calcula y congela el backend al cerrar la caja — el cajero vería un número distinto en pantalla del que finalmente se usa para determinar la diferencia del arqueo.
+- **Escenario reproducible:** Registrar una venta al contado en efectivo con propina → comparar el "efectivo esperado" mostrado en vivo en `Caja.tsx` (o en `ReporteCaja.tsx`) contra el `montoEsperado` que devuelve `POST /api/cajas/:id/cerrar` para la misma sesión: no coinciden en el monto de la propina.
+- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería que `Caja.tsx`/`ReporteCaja.tsx` sumen también `v.propina`, igualando el criterio ya usado por el backend (fuente autoritativa).
+- **Pruebas necesarias:** Prueba (backend y/o frontend) que registre una venta al contado en efectivo con propina y verifique que backend y frontend reconcilian exactamente el mismo efectivo esperado.
+- **Criterio de aceptación:** El efectivo esperado que muestra la pantalla en vivo y el reporte impreso de caja coincide exactamente, en todos los casos, con el `montoEsperado` autoritativo que calcula y congela el backend — incluyendo ventas con propina.
 
 ### H20 — Reparto duplicable de propinas
 

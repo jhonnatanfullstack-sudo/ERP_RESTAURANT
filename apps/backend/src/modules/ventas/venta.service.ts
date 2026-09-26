@@ -145,15 +145,24 @@ async function resolverTipoOperacion(tipoOperacionId: string | undefined): Promi
   return tipoOperacion;
 }
 
+/**
+ * H18: en una venta al crédito el dinero no entra en el momento de crearla — mismo criterio
+ * que ya aplica `resolverBanco` (forzado a `null` para cualquier `formaPago` distinto de
+ * CONTADO): el medio de pago real de un crédito vive en cada `PagoVenta` cuando se cobra
+ * (`cobranza.service.ts: registrarPago`), nunca en la venta. Se ignora silenciosamente
+ * cualquier `medioPagoId` que llegue en una venta al crédito (ni siquiera se consulta el
+ * catálogo) en vez de rechazarlo con un 400 nuevo, para no ampliar el contrato HTTP existente
+ * — nada dependía de que `Venta.medioPago` quedara poblado en una venta al crédito.
+ */
 async function resolverMedioPago(
   medioPagoId: string | undefined,
   formaPago: FormaPago,
 ): Promise<MedioPago | null> {
-  if (!medioPagoId) {
-    if (formaPago === FormaPago.CONTADO) {
-      throw new HttpError(400, 'Una venta al contado requiere indicar el medio de pago');
-    }
+  if (formaPago !== FormaPago.CONTADO) {
     return null;
+  }
+  if (!medioPagoId) {
+    throw new HttpError(400, 'Una venta al contado requiere indicar el medio de pago');
   }
   const medioPago = await medioPagoRepository.findOneBy({ id: medioPagoId });
   if (!medioPago) {

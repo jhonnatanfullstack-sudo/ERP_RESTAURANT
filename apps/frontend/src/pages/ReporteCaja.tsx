@@ -78,8 +78,10 @@ export function ReporteCaja() {
   const enCurso = caja.estado === 'abierta';
 
   const ventasSesion = ventasEnPeriodo(ventasQuery.data ?? [], caja.creadoEn, caja.fechaCierre);
+  // H18: una venta al crédito no mueve el cajón en el momento de crearla — mismo criterio que
+  // `caja.service.ts: calcularVentasEfectivo` (fuente autoritativa) y que `Caja.tsx`.
   const efectivoVentas = ventasSesion
-    .filter((v) => v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO)
+    .filter((v) => v.formaPago === 'contado' && v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO)
     .reduce((suma, v) => suma + v.total, 0);
   const pagosCreditoEfectivo = pagosEfectivoEnPeriodo(
     cobranzasQuery.data ?? [],
