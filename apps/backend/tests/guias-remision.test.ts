@@ -4,7 +4,7 @@ import forge from 'node-forge';
 import { app } from '../src/app';
 import { NubefactOseProvider } from '../src/modules/facturacion/ose/nubefact-ose.provider';
 import { api, empresaConProducto } from './ayudantes';
-import type { RespuestaOse } from '../src/modules/facturacion/ose/ose-provider.interface';
+import type { ResultadoOse } from '../src/modules/facturacion/ose/ose-provider.interface';
 import type { Sesion } from './ayudantes';
 
 /**
@@ -36,8 +36,8 @@ function crearPfxDePrueba(contrasena: string): Buffer {
 const CONTRASENA_CERTIFICADO = 'ClaveDePrueba123';
 const PFX_DE_PRUEBA = crearPfxDePrueba(CONTRASENA_CERTIFICADO);
 
-function mockearRespuestaOse(respuesta: RespuestaOse) {
-  return vi.spyOn(NubefactOseProvider.prototype, 'enviarComprobante').mockResolvedValue(respuesta);
+function mockearRespuestaOse(resultado: ResultadoOse) {
+  return vi.spyOn(NubefactOseProvider.prototype, 'enviarComprobante').mockResolvedValue(resultado);
 }
 
 afterEach(() => {
@@ -208,6 +208,7 @@ describe('Guías de remisión electrónica', () => {
       .expect(200);
 
     mockearRespuestaOse({
+      tipo: 'definitiva',
       codigoRespuesta: '0',
       mensaje: 'La Guía de Remisión ha sido aceptada',
       cdrXml: '<ApplicationResponse>CDR DE PRUEBA GUIA</ApplicationResponse>',

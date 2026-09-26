@@ -405,19 +405,64 @@ Codex certificó `H09 REQUIERE CORRECCIONES` sobre la primera implementación, c
 - **ID:** H13
 - **Prioridad:** P1
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Facturación electrónica
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/facturacion/facturacion.service.ts` (líneas 130-231)
   - `apps/backend/src/middlewares/tenant.middleware.ts`
   - `apps/backend/src/database/tenant-repository.ts` (líneas 49-76)
-- **Descripción:** La emisión de comprobantes al OSE (llamada de red de hasta 30s) ocurre dentro de la misma transacción por petición que registra el resultado en `comprobantes_electronicos`; el commit de esa transacción se confirma solo al final de toda la petición, después de la respuesta al OSE.
-- **Evidencia encontrada:** `facturacion.service.ts` guarda el comprobante en `PENDIENTE` sin commit, llama al proveedor OSE, y guarda el resultado (`ACEPTADO`/`RECHAZADO`/`OBSERVADO`) todavía dentro de la misma transacción abierta por `tenant.middleware.ts`. `tenantRepository()` resuelve siempre el manager de esa transacción de petición.
-- **Impacto:** Si el OSE acepta el comprobante y el commit posterior de Postgres falla, el sistema queda con un documento fiscal realmente aceptado por SUNAT/OSE (con CDR firmado) pero sin ningún registro local (ni siquiera en `PENDIENTE`, también revertido). No existe outbox ni job de reconciliación; la recuperación es manual, y el correlativo ya fue consumido, con riesgo de reintento con el mismo número.
-- **Escenario reproducible:** Simular una aceptación exitosa del OSE seguida de un fallo de `commitTransaction()` en la misma petición de emisión, y verificar que no queda ningún registro local del comprobante pese a la aceptación real.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería separar la llamada de red al OSE del alcance de la transacción de base de datos, o introducir un mecanismo de reconciliación que detecte comprobantes aceptados por el OSE sin registro local.
-- **Pruebas necesarias:** Prueba que simule un fallo de commit posterior a una respuesta de aceptación del OSE (mockeado) y verifique el estado resultante del sistema.
-- **Criterio de aceptación:** Un comprobante aceptado por el OSE nunca queda sin ningún rastro local recuperable, verificado con prueba automatizada o mecanismo de reconciliación documentado.
+- **Descripción (hallazgo original):** La emisión de comprobantes al OSE (llamada de red de hasta 30s) ocurre dentro de la misma transacción por petición que registra el resultado en `comprobantes_electronicos`; el commit de esa transacción se confirma solo al final de toda la petición, después de la respuesta al OSE.
+- **Evidencia encontrada (hallazgo original):** `facturacion.service.ts` guarda el comprobante en `PENDIENTE` sin commit, llama al proveedor OSE, y guarda el resultado (`ACEPTADO`/`RECHAZADO`/`OBSERVADO`) todavía dentro de la misma transacción abierta por `tenant.middleware.ts`. `tenantRepository()` resuelve siempre el manager de esa transacción de petición.
+- **Impacto (hallazgo original):** Si el OSE acepta el comprobante y el commit posterior de Postgres falla, el sistema queda con un documento fiscal realmente aceptado por SUNAT/OSE (con CDR firmado) pero sin ningún registro local (ni siquiera en `PENDIENTE`, también revertido). No existe outbox ni job de reconciliación; la recuperación es manual, y el correlativo ya fue consumido, con riesgo de reintento con el mismo número.
+- **Escenario reproducible (hallazgo original):** Simular una aceptación exitosa del OSE seguida de un fallo de `commitTransaction()` en la misma petición de emisión, y verificar que no queda ningún registro local del comprobante pese a la aceptación real.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería separar la llamada de red al OSE del alcance de la transacción de base de datos, o introducir un mecanismo de reconciliación que detecte comprobantes aceptados por el OSE sin registro local.
+- **Pruebas necesarias (hallazgo original):** Prueba que simule un fallo de commit posterior a una respuesta de aceptación del OSE (mockeado) y verifique el estado resultante del sistema.
+- **Criterio de aceptación:** Un comprobante aceptado por el OSE nunca queda sin ningún rastro local recuperable, verificado con prueba automatizada o mecanismo de reconciliación documentado. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+El envío al OSE se rediseñó (H13-A: infraestructura de commit anticipado en `tenant-context.ts`/`tenant.middleware.ts`; H13-B: reconstrucción de `facturacion.service.ts` sobre esa infraestructura) en cuatro fases con una única regla: **el OSE nunca se llama antes de que el estado local previo (`PENDIENTE`→`ENVIANDO`) sea durable**.
+
+- **PREPARAR** (`facturacion.service.ts`: `prepararEmisionInicial`/`prepararReintento`) — corre dentro de la transacción HTTP normal: bloquea `Venta` y luego `Comprobante` (orden de lock global Venta → Comprobante, siempre), valida, genera o reutiliza el XML, incrementa `intentos`, deja el comprobante en `ENVIANDO`.
+- **COMMIT ANTICIPADO** (`tenant-context.ts`: `confirmarTransaccionDeLaPeticion`) — confirma esa misma transacción HTTP de inmediato, antes de invocar al OSE, y libera la conexión. Si falla, lanza: el código nunca llega a invocar al OSE.
+- **OSE** — la llamada de red ocurre sin ninguna transacción de Postgres abierta (verificado con prueba automatizada).
+- **FINALIZAR** (`facturacion.service.ts`: `finalizarEnvio`, vía `tenant-context.ts`: `ejecutarEnTransaccionPropia`) — conexión nueva y corta; aplica el resultado con **compare-and-swap** explícito por `id` + `estado='enviando'` + número de `intentos`; exige `affected === 1`: si no coincide, no sobrescribe nada y responde `500` (anomalía a reconciliar), nunca asume qué pasó.
+
+Garantías adicionales cerradas en la segunda revisión (H13-B / H13-B.1):
+
+- Defensa adicional dentro de `invocarOse` (`verificarSinTransaccionActivaAntesDeOse`): comprueba por sí misma, además de la disciplina ya existente en los llamadores, que no exista una transacción de la petición activa antes de tocar la red; aborta con `500` sin invocar al proveedor si la encuentra.
+- `RESULTADO_INCIERTO` para cualquier resultado ambiguo desde que se invoca el transporte en adelante (timeout, abort, conexión cortada, CDR/ZIP indescifrable, SOAP Fault sin código de negocio) — nunca reintentable automáticamente.
+- `ERROR_ENVIO` únicamente cuando hay certeza de que el documento no llegó a transmitirse (falló antes de invocar `fetch`).
+- `/emitir` (`prepararEmisionInicial`) ya no permite regenerar un comprobante existente bajo ningún estado, incluido `ERROR_ENVIO`: cualquier comprobante previo para la venta responde `409` sin reconstruir ni refirmar el XML. El único camino de reenvío es `/reintentar` (`prepararReintento`), que reutiliza `xmlFirmado`/`hashFirma`/`nombreArchivo` tal cual.
+- Bloqueo seguro de emisión/reintento/anulación mientras el comprobante está en `ENVIANDO` o `RESULTADO_INCIERTO`.
+- Migración `1789016000000-EstadosComprobanteEnvioSeguro.ts` agrega los estados `ENVIANDO`/`RESULTADO_INCIERTO` al enum de PostgreSQL.
+- Compatibilidad conservada con guías de remisión y notas de venta (siguen operando sobre el mismo enum `EstadoComprobante`, sin el rediseño de commit anticipado — ver observaciones no bloqueantes).
+
+##### Evidencia de validación
+
+- `facturacion-h13b.test.ts` (T-B01 a T-B26 + clasificación directa del proveedor OSE): **28/28 PASS**
+- `facturacion-h13b1.test.ts` (correcciones H13B-01/02/03, T-B27 a T-B29): **3/3 PASS**
+- Suite backend completa: **292/292 PASS (32/32 archivos)**
+- typecheck backend: **PASS**
+- typecheck workspace: **FAIL únicamente** por `apps/frontend/src/routes/AppRoutes.tsx(50,1)` (`LoginPage` sin usar) — preexistente, fuera de alcance de H13-B
+- lint: **PASS**, 0 errores, 2 warnings de frontend preexistentes
+- build backend: **PASS**
+- build frontend: **FAIL únicamente** por el mismo `LoginPage` preexistente
+
+##### Observaciones no bloqueantes (no son regresiones de H13-B)
+
+- Guías de remisión y notas de venta todavía no tienen el mismo rediseño de commit anticipado que facturación — siguen con el flujo previo a H13.
+- Una caída justo después de PREPARAR (entre el commit anticipado y el resultado del OSE) puede dejar el comprobante en `ENVIANDO` hasta que se reconcilie manualmente — comportamiento deliberado del diseño (nunca sobrescribe a ciegas), no un defecto nuevo.
+- Warning de deprecación de `pg` (`client.query() cuando el cliente ya está ejecutando una consulta`) observado durante la suite completa — no relacionado con H13-B.
+- `TS6133` en `apps/frontend/src/routes/AppRoutes.tsx:50` (`LoginPage` sin usar) — preexistente, fuera de alcance.
+
+#### Certificación Codex
+
+```
+H13-B APROBABLE CON OBSERVACIONES
+Bloqueantes: ninguno
+Recomendación Codex: Puede pasar a commit.
+```
 
 ### H14 — Venta anulada puede facturarse
 
@@ -460,7 +505,7 @@ H14 **no resuelve completamente** la carrera entre `emitir`/`reintentar` y `anul
 3. La primera operación conserva la lectura previa — no vuelve a comprobar el estado.
 4. Puede continuar hasta llamar al OSE real.
 
-No existe hoy ningún `SELECT ... FOR UPDATE` sobre `Venta` que cierre esa ventana; H14 no agregó ningún lock. Este residual **no se oculta** y **no fue introducido por H14** — ya existía exactamente igual antes de este cierre. Resolverlo requeriría estudiar conjuntamente locks/revalidación y los límites transaccionales del envío externo al OSE, lo cual está directamente vinculado a **H13** (que ya analiza el envío al OSE antes del commit local y los límites entre la transacción de base de datos y el efecto externo). **H13 permanece PENDIENTE, sin cambio de prioridad, severidad ni estado**, y no se abre un hallazgo `Hxx` nuevo para esta carrera mientras quede documentada como residual asociado a H13.
+No existe hoy ningún `SELECT ... FOR UPDATE` sobre `Venta` que cierre esa ventana; H14 no agregó ningún lock. Este residual **no se oculta** y **no fue introducido por H14** — ya existía exactamente igual antes de este cierre. Resolverlo requeriría estudiar conjuntamente locks/revalidación y los límites transaccionales del envío externo al OSE, lo cual está directamente vinculado a **H13** (que ya analiza el envío al OSE antes del commit local y los límites entre la transacción de base de datos y el efecto externo). **Al momento de resolver H14, H13 permanecía PENDIENTE; posteriormente H13 fue resuelto y certificado de forma independiente.**, y no se abre un hallazgo `Hxx` nuevo para esta carrera mientras quede documentada como residual asociado a H13.
 
 ##### Evidencia T01-T05
 

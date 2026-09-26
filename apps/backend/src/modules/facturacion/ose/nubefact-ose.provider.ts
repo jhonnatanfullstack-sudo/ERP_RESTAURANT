@@ -1,6 +1,6 @@
 import JSZip from 'jszip';
 import { escaparXml } from '../ubl/xml.util';
-import type { CredencialesOse, OseProvider, RespuestaOse } from './ose-provider.interface';
+import type { CredencialesOse, OseProvider, ResultadoOse } from './ose-provider.interface';
 
 /**
  * NubeFacT OSE (`ose.nubefact.com`) — el producto que recibe el XML **ya firmado** (no el que
@@ -77,9 +77,20 @@ export class NubefactOseProvider implements OseProvider {
     xmlFirmado: string,
     nombreArchivo: string,
     credenciales: CredencialesOse,
-  ): Promise<RespuestaOse> {
-    const zipBase64 = await comprimirXml(xmlFirmado, nombreArchivo);
-    const sobre = construirSobreSoap(nombreArchivo, zipBase64, credenciales);
+  ): Promise<ResultadoOse> {
+    // Todo lo que ocurre ANTES de esta línea (comprimir, armar el sobre SOAP) es local, sin
+    // ningún I/O de red — si algo de esto fallara, el documento nunca llegó a transmitirse.
+    let zipBase64: string;
+    let sobre: string;
+    try {
+      zipBase64 = await comprimirXml(xmlFirmado, nombreArchivo);
+      sobre = construirSobreSoap(nombreArchivo, zipBase64, credenciales);
+    } catch (error) {
+      return {
+        tipo: 'no_transmitido',
+        mensaje: error instanceof Error ? error.message : 'No se pudo preparar el envío al OSE',
+      };
+    }
 
     const controlador = new AbortController();
     const temporizador = setTimeout(() => controlador.abort(), TIMEOUT_MS);
@@ -93,12 +104,14 @@ export class NubefactOseProvider implements OseProvider {
       });
       cuerpo = await respuesta.text();
     } catch (error) {
-      // Fallo de transporte (red, timeout, servicio caído): no hay código de negocio que
-      // registrar, el comprobante queda `error_envio` para reintentar más tarde.
+      // H13 — regla conservadora deliberada: desde que se invoca `fetch` en adelante,
+      // CUALQUIER fallo (abort/timeout propio, `TypeError: fetch failed`, conexión cortada a
+      // mitad de la respuesta) es AMBIGUO. No hay forma de saber, del lado del cliente, si el
+      // OSE llegó a recibir el documento antes de que el error ocurriera — nunca se asume
+      // "no transmitido" desde acá, aunque el error "parezca" de conexión.
       return {
-        codigoRespuesta: null,
+        tipo: 'incierta',
         mensaje: error instanceof Error ? error.message : 'No se pudo conectar con el OSE',
-        cdrXml: null,
       };
     } finally {
       clearTimeout(temporizador);
@@ -106,20 +119,35 @@ export class NubefactOseProvider implements OseProvider {
 
     const applicationResponse = extraerEtiqueta(cuerpo, 'applicationResponse');
     if (applicationResponse) {
-      const cdrXml = await descomprimirCdr(applicationResponse);
+      let cdrXml: string | null;
+      try {
+        cdrXml = await descomprimirCdr(applicationResponse);
+      } catch {
+        // El transporte funcionó y el OSE respondió, pero el CDR no se pudo descomprimir —
+        // "error leyendo la respuesta": también ambiguo, no un rechazo ni un no-transmitido.
+        return {
+          tipo: 'incierta',
+          mensaje: 'El OSE devolvió una respuesta que no se pudo descomprimir',
+        };
+      }
       // Sin código de respuesta legible dentro del CDR no hay forma honesta de decir
-      // "aceptado": mejor dejarlo como anomalía a reintentar/revisar a mano que asumir éxito.
+      // "aceptado" ni "rechazado" — "respuesta SOAP imposible de interpretar con certeza".
       const codigoRespuesta = cdrXml ? extraerEtiqueta(cdrXml, 'cbc:ResponseCode') : null;
+      if (!codigoRespuesta) {
+        return {
+          tipo: 'incierta',
+          mensaje: 'El OSE devolvió una respuesta que no se pudo interpretar',
+        };
+      }
       const mensaje =
-        (cdrXml && extraerEtiqueta(cdrXml, 'cbc:Description')) ??
-        'El OSE devolvió una respuesta que no se pudo interpretar';
-      return { codigoRespuesta, mensaje, cdrXml };
+        (cdrXml && extraerEtiqueta(cdrXml, 'cbc:Description')) ?? 'Comprobante procesado por el OSE';
+      return { tipo: 'definitiva', codigoRespuesta: codigoRespuesta.slice(0, 10), mensaje, cdrXml };
     }
 
     // SOAP Fault: el mismo contrato de error que usa SUNAT en su propio SEE-SOL. Solo `<cod>`
     // (el código de negocio SUNAT, dentro de `<detail>`) es un código corto y numérico; el
     // `faultcode` del sobre SOAP es un valor genérico tipo `soapenv:Server` — no sirve como
-    // `codigoRespuesta` (columna pensada para "0"/"4xxx"/etc.) y se deja solo en el mensaje.
+    // `codigoRespuesta` (pensado para "0"/"4xxx"/etc.) y se deja solo en el mensaje.
     const codigo = extraerEtiqueta(cuerpo, 'cod');
     const faultcode = extraerEtiqueta(cuerpo, 'faultcode');
     const mensaje =
@@ -128,6 +156,13 @@ export class NubefactOseProvider implements OseProvider {
       (faultcode
         ? `El OSE rechazó el envío (${faultcode})`
         : 'El OSE rechazó el envío sin detalle del motivo');
-    return { codigoRespuesta: codigo, mensaje, cdrXml: null };
+
+    if (!codigo) {
+      // SOAP Fault sin ningún código de negocio SUNAT extraíble — "error SOAP ambiguo": el
+      // transporte funcionó, pero no hay evidencia suficiente para decir que SUNAT rechazó
+      // formalmente el documento (podría ser un error del propio OSE, no de negocio).
+      return { tipo: 'incierta', mensaje };
+    }
+    return { tipo: 'definitiva', codigoRespuesta: codigo.slice(0, 10), mensaje, cdrXml: null };
   }
 }

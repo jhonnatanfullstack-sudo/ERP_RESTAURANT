@@ -5,7 +5,7 @@ import { app } from '../src/app';
 import { AppDataSource } from '../src/database/data-source';
 import { NubefactOseProvider } from '../src/modules/facturacion/ose/nubefact-ose.provider';
 import { api, empresaConProducto } from './ayudantes';
-import type { RespuestaOse } from '../src/modules/facturacion/ose/ose-provider.interface';
+import type { ResultadoOse } from '../src/modules/facturacion/ose/ose-provider.interface';
 
 /**
  * Emisión de comprobantes electrónicos vía OSE (FASE 28). El `NubefactOseProvider` se
@@ -39,8 +39,8 @@ function crearPfxDePrueba(contrasena: string): Buffer {
 const CONTRASENA_CERTIFICADO = 'ClaveDePrueba123';
 const PFX_DE_PRUEBA = crearPfxDePrueba(CONTRASENA_CERTIFICADO);
 
-function mockearRespuestaOse(respuesta: RespuestaOse) {
-  return vi.spyOn(NubefactOseProvider.prototype, 'enviarComprobante').mockResolvedValue(respuesta);
+function mockearRespuestaOse(resultado: ResultadoOse) {
+  return vi.spyOn(NubefactOseProvider.prototype, 'enviarComprobante').mockResolvedValue(resultado);
 }
 
 afterEach(() => {
@@ -189,6 +189,7 @@ describe('Emisión de comprobantes electrónicos', () => {
   it('un envío aceptado por el OSE marca el comprobante como aceptado', async () => {
     const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
     mockearRespuestaOse({
+      tipo: 'definitiva',
       codigoRespuesta: '0',
       mensaje: 'La Boleta ha sido aceptada',
       cdrXml: '<ApplicationResponse>CDR DE PRUEBA</ApplicationResponse>',
@@ -216,12 +217,11 @@ describe('Emisión de comprobantes electrónicos', () => {
     await api.post(`/api/facturacion/ventas/${venta.body.data.id}/emitir`, sesion).expect(409);
   });
 
-  it('un fallo de transporte deja el comprobante en error_envio, reintentable', async () => {
+  it('un fallo inequívoco antes de transmitir deja el comprobante en error_envio, reintentable', async () => {
     const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
     const espia = mockearRespuestaOse({
-      codigoRespuesta: null,
-      mensaje: 'No se pudo conectar con el OSE',
-      cdrXml: null,
+      tipo: 'no_transmitido',
+      mensaje: 'No se pudo preparar el envío al OSE',
     });
 
     const venta = await api
@@ -241,7 +241,7 @@ describe('Emisión de comprobantes electrónicos', () => {
 
     // Reintentar reusa el mismo XML/hash ya firmados: no se vuelve a construir ni a firmar.
     const xmlOriginal = primerIntento.body.data.xmlFirmado;
-    espia.mockResolvedValue({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    espia.mockResolvedValue({ tipo: 'definitiva', codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
 
     const reintento = await api
       .post(`/api/facturacion/comprobantes/${primerIntento.body.data.id}/reintentar`, sesion)
@@ -255,6 +255,7 @@ describe('Emisión de comprobantes electrónicos', () => {
     const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
 
     mockearRespuestaOse({
+      tipo: 'definitiva',
       codigoRespuesta: '4000',
       mensaje: 'Aceptado con observaciones',
       cdrXml: '<ok/>',
@@ -274,6 +275,7 @@ describe('Emisión de comprobantes electrónicos', () => {
 
     vi.restoreAllMocks();
     mockearRespuestaOse({
+      tipo: 'definitiva',
       codigoRespuesta: '2335',
       mensaje: 'El comprobante ya fue registrado',
       cdrXml: null,
@@ -296,7 +298,7 @@ describe('Emisión de comprobantes electrónicos', () => {
 describe('H14 — una venta anulada no puede enviarse al OSE', () => {
   it('T01 — rechaza la emisión inicial sin crear comprobante ni llamar al OSE', async () => {
     const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
-    const espia = mockearRespuestaOse({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    const espia = mockearRespuestaOse({ tipo: 'definitiva', codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
     const venta = await crearVentaFacturable(sesion, catalogos, productoId);
     const ventaId = venta.body.data.id as string;
 
@@ -311,9 +313,8 @@ describe('H14 — una venta anulada no puede enviarse al OSE', () => {
   it('T02 — rechaza reintentar un error_envio tras anular y conserva el comprobante', async () => {
     const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
     const espia = mockearRespuestaOse({
-      codigoRespuesta: null,
+      tipo: 'no_transmitido',
       mensaje: 'Fallo de transporte controlado',
-      cdrXml: null,
     });
     const venta = await crearVentaFacturable(sesion, catalogos, productoId);
     const ventaId = venta.body.data.id as string;
@@ -338,7 +339,7 @@ describe('H14 — una venta anulada no puede enviarse al OSE', () => {
 
   it('T03 — una venta vigente continúa emitiéndose normalmente', async () => {
     const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
-    const espia = mockearRespuestaOse({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    const espia = mockearRespuestaOse({ tipo: 'definitiva', codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
     const venta = await crearVentaFacturable(sesion, catalogos, productoId);
 
     const respuesta = await api
@@ -351,7 +352,7 @@ describe('H14 — una venta anulada no puede enviarse al OSE', () => {
 
   it('T04 — una venta con comprobante aceptado conserva la protección de anulación', async () => {
     const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
-    mockearRespuestaOse({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    mockearRespuestaOse({ tipo: 'definitiva', codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
     const venta = await crearVentaFacturable(sesion, catalogos, productoId);
     const ventaId = venta.body.data.id as string;
 
@@ -364,7 +365,7 @@ describe('H14 — una venta anulada no puede enviarse al OSE', () => {
 
   it('T05 — el rechazo 409 es funcional y no expone secretos ni detalles internos', async () => {
     const { sesion, catalogos, productoId } = await empresaConFacturacionConfigurada();
-    const espia = mockearRespuestaOse({ codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
+    const espia = mockearRespuestaOse({ tipo: 'definitiva', codigoRespuesta: '0', mensaje: 'Aceptado', cdrXml: '<ok/>' });
     const venta = await crearVentaFacturable(sesion, catalogos, productoId);
     const ventaId = venta.body.data.id as string;
 

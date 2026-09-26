@@ -17,8 +17,21 @@ import { Venta } from '../ventas/venta.entity';
  * distintos y mezclarlos impide reintentar un envío fallido sin tocar la venta.
  */
 export enum EstadoComprobante {
-  /** Generado y firmado, todavía no enviado. */
+  /** Heredado — el flujo PREPARAR/COMMIT/OSE/FINALIZAR (H13) ya no lo produce como estado
+   * previo al envío (pasa directo a `ENVIANDO`); se conserva en el enum por compatibilidad
+   * con filas históricas y porque `guias_remision`/`notas_venta` (que comparten este mismo
+   * enum de TypeScript, aunque cada uno con su propio tipo de columna en Postgres) todavía lo
+   * usan como su estado inicial sin haber recibido el mismo rediseño. */
   PENDIENTE = 'pendiente',
+  /**
+   * H13 — el `PREPARAR` de esta emisión/reintento ya confirmó de forma durable (commit
+   * anticipado, ver `tenant-context.ts: confirmarTransaccionDeLaPeticion`), pero todavía no
+   * existe ningún resultado local definitivo del intento al OSE: puede representar un envío
+   * genuinamente en curso, o un proceso interrumpido entre el commit y el resultado. **No es
+   * seguro reintentar automáticamente** desde acá — bloquea una nueva emisión, un reintento y
+   * la anulación de la venta, hasta que `FINALIZAR` lo resuelva a un estado terminal.
+   */
+  ENVIANDO = 'enviando',
   /** SUNAT respondió con un CDR de aceptación (código 0). */
   ACEPTADO = 'aceptado',
   /** Aceptado pero con observaciones (CDR con código 4000 o notas). El comprobante es
@@ -27,9 +40,19 @@ export enum EstadoComprobante {
   /** SUNAT rechazó el comprobante. Hay que corregir y emitir uno nuevo: un rechazado no se
    * "reenvía", porque para SUNAT nunca existió. */
   RECHAZADO = 'rechazado',
-  /** El envío falló por causas ajenas al contenido (red, servicio caído, credenciales).
-   * A diferencia de `rechazado`, este sí se reintenta con el mismo XML. */
+  /** Sabemos con certeza que el documento NO llegó a transmitirse (falló antes de invocar
+   * `fetch`, o el proveedor OSE lo clasificó explícitamente como no transmitido). A diferencia
+   * de `resultado_incierto`, este sí se reintenta automáticamente con el mismo XML. */
   ERROR_ENVIO = 'error_envio',
+  /**
+   * H13 — hubo transmisión (o posible transmisión: `fetch` se invocó) pero no hay evidencia
+   * suficiente para saber si el OSE recibió/procesó el documento — timeout, abort, conexión
+   * cortada a mitad de respuesta, o una respuesta que no se pudo interpretar con certeza.
+   * Regla conservadora deliberada (H13): nunca se asume "no transmitido" desde este punto en
+   * adelante. **No es seguro reintentar automáticamente** — bloquea nueva emisión, reintento
+   * y anulación de la venta hasta que se reconcilie manualmente contra el OSE.
+   */
+  RESULTADO_INCIERTO = 'resultado_incierto',
 }
 
 /**

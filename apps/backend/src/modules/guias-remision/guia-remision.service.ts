@@ -21,7 +21,7 @@ import {
 import { cargarPkcs12DesdeBuffer } from '../facturacion/firma/certificado';
 import { firmarXml } from '../facturacion/firma/firmador';
 import { NubefactOseProvider } from '../facturacion/ose/nubefact-ose.provider';
-import type { OseProvider, RespuestaOse } from '../facturacion/ose/ose-provider.interface';
+import type { OseProvider, ResultadoOse } from '../facturacion/ose/ose-provider.interface';
 import { ProveedorOse } from '../facturacion/configuracion-facturacion.entity';
 import type { ConfiguracionFacturacion } from '../facturacion/configuracion-facturacion.entity';
 import { EstadoComprobante } from '../facturacion/comprobante-electronico.entity';
@@ -287,27 +287,31 @@ async function enviarYRegistrar(
   proveedor: OseProvider,
   config: ConfiguracionFacturacion,
 ): Promise<GuiaRemision> {
-  let respuesta: RespuestaOse;
+  let resultado: ResultadoOse;
   try {
-    respuesta = await proveedor.enviarComprobante(xmlFirmado, nombreArchivoGuia, {
+    resultado = await proveedor.enviarComprobante(xmlFirmado, nombreArchivoGuia, {
       usuario: config.oseUsuario!,
       clave: descifrarTexto(config.oseCredencialCifrada!),
       ambiente: config.ambiente,
     });
   } catch (error) {
-    respuesta = {
-      codigoRespuesta: null,
+    resultado = {
+      tipo: 'incierta',
       mensaje: error instanceof Error ? error.message : 'Fallo inesperado al enviar al OSE',
-      cdrXml: null,
     };
   }
 
-  const codigoRespuesta = respuesta.codigoRespuesta?.slice(0, 10) ?? null;
+  // Este módulo (a diferencia de `facturacion.service.ts`, ver H13) todavía no distingue
+  // `error_envio` de `resultado_incierto`: cualquier resultado que no sea una respuesta
+  // definitiva del OSE se trata igual que antes de H13 (siempre como no exitoso, sin CDR),
+  // preservando el comportamiento existente sin adelantar ese rediseño a este módulo.
+  const codigoRespuesta = resultado.tipo === 'definitiva' ? resultado.codigoRespuesta.slice(0, 10) : null;
+  const cdrXml = resultado.tipo === 'definitiva' ? resultado.cdrXml : null;
 
   guia.estado = mapearEstado(codigoRespuesta);
-  guia.cdrXml = respuesta.cdrXml;
+  guia.cdrXml = cdrXml;
   guia.codigoRespuesta = codigoRespuesta;
-  guia.mensajeRespuesta = respuesta.mensaje.slice(0, 500);
+  guia.mensajeRespuesta = resultado.mensaje.slice(0, 500);
   guia.intentos += 1;
   guia.enviadoEn = new Date();
   return guiaRemisionRepository.save(guia);

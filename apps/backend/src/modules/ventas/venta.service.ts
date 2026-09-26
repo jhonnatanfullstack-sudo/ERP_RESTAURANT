@@ -513,7 +513,19 @@ export async function crearVenta(usuarioId: string, dto: CrearVentaDto): Promise
 }
 
 export async function anularVenta(usuarioId: string, id: string): Promise<void> {
-  const venta = await obtenerVenta(id);
+  // Orden global de locks: Venta → Comprobante, siempre (ver `facturacion.service.ts:
+  // prepararEmisionInicial`/`prepararReintento`) — evita el deadlock clásico de dos
+  // transacciones bloqueando las mismas dos filas en orden inverso. Sin `relations`: Postgres
+  // rechaza `FOR UPDATE` combinado con un `LEFT JOIN` (ver el mismo comentario en
+  // `auth.service.ts: refrescarSesion`). No hace falta una relectura con relaciones después:
+  // `anularSalidasVenta`/`revertirPuntosPorVenta`, más abajo, solo usan `venta.id`.
+  const venta = await ventaRepository.findOne({
+    where: { id },
+    lock: { mode: 'pessimistic_write' },
+  });
+  if (!venta) {
+    throw new HttpError(404, 'Venta no encontrada');
+  }
   if (venta.estado === EstadoVenta.ANULADA) {
     throw new HttpError(400, 'La venta ya está anulada');
   }
@@ -521,16 +533,26 @@ export async function anularVenta(usuarioId: string, id: string): Promise<void> 
   // Una vez que SUNAT aceptó (u observó) el comprobante, ya no se puede "borrar" el hecho de
   // haberlo emitido: la única forma legal de corregirlo es una Nota de Crédito que lo
   // referencie (ver `modules/notas-venta/nota-venta.service.ts: crearNotaCredito`), que además
-  // dejará la venta en `anulada` como parte del mismo paso.
-  const comprobante = await comprobanteElectronicoRepository.findOneBy({ venta: { id } });
+  // dejará la venta en `anulada` como parte del mismo paso. `ENVIANDO`/`RESULTADO_INCIERTO`
+  // (H13) también bloquean: mientras no se sepa con certeza si el OSE recibió el documento, no
+  // es seguro anular la venta que ese comprobante referencia.
+  const comprobante = await comprobanteElectronicoRepository.findOne({
+    where: { venta: { id } },
+    lock: { mode: 'pessimistic_write' },
+  });
   if (
     comprobante &&
     (comprobante.estado === EstadoComprobante.ACEPTADO ||
-      comprobante.estado === EstadoComprobante.OBSERVADO)
+      comprobante.estado === EstadoComprobante.OBSERVADO ||
+      comprobante.estado === EstadoComprobante.ENVIANDO ||
+      comprobante.estado === EstadoComprobante.RESULTADO_INCIERTO)
   ) {
     throw new HttpError(
       409,
-      'Esta venta ya tiene un comprobante electrónico aceptado por SUNAT: no puede anularse directamente. Registra una Nota de Crédito en su lugar.',
+      comprobante.estado === EstadoComprobante.ENVIANDO ||
+        comprobante.estado === EstadoComprobante.RESULTADO_INCIERTO
+        ? 'Esta venta tiene un envío de comprobante electrónico en curso o sin resultado confirmado: no puede anularse hasta que se resuelva.'
+        : 'Esta venta ya tiene un comprobante electrónico aceptado por SUNAT: no puede anularse directamente. Registra una Nota de Crédito en su lugar.',
     );
   }
 

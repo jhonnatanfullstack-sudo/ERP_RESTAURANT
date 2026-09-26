@@ -4,7 +4,7 @@ import forge from 'node-forge';
 import { app } from '../src/app';
 import { NubefactOseProvider } from '../src/modules/facturacion/ose/nubefact-ose.provider';
 import { api, empresaConProducto } from './ayudantes';
-import type { RespuestaOse } from '../src/modules/facturacion/ose/ose-provider.interface';
+import type { ResultadoOse } from '../src/modules/facturacion/ose/ose-provider.interface';
 import type { Sesion } from './ayudantes';
 
 /**
@@ -35,8 +35,8 @@ function crearPfxDePrueba(contrasena: string): Buffer {
 const CONTRASENA_CERTIFICADO = 'ClaveDePrueba123';
 const PFX_DE_PRUEBA = crearPfxDePrueba(CONTRASENA_CERTIFICADO);
 
-function mockearRespuestaOse(respuesta: RespuestaOse) {
-  return vi.spyOn(NubefactOseProvider.prototype, 'enviarComprobante').mockResolvedValue(respuesta);
+function mockearRespuestaOse(resultado: ResultadoOse) {
+  return vi.spyOn(NubefactOseProvider.prototype, 'enviarComprobante').mockResolvedValue(resultado);
 }
 
 afterEach(() => {
@@ -109,6 +109,7 @@ async function empresaConVentaFacturada(precio = 118) {
     .expect(201);
 
   mockearRespuestaOse({
+    tipo: 'definitiva',
     codigoRespuesta: '0',
     mensaje: 'Aceptado',
     cdrXml: '<ApplicationResponse>CDR</ApplicationResponse>',
@@ -199,6 +200,7 @@ describe('Notas de Crédito', () => {
       await empresaConVentaFacturada(50);
 
     mockearRespuestaOse({
+      tipo: 'definitiva',
       codigoRespuesta: '0',
       mensaje: 'La Nota de Crédito ha sido aceptada',
       cdrXml: '<ApplicationResponse>CDR NC</ApplicationResponse>',
@@ -250,6 +252,7 @@ describe('Notas de Débito', () => {
       await empresaConVentaFacturada(100);
 
     mockearRespuestaOse({
+      tipo: 'definitiva',
       codigoRespuesta: '0',
       mensaje: 'La Nota de Débito ha sido aceptada',
       cdrXml: '<ApplicationResponse>CDR ND</ApplicationResponse>',
