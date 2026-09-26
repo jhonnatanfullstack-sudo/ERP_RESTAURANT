@@ -279,18 +279,28 @@ export async function actualizarCompra(
     });
     await manager.save(DetalleCompra, detalles);
 
-    compra.proveedor = proveedor;
-    compra.almacen = almacen;
-    compra.tipoComprobante = tipoComprobante;
-    compra.serie = dto.serie ?? null;
-    compra.numero = dto.numero ?? null;
-    compra.fechaEmision = dto.fechaEmision ?? compra.fechaEmision;
-    compra.incluyeIgv = dto.incluyeIgv;
-    compra.subtotal = subtotal;
-    compra.igv = igv;
-    compra.total = total;
-    compra.observacion = dto.observacion ?? null;
-    await manager.save(Compra, compra);
+    // Se usa `update()` para tocar únicamente las columnas de cabecera, en vez de
+    // `manager.save(Compra, compra)`: `compra` todavía trae cargada la relación `detalles` de
+    // la versión ANTERIOR (la que se acaba de reemplazar dos líneas arriba), y guardar ese
+    // `compra` completo haría que TypeORM procesara esa relación desactualizada — intentando
+    // desvincularla de las filas que ya no aparecen en ella, lo que entra en conflicto con
+    // `detalle_compras.compra_id` (`NOT NULL`). `update()` no toca ninguna relación cargada en
+    // el objeto, solo las columnas indicadas explícitamente acá. (H11: esto es lo que dejaba
+    // `compra.detalles` vacío en la SIGUIENTE edición, incumpliendo la precondición de
+    // `anularEntradasCompra`.)
+    await manager.update(Compra, compra.id, {
+      proveedor,
+      almacen,
+      tipoComprobante,
+      serie: dto.serie ?? null,
+      numero: dto.numero ?? null,
+      fechaEmision: dto.fechaEmision ?? compra.fechaEmision,
+      incluyeIgv: dto.incluyeIgv,
+      subtotal,
+      igv,
+      total,
+      observacion: dto.observacion ?? null,
+    });
 
     await registrarEntradasCompra(compra, detalles, almacen, usuario, manager);
   });

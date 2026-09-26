@@ -381,12 +381,27 @@ export async function registrarEntradasCompra(
   }
 }
 
-/** Reversa el stock de una compra anulada (o de las líneas anteriores al editarla, ver
- * `compra.service.ts: actualizarCompra`): un movimiento `anulacion_compra` por cada movimiento
- * `compra` que esa compra generó — nunca se borran ni editan los originales (mismo criterio de
- * "el kardex nunca se borra" que ya rige el resto de `existencias`). Se relee desde los
- * movimientos ya guardados (no desde `detalles`) para no asumir que el almacén de cada línea
- * siguió siendo el mismo. `manager` permite ejecutarlo dentro de una transacción, ver arriba. */
+/**
+ * Reversa el stock de la versión VIGENTE de una compra — la que está a punto de anularse, o de
+ * ser reemplazada al editarla (ver `compra.service.ts: actualizarCompra`/`anularCompra`): un
+ * movimiento `anulacion_compra` por cada línea de `compra.detalles`, en el almacén de
+ * `compra.almacen` — nunca se borran ni editan los movimientos `compra` originales (mismo
+ * criterio de "el kardex nunca se borra" que ya rige el resto de `existencias`).
+ *
+ * H11: se basa en `compra.detalles`/`compra.almacen` — la versión persistida ANTERIOR a la
+ * edición en curso — y NO en el historial de movimientos `compra` de `existencias`. Ese
+ * historial es append-only: acumula una fila `compra` por cada alta que tuvo la compra a lo
+ * largo de todas sus ediciones. Reversar "todo lo que aparezca con `tipo=compra` para este
+ * `compra_id`" (la versión anterior de esta función) volvía a reversar, en cada edición
+ * siguiente, entradas que una edición previa ya había neutralizado correctamente — corrompiendo
+ * el stock desde la segunda edición en adelante. `compra.detalles` en cambio sí representa
+ * exactamente la última versión vigente (se reemplaza por completo en cada edición, nunca es
+ * append-only): es la fuente de verdad correcta de "qué hay que reversar ahora".
+ *
+ * Invariante que deben cumplir los llamadores: cargar la compra (con `detalles`/`almacen` de la
+ * versión anterior) → llamar a esta función → recién después reemplazar `compra.detalles` o
+ * reasignar `compra.almacen`. `manager` permite ejecutarlo dentro de una transacción, ver arriba.
+ */
 export async function anularEntradasCompra(
   compra: Compra,
   usuario: Usuario,
@@ -394,17 +409,13 @@ export async function anularEntradasCompra(
   observacion = 'Reversa por anulación de compra',
 ): Promise<void> {
   const repositorio = manager ? manager.getRepository(Existencia) : existenciaRepository;
-  const originales = await repositorio.find({
-    where: { compra: { id: compra.id }, tipo: TipoMovimientoExistencia.COMPRA },
-    relations: { almacen: true, insumo: true, producto: true },
-  });
-  for (const original of originales) {
+  for (const detalle of compra.detalles) {
     const reversa = repositorio.create({
-      almacen: original.almacen,
-      insumo: original.insumo,
-      producto: original.producto,
+      almacen: compra.almacen,
+      insumo: detalle.insumo,
+      producto: detalle.producto,
       tipo: TipoMovimientoExistencia.ANULACION_COMPRA,
-      cantidad: original.cantidad,
+      cantidad: detalle.cantidad,
       compra,
       usuario,
       observacion,

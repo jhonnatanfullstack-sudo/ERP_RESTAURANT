@@ -60,6 +60,39 @@ async function ultimoCostoDe(
   return fila?.ultimoCosto ?? null;
 }
 
+/** Stock de un insumo en un almacén específico — a diferencia de `stockDe`, no colapsa todos
+ * los almacenes en la primera fila que coincida por `insumoId` (necesario para H11: verificar
+ * que un almacén que ya no participa en la versión vigente de una compra permanece intacto). */
+async function stockDeEnAlmacen(
+  sesion: Awaited<ReturnType<typeof prepararProveedorYAlmacen>>['sesion'],
+  almacenId: string,
+  insumoId: string,
+) {
+  const stock = await api.get('/api/existencias/stock', sesion).expect(200);
+  const fila = stock.body.data.find(
+    (s: { almacenId: string; insumoId: string | null }) =>
+      s.almacenId === almacenId && s.insumoId === insumoId,
+  );
+  return fila ? Number(fila.stock) : 0;
+}
+
+/** Movimientos de un insumo, normalizados (`tipo`+`cantidad`) y en orden estable — para
+ * comparar el kardex resultante sin depender del orden en que la API los devuelve. */
+async function movimientosDe(
+  sesion: Awaited<ReturnType<typeof prepararProveedorYAlmacen>>['sesion'],
+  insumoId: string,
+): Promise<Array<{ tipo: string; cantidad: number }>> {
+  const movimientos = await api
+    .get(`/api/existencias/movimientos?insumoId=${insumoId}`, sesion)
+    .expect(200);
+  return movimientos.body.data
+    .map((m: { tipo: string; cantidad: number }) => ({ tipo: m.tipo, cantidad: Number(m.cantidad) }))
+    .sort(
+      (a: { tipo: string; cantidad: number }, b: { tipo: string; cantidad: number }) =>
+        a.tipo.localeCompare(b.tipo) || a.cantidad - b.cantidad,
+    );
+}
+
 describe('Compras: registro y desglose de IGV', () => {
   it('con IGV incluido, desglosa el valor de compra hacia atrás y suma stock', async () => {
     const ctx = await prepararProveedorYAlmacen();
@@ -197,6 +230,197 @@ describe('Compras: anulación y edición reversan el kardex sin borrarlo', () =>
       .get(`/api/existencias/movimientos?insumoId=${ctx.insumoId}`, ctx.sesion)
       .expect(200);
     expect(movimientos.body.data).toHaveLength(3);
+  });
+});
+
+/**
+ * H11 — `anularEntradasCompra` reversaba **todo** el histórico de movimientos `compra` de la
+ * compra (sin excluir los ya reversados en una edición anterior): desde la SEGUNDA edición en
+ * adelante, volvía a reversar entradas que una edición previa ya había neutralizado
+ * correctamente. El test de arriba ('editar una compra reversa...') nunca lo detectó porque
+ * hace una sola edición — con una sola edición existe un único movimiento `compra` histórico,
+ * así que no hay nada que reversar de más todavía.
+ */
+describe('H11 — ediciones múltiples no corrompen el stock', () => {
+  it('10 → 12 → 15: el stock refleja siempre la última versión, verificado tras cada paso', async () => {
+    const ctx = await prepararProveedorYAlmacen();
+    const compra = await api
+      .post('/api/compras', ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 10, costoUnitario: 5 }],
+      })
+      .expect(201);
+    const compraId = compra.body.data.id;
+
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBe(10);
+    expect(await movimientosDe(ctx.sesion, ctx.insumoId)).toEqual([{ tipo: 'compra', cantidad: 10 }]);
+
+    await api
+      .put(`/api/compras/${compraId}`, ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 12, costoUnitario: 5 }],
+      })
+      .expect(200);
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBe(12);
+    expect(await movimientosDe(ctx.sesion, ctx.insumoId)).toEqual([
+      { tipo: 'anulacion_compra', cantidad: 10 },
+      { tipo: 'compra', cantidad: 10 },
+      { tipo: 'compra', cantidad: 12 },
+    ]);
+
+    await api
+      .put(`/api/compras/${compraId}`, ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 15, costoUnitario: 5 }],
+      })
+      .expect(200);
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBe(15);
+
+    // Exactamente UNA reversa de -10 y UNA de -12 — nunca una segunda reversa de -10 (H11).
+    expect(await movimientosDe(ctx.sesion, ctx.insumoId)).toEqual([
+      { tipo: 'anulacion_compra', cantidad: 10 },
+      { tipo: 'anulacion_compra', cantidad: 12 },
+      { tipo: 'compra', cantidad: 10 },
+      { tipo: 'compra', cantidad: 12 },
+      { tipo: 'compra', cantidad: 15 },
+    ]);
+  });
+
+  it('cambio de almacén entre ediciones: la segunda edición no vuelve a tocar el almacén anterior', async () => {
+    const ctx = await prepararProveedorYAlmacen();
+    const almacenB = await api
+      .post('/api/almacenes', ctx.sesion, {
+        empresaId: ctx.sesion.empresaId,
+        nombre: 'ALMACEN B — H11',
+      })
+      .expect(201);
+    const almacenBId = almacenB.body.data.id;
+
+    const compra = await api
+      .post('/api/compras', ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId, // almacén A
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 10, costoUnitario: 5 }],
+      })
+      .expect(201);
+    const compraId = compra.body.data.id;
+    expect(await stockDeEnAlmacen(ctx.sesion, ctx.almacenId, ctx.insumoId)).toBe(10);
+
+    await api
+      .put(`/api/compras/${compraId}`, ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: almacenBId, // pasa a almacén B
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 12, costoUnitario: 5 }],
+      })
+      .expect(200);
+    expect(await stockDeEnAlmacen(ctx.sesion, ctx.almacenId, ctx.insumoId)).toBe(0);
+    expect(await stockDeEnAlmacen(ctx.sesion, almacenBId, ctx.insumoId)).toBe(12);
+
+    await api
+      .put(`/api/compras/${compraId}`, ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: almacenBId, // sigue en almacén B
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 15, costoUnitario: 5 }],
+      })
+      .expect(200);
+    // El almacén A ya no participa desde la primera edición: la segunda edición no debe volver
+    // a generar ningún movimiento sobre él (antes de H11, re-reversaba su entrada original).
+    expect(await stockDeEnAlmacen(ctx.sesion, ctx.almacenId, ctx.insumoId)).toBe(0);
+    expect(await stockDeEnAlmacen(ctx.sesion, almacenBId, ctx.insumoId)).toBe(15);
+  });
+
+  it('eliminación de un detalle entre ediciones: no deja stock fantasma ni negativo', async () => {
+    const ctx = await prepararProveedorYAlmacen();
+    const insumoB = await api
+      .post('/api/insumos', ctx.sesion, {
+        nombre: 'AZUCAR — H11',
+        unidadMedidaId: ctx.catalogos.unidadMedidaId,
+        tipoAfectacionIgvId: ctx.catalogos.gravadoId,
+      })
+      .expect(201);
+    const insumoBId = insumoB.body.data.id;
+
+    const compra = await api
+      .post('/api/compras', ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [
+          { insumoId: ctx.insumoId, cantidad: 10, costoUnitario: 5 },
+          { insumoId: insumoBId, cantidad: 5, costoUnitario: 3 },
+        ],
+      })
+      .expect(201);
+    const compraId = compra.body.data.id;
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBe(10);
+    expect(await stockDe(ctx.sesion, insumoBId)).toBe(5);
+
+    // Edita dejando únicamente el insumo A — quita el insumo B por completo.
+    await api
+      .put(`/api/compras/${compraId}`, ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 10, costoUnitario: 5 }],
+      })
+      .expect(200);
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBe(10);
+    expect(await stockDe(ctx.sesion, insumoBId)).toBe(0);
+
+    // Segunda edición, solo sobre el insumo A — el insumo B (ya fuera de la compra) no debe
+    // volver a moverse ni quedar en negativo.
+    await api
+      .put(`/api/compras/${compraId}`, ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 12, costoUnitario: 5 }],
+      })
+      .expect(200);
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBe(12);
+    expect(await stockDe(ctx.sesion, insumoBId)).toBe(0);
+  });
+
+  it('anular una compra editada varias veces reversa exactamente la última versión, stock final = 0', async () => {
+    const ctx = await prepararProveedorYAlmacen();
+    const compra = await api
+      .post('/api/compras', ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 10, costoUnitario: 5 }],
+      })
+      .expect(201);
+    const compraId = compra.body.data.id;
+
+    await api
+      .put(`/api/compras/${compraId}`, ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 12, costoUnitario: 5 }],
+      })
+      .expect(200);
+    await api
+      .put(`/api/compras/${compraId}`, ctx.sesion, {
+        proveedorId: ctx.proveedorId,
+        almacenId: ctx.almacenId,
+        lineas: [{ insumoId: ctx.insumoId, cantidad: 15, costoUnitario: 5 }],
+      })
+      .expect(200);
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBe(15);
+
+    await api.post(`/api/compras/${compraId}/anular`, ctx.sesion).expect(200);
+    expect(await stockDe(ctx.sesion, ctx.insumoId)).toBe(0);
+
+    // El kardex conserva todo el historial (append-only): 3 entradas + 3 reversas, ninguna
+    // duplicada — nunca una segunda reversa de -10 ni de -12.
+    expect(await movimientosDe(ctx.sesion, ctx.insumoId)).toEqual([
+      { tipo: 'anulacion_compra', cantidad: 10 },
+      { tipo: 'anulacion_compra', cantidad: 12 },
+      { tipo: 'anulacion_compra', cantidad: 15 },
+      { tipo: 'compra', cantidad: 10 },
+      { tipo: 'compra', cantidad: 12 },
+      { tipo: 'compra', cantidad: 15 },
+    ]);
   });
 });
 

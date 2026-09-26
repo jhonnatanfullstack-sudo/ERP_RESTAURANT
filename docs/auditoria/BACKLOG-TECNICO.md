@@ -326,18 +326,62 @@ Codex certificó `H09 REQUIERE CORRECCIONES` sobre la primera implementación, c
 - **ID:** H11
 - **Prioridad:** P1
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Inventario / Compras
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/inventario/existencia.service.ts` (función `anularEntradasCompra`, líneas 390-414)
   - `apps/backend/src/modules/compras/compra.service.ts` (función `actualizarCompra`, líneas 258-299)
-- **Descripción:** `anularEntradasCompra` reversa **todos** los movimientos de tipo `COMPRA` vinculados al `compra.id`, sin excluir los que ya fueron reversados en una edición anterior. Al editar una compra por segunda vez (o más), la función vuelve a reversar entradas que ya estaban correctamente neutralizadas por la edición previa.
-- **Evidencia encontrada:** Traza matemática verificada directamente sobre el código para la secuencia 10→12→15: tras la primera edición el stock neto es correcto (+12); tras la segunda edición, `anularEntradasCompra` encuentra y reversa **ambas** entradas históricas (`COMPRA +10` de la creación y `COMPRA +12` de la primera edición), dejando un neto final de **+5** en vez de +15 — una corrupción de -10 exactamente igual a la cantidad original, reversada por segunda vez. El error se compone con cada edición adicional (no es un desajuste fijo).
-- **Impacto:** El kardex de inventario (`existencias`) queda corrompido de forma silenciosa y determinística tras la segunda edición de cualquier compra, afectando stock, costeo y reportes derivados. No requiere ningún actor malicioso: se dispara con un flujo de uso normal y explícitamente soportado (editar una compra para corregir un dato).
-- **Escenario reproducible:** Crear una compra con cantidad 10 → editarla a 12 → editarla nuevamente a 15 → consultar el stock resultante del ítem: es +5, no +15.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería que `anularEntradasCompra` excluya los movimientos `COMPRA` que ya tengan una reversa `ANULACION_COMPRA` asociada, o que el flujo de edición identifique y reverse únicamente el conjunto vigente (no histórico) de entradas.
-- **Pruebas necesarias:** Prueba de integración que reproduzca la secuencia de tres ediciones sucesivas (10→12→15) y verifique que el stock final resultante es +15.
-- **Criterio de aceptación:** Editar una compra múltiples veces siempre deja el stock igual a la cantidad de la versión más reciente, sin importar cuántas ediciones haya habido, verificado con prueba automatizada que cubra al menos 3 ediciones sucesivas.
+- **Descripción (hallazgo original):** `anularEntradasCompra` reversa **todos** los movimientos de tipo `COMPRA` vinculados al `compra.id`, sin excluir los que ya fueron reversados en una edición anterior. Al editar una compra por segunda vez (o más), la función vuelve a reversar entradas que ya estaban correctamente neutralizadas por la edición previa.
+- **Evidencia encontrada (hallazgo original):** Traza matemática verificada directamente sobre el código para la secuencia 10→12→15: tras la primera edición el stock neto es correcto (+12); tras la segunda edición, `anularEntradasCompra` encuentra y reversa **ambas** entradas históricas (`COMPRA +10` de la creación y `COMPRA +12` de la primera edición), dejando un neto final de **+5** en vez de +15 — una corrupción de -10 exactamente igual a la cantidad original, reversada por segunda vez. El error se compone con cada edición adicional (no es un desajuste fijo).
+- **Impacto (hallazgo original):** El kardex de inventario (`existencias`) queda corrompido de forma silenciosa y determinística tras la segunda edición de cualquier compra, afectando stock, costeo y reportes derivados. No requiere ningún actor malicioso: se dispara con un flujo de uso normal y explícitamente soportado (editar una compra para corregir un dato).
+- **Escenario reproducible (hallazgo original):** Crear una compra con cantidad 10 → editarla a 12 → editarla nuevamente a 15 → consultar el stock resultante del ítem: es +5, no +15.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería que `anularEntradasCompra` excluya los movimientos `COMPRA` que ya tengan una reversa `ANULACION_COMPRA` asociada, o que el flujo de edición identifique y reverse únicamente el conjunto vigente (no histórico) de entradas.
+- **Pruebas necesarias (hallazgo original):** Prueba de integración que reproduzca la secuencia de tres ediciones sucesivas (10→12→15) y verifique que el stock final resultante es +15.
+- **Criterio de aceptación:** Editar una compra múltiples veces siempre deja el stock igual a la cantidad de la versión más reciente, sin importar cuántas ediciones haya habido, verificado con prueba automatizada que cubra al menos 3 ediciones sucesivas. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+**Causa raíz:** `anularEntradasCompra()` consultaba todas las entradas históricas `COMPRA` de una compra y volvía a reversar entradas ya neutralizadas por ediciones anteriores — el historial de `existencias` es append-only (acumula una fila `COMPRA` por cada alta que tuvo la compra a lo largo de sus ediciones), así que reversar "todo lo que aparezca con `tipo=compra` para este `compra_id`" repetía, en cada edición siguiente, la reversa de entradas que una edición previa ya había neutralizado correctamente.
+
+**Corrección:** la reversión ahora utiliza `compra.detalles`/`compra.almacen` de la versión persistida **inmediatamente anterior** (cargada por el llamador antes de reemplazar los detalles o reasignar el almacén) — nunca el historial de `existencias`. `DetalleCompra` se reemplaza por completo en cada edición (no es append-only), por lo que siempre representa exactamente la última versión vigente.
+
+El kardex se mantiene append-only; para 10→12→15 queda:
+
+```
+COMPRA +10
+ANULACION_COMPRA -10
+COMPRA +12
+ANULACION_COMPRA -12
+COMPRA +15
+```
+
+**Cambio complementario necesario:** en `actualizarCompra`, `manager.save(Compra, compra)` fue sustituido por una actualización explícita de columnas mediante `manager.update(...)`, para impedir que `save()` procesara la relación `detalles` cargada con la versión anterior (desactualizada respecto a los detalles ya reemplazados dos líneas antes), que entraba en conflicto con `detalle_compras.compra_id` (`NOT NULL`). Codex verificó de forma independiente: la equivalencia de todos los campos de cabecera entre el `save()` original y el `update()` nuevo; que `actualizadoEn` se sigue manteniendo; y que no existen hooks/subscribers de TypeORM que dependieran de pasar por `save()` para esta entidad.
+
+##### Evidencia de validación
+
+- `compras.test.ts`: **11/11 PASS** (7 preexistentes + 4 nuevos de H11)
+- `inventario.test.ts`: **6/6 PASS**
+- `costeo.test.ts`: **3/3 PASS**
+- Suite backend completa: **296/296 PASS (32/32 archivos)**
+- typecheck backend: **PASS**
+- build backend: **PASS**
+
+Tests H11 incorporados (`compras.test.ts`): 10→12→15 verificado tras cada paso; cambio de almacén entre ediciones; eliminación de un detalle entre ediciones; anulación de una compra editada varias veces.
+
+#### Certificación Codex
+
+```
+CERTIFICACIÓN CODEX — H11 APROBABLE CON OBSERVACIONES
+BLOCKER: ninguno
+HIGH: ninguno
+MEDIUM: ninguno
+```
+
+**H11-01 (LOW)** — el comentario agregado en `compra.service.ts` alrededor de `manager.update(...)` atribuía a `save()` un "borrado silencioso" por remoción de huérfanos; Codex verificó que en TypeORM 1.1.1 `orphanedRowAction` por defecto es `nullify` y que `DetalleCompra.compra` es `nullable: false`, por lo que esa descripción era imprecisa. Estado: **CORREGIDO antes del commit** — el comentario ahora describe que `save()` procesaría la relación `detalles` desactualizada (sin afirmar un borrado automático) y que eso entra en conflicto con la restricción `NOT NULL`.
+
+**H11-02 (LOW)** — los tests de "cambio de almacén" y "eliminación de detalle" verifican saldos pero no la cardinalidad completa del kardex (a diferencia del test principal 10→12→15, que sí la verifica). Estado: **ACEPTADO — mejora futura no bloqueante.** Los tests principales ya verifican el conjunto/cardinalidad necesaria y Codex certificó la implementación con esta observación como no bloqueante.
+
+**H11-03 (INFO)** — continúa el riesgo preexistente de ediciones concurrentes de `Compra` sin `pessimistic_write` (no introducido ni agravado por esta corrección). Estado: **FUERA DEL ALCANCE DE H11** — no se declara solucionado.
 
 ### H18 — Doble conteo de efectivo en caja
 
