@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { api, catalogos, empresaConProducto, iniciarSesion } from './ayudantes';
+import { ejecutarEnTransaccionPropia } from '../src/database/tenant-context';
+import { ventaRepository } from '../src/modules/ventas/venta.repository';
 import type { Sesion } from './ayudantes';
 
 /**
@@ -15,6 +17,20 @@ function rangoAmplio(): { fechaDesde: string; fechaHasta: string } {
   return {
     fechaDesde: new Date(ahora - 60 * 60 * 1000).toISOString(),
     fechaHasta: new Date(ahora + 60 * 60 * 1000).toISOString(),
+  };
+}
+
+/** Ventana `[ahora + desdeMin, ahora + hastaMin)` en minutos — para construir rangos con una
+ * relación exacta entre sí (idéntico, solapado, contenido) sin depender de la duración real de
+ * la prueba (H20). */
+function ventana(
+  desdeMin: number,
+  hastaMin: number,
+  ahora = Date.now(),
+): { fechaDesde: string; fechaHasta: string } {
+  return {
+    fechaDesde: new Date(ahora + desdeMin * 60_000).toISOString(),
+    fechaHasta: new Date(ahora + hastaMin * 60_000).toISOString(),
   };
 }
 
@@ -179,5 +195,165 @@ describe('Reparto de propinas', () => {
       false,
     );
     await api.get(`/api/propinas/${reparto.body.data.id}`, empresaB.sesion).expect(404);
+  });
+});
+
+/**
+ * H20 — `crearReparto` no verificaba si ya existía un reparto sobre el mismo período o uno que
+ * se superpusiera: `calcularTotalPropinas`/`calcularParticipantes` se limitan a sumar lo que
+ * haya en el rango recibido, sin excluir nada ya repartido. Estos tests reproducen exactamente
+ * los escenarios de solapamiento (idéntico, parcial, contenido), confirman que los rangos
+ * adyacentes bajo semántica `[fechaDesde, fechaHasta)` SÍ deben permitirse, que dos empresas
+ * distintas pueden compartir el mismo rango, y que la defensa resiste una carrera real
+ * (concurrente, no solo secuencial).
+ */
+describe('H20 — un reparto no puede repartir dos veces las mismas propinas', () => {
+  it('RED-1: duplicado exacto del mismo rango se rechaza; solo persiste un reparto', async () => {
+    const { sesion, productoId } = await empresaConProducto();
+    await crearVentaConPropina(sesion, productoId, 10);
+    await abrirYCerrarTurno(sesion);
+
+    const rango = rangoAmplio();
+    await api.post('/api/propinas', sesion, { ...rango, metodo: 'igualitario' }).expect(201);
+
+    const segundo = await api.post('/api/propinas', sesion, { ...rango, metodo: 'igualitario' });
+    expect(segundo.status).toBe(409);
+
+    const listado = await api.get('/api/propinas', sesion).expect(200);
+    expect(listado.body.data).toHaveLength(1);
+  });
+
+  it('RED-2: solapamiento parcial [ , ) con otro reparto existente se rechaza', async () => {
+    const { sesion, productoId } = await empresaConProducto();
+    // `ahora` se captura ANTES de crear la venta/turno, para que su marca de tiempo real caiga
+    // ligeramente DESPUÉS de `ahora` y por lo tanto dentro de r2 (que empieza exactamente en
+    // `ahora`, inclusive) — si se capturara después, el evento real quedaría antes del inicio
+    // de r2 y r2 no vería ninguna propina (falso negativo de la prueba, no del código).
+    const ahora = Date.now();
+    await crearVentaConPropina(sesion, productoId, 10);
+    await abrirYCerrarTurno(sesion);
+
+    const r1 = ventana(-60, 30, ahora); // [-60, 30)
+    const r2 = ventana(0, 90, ahora); // [0, 90) — se solapa con r1 en [0, 30)
+
+    await api.post('/api/propinas', sesion, { ...r1, metodo: 'igualitario' }).expect(201);
+    const segundo = await api.post('/api/propinas', sesion, { ...r2, metodo: 'igualitario' });
+    expect(segundo.status).toBe(409);
+
+    const listado = await api.get('/api/propinas', sesion).expect(200);
+    expect(listado.body.data).toHaveLength(1);
+  });
+
+  it('RED-3: un rango contenido dentro de un reparto existente se rechaza', async () => {
+    const { sesion, productoId } = await empresaConProducto();
+    await crearVentaConPropina(sesion, productoId, 10);
+    await abrirYCerrarTurno(sesion);
+
+    const ahora = Date.now();
+    const r1 = ventana(-60, 60, ahora); // rango amplio
+    const r2 = ventana(-10, 10, ahora); // contenido dentro de r1
+
+    await api.post('/api/propinas', sesion, { ...r1, metodo: 'igualitario' }).expect(201);
+    const segundo = await api.post('/api/propinas', sesion, { ...r2, metodo: 'igualitario' });
+    expect(segundo.status).toBe(409);
+
+    const listado = await api.get('/api/propinas', sesion).expect(200);
+    expect(listado.body.data).toHaveLength(1);
+  });
+
+  it('RED-4: rangos adyacentes [a,b) y [b,c) no se solapan; la venta exacta en el límite pertenece solo al segundo', async () => {
+    const { sesion, productoId, catalogos: cat } = await empresaConProducto();
+
+    // Propina + participante que deben quedar SOLO del lado del primer rango (antes del límite).
+    await crearVentaConPropina(sesion, productoId, 5);
+    await abrirYCerrarTurno(sesion);
+
+    const limite = new Date();
+
+    // Venta creada justo en el límite exacto: se fuerza su `creadoEn` al instante `limite` con
+    // el repositorio tenant-aware (mismo mecanismo de H18-B.1) — la API no permite fijar
+    // `creadoEn` manualmente, y es exactamente ese instante el que se quiere probar.
+    const ventaLimite = await api
+      .post('/api/ventas', sesion, {
+        detalles: [{ productoId, cantidad: 1 }],
+        tipoComprobanteId: cat.boletaId,
+        formaPago: 'contado',
+        medioPagoId: cat.efectivoId,
+        propina: 10,
+      })
+      .expect(201);
+    await ejecutarEnTransaccionPropia(sesion.empresaId, async () => {
+      const venta = await ventaRepository.findOneByOrFail({ id: ventaLimite.body.data.id });
+      venta.creadoEn = limite;
+      await ventaRepository.save(venta);
+    });
+
+    // Participante que debe quedar SOLO del lado del segundo rango (en o después del límite).
+    const sesionMesero = await crearSegundaSesion(sesion, '4444');
+    await abrirYCerrarTurno(sesionMesero);
+
+    const r1 = {
+      fechaDesde: new Date(limite.getTime() - 60 * 60_000).toISOString(),
+      fechaHasta: limite.toISOString(),
+    }; // [limite-60min, limite) — excluye la venta exacta en el límite
+    const r2 = {
+      fechaDesde: limite.toISOString(),
+      fechaHasta: new Date(limite.getTime() + 60 * 60_000).toISOString(),
+    }; // [limite, limite+60min) — incluye la venta exacta en el límite
+
+    const reparto1 = await api
+      .post('/api/propinas', sesion, { ...r1, metodo: 'igualitario' })
+      .expect(201);
+    const reparto2 = await api
+      .post('/api/propinas', sesion, { ...r2, metodo: 'igualitario' })
+      .expect(201);
+
+    // La venta del límite (propina=10) cuenta exclusivamente para r2; r1 solo ve la propina
+    // anterior al límite (5) — confirma que el constraint (EXCLUDE `[)`) y la selección de
+    // ventas (`calcularTotalPropinas`) usan la misma semántica temporal.
+    expect(reparto1.body.data.totalPropinas).toBe(5);
+    expect(reparto2.body.data.totalPropinas).toBe(10);
+
+    const listado = await api.get('/api/propinas', sesion).expect(200);
+    expect(listado.body.data).toHaveLength(2);
+  });
+
+  it('RED-5: dos empresas distintas pueden repartir exactamente el mismo rango sin conflicto', async () => {
+    const empresaA = await empresaConProducto();
+    const empresaB = await empresaConProducto();
+
+    await crearVentaConPropina(empresaA.sesion, empresaA.productoId, 10);
+    await abrirYCerrarTurno(empresaA.sesion);
+    await crearVentaConPropina(empresaB.sesion, empresaB.productoId, 20);
+    await abrirYCerrarTurno(empresaB.sesion);
+
+    const rango = rangoAmplio();
+    const repartoA = await api
+      .post('/api/propinas', empresaA.sesion, { ...rango, metodo: 'igualitario' })
+      .expect(201);
+    const repartoB = await api
+      .post('/api/propinas', empresaB.sesion, { ...rango, metodo: 'igualitario' })
+      .expect(201);
+
+    expect(repartoA.body.data.totalPropinas).toBe(10);
+    expect(repartoB.body.data.totalPropinas).toBe(20);
+  });
+
+  it('RED-6: dos creaciones concurrentes sobre el mismo rango: exactamente una 201 y una 409, un solo reparto en BD', async () => {
+    const { sesion, productoId } = await empresaConProducto();
+    await crearVentaConPropina(sesion, productoId, 10);
+    await abrirYCerrarTurno(sesion);
+
+    const rango = rangoAmplio();
+    const [a, b] = await Promise.all([
+      api.post('/api/propinas', sesion, { ...rango, metodo: 'igualitario' }).then((r) => r),
+      api.post('/api/propinas', sesion, { ...rango, metodo: 'igualitario' }).then((r) => r),
+    ]);
+
+    const estados = [a.status, b.status].sort();
+    expect(estados).toEqual([201, 409]);
+
+    const listado = await api.get('/api/propinas', sesion).expect(200);
+    expect(listado.body.data).toHaveLength(1);
   });
 });

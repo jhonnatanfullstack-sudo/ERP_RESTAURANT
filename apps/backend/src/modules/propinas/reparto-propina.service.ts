@@ -1,4 +1,4 @@
-import { Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { And, LessThan, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { HttpError } from '../../utils/http-error';
 import { enTransaccion } from '../../database/tenant-context';
 import { ventaRepository } from '../ventas/venta.repository';
@@ -28,12 +28,21 @@ interface MontoParticipante {
   monto: number;
 }
 
-/** Suma de `ventas.propina` emitidas dentro del período — mismo criterio que
+/**
+ * Suma de `ventas.propina` emitidas dentro del período — mismo criterio que
  * `caja.service.ts: calcularVentasEfectivo`, pero sobre todas las ventas, no solo en efectivo:
- * la propina no distingue medio de pago. */
+ * la propina no distingue medio de pago.
+ *
+ * H20: el rango es `[desde, hasta)` — `desde` inclusivo, `hasta` exclusivo — nunca
+ * `Between(desde, hasta)` (inclusivo en ambos extremos). Esta semántica tiene que coincidir
+ * exactamente con la del constraint `EXCL_repartos_propinas_solapamiento` (migración
+ * `ExclusionRepartosPropinasSolapados`, `tstzrange(fecha_desde, fecha_hasta, '[)')`): si
+ * difirieran, una venta creada justo en el instante que separa dos repartos adyacentes podría
+ * contarse dos veces (o ninguna) según cuál de las dos reglas se consultara.
+ */
 async function calcularTotalPropinas(desde: Date, hasta: Date): Promise<number> {
   const ventas = await ventaRepository.find({
-    where: { estado: EstadoVenta.EMITIDA, creadoEn: Between(desde, hasta) },
+    where: { estado: EstadoVenta.EMITIDA, creadoEn: And(MoreThanOrEqual(desde), LessThan(hasta)) },
   });
   return Math.round(ventas.reduce((suma, v) => suma + v.propina, 0) * 100) / 100;
 }
@@ -127,11 +136,36 @@ export async function obtenerReparto(id: string): Promise<RepartoPropina> {
   return reparto;
 }
 
+/** Código Postgres para "violación de restricción de exclusión" (`EXCLUDE USING gist`), y el
+ * nombre del constraint que garantiza "sin rangos `[fechaDesde,fechaHasta)` solapados por
+ * empresa" a nivel de base (H20, migración `ExclusionRepartosPropinasSolapados`). Solo ese
+ * constraint específico se traduce a un 409 legible — cualquier otro error de Postgres (incluida
+ * cualquier otra violación de exclusión que no sea esta) se relanza sin modificar, mismo patrón
+ * ya usado en `venta.service.ts`/`proveedor-bootstrap.service.ts` para sus propios constraints. */
+const EXCLUSION_VIOLATION = '23P01';
+const CONSTRAINT_SOLAPAMIENTO_REPARTO = 'EXCL_repartos_propinas_solapamiento';
+
+function esSolapamientoDeReparto(error: unknown): boolean {
+  const driverError = (error as { driverError?: { code?: string; constraint?: string } })
+    ?.driverError;
+  return (
+    driverError?.code === EXCLUSION_VIOLATION &&
+    driverError?.constraint === CONSTRAINT_SOLAPAMIENTO_REPARTO
+  );
+}
+
 /**
  * Registra el reparto: congela el total de propinas y el monto de cada participante en ese
  * momento. No es editable después —mismo criterio que una `Caja` cerrada— porque es un cierre
  * contable: si una venta del período se anula más tarde, no debe alterar un reparto ya
  * entregado al personal.
+ *
+ * H20: la defensa autoritativa contra un reparto que se superponga con uno ya existente vive en
+ * Postgres (`EXCL_repartos_propinas_solapamiento`, sobre `empresa_id` + el rango `[)` de
+ * fechas) — nunca en un `SELECT` previo hecho solo en la aplicación, que dejaría una ventana de
+ * carrera entre dos peticiones concurrentes. Si el `INSERT` de `RepartoPropina` viola ese
+ * constraint, la transacción de la petición queda abortada por Postgres (nada de lo intentado
+ * en este bloque llega a persistirse, ni el reparto ni sus detalles) y se traduce a un 409.
  */
 export async function crearReparto(usuarioId: string, dto: CrearRepartoDto): Promise<RepartoPropina> {
   const totalPropinas = await calcularTotalPropinas(dto.fechaDesde, dto.fechaHasta);
@@ -154,29 +188,40 @@ export async function crearReparto(usuarioId: string, dto: CrearRepartoDto): Pro
 
   const montos = repartir(totalPropinas, participantes, dto.metodo);
 
-  const guardado = await enTransaccion(async (manager) => {
-    const reparto = manager.create(RepartoPropina, {
-      fechaDesde: dto.fechaDesde,
-      fechaHasta: dto.fechaHasta,
-      metodo: dto.metodo,
-      totalPropinas,
-      usuarioRegistro,
-      observacion: dto.observacion ?? null,
+  let guardado: RepartoPropina;
+  try {
+    guardado = await enTransaccion(async (manager) => {
+      const reparto = manager.create(RepartoPropina, {
+        fechaDesde: dto.fechaDesde,
+        fechaHasta: dto.fechaHasta,
+        metodo: dto.metodo,
+        totalPropinas,
+        usuarioRegistro,
+        observacion: dto.observacion ?? null,
+      });
+      const nuevoReparto = await manager.save(RepartoPropina, reparto);
+
+      const detalles = montos.map((m) =>
+        manager.create(DetalleRepartoPropina, {
+          repartoPropina: nuevoReparto,
+          usuario: m.usuario,
+          horasTrabajadas: m.horas,
+          monto: m.monto,
+        }),
+      );
+      await manager.save(DetalleRepartoPropina, detalles);
+
+      return nuevoReparto;
     });
-    const nuevoReparto = await manager.save(RepartoPropina, reparto);
-
-    const detalles = montos.map((m) =>
-      manager.create(DetalleRepartoPropina, {
-        repartoPropina: nuevoReparto,
-        usuario: m.usuario,
-        horasTrabajadas: m.horas,
-        monto: m.monto,
-      }),
-    );
-    await manager.save(DetalleRepartoPropina, detalles);
-
-    return nuevoReparto;
-  });
+  } catch (error) {
+    if (esSolapamientoDeReparto(error)) {
+      throw new HttpError(
+        409,
+        'Ya existe un reparto de propinas que se superpone con el período indicado.',
+      );
+    }
+    throw error;
+  }
 
   return obtenerReparto(guardado.id);
 }

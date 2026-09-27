@@ -496,19 +496,111 @@ Sin `BLOCKER`. Sin `HIGH`.
 - **ID:** H20
 - **Prioridad:** P1
 - **Severidad:** ALTO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Propinas
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/propinas/reparto-propina.service.ts` (líneas 34-39, 136-182)
   - `apps/backend/src/modules/propinas/reparto-propina.entity.ts`
   - `apps/backend/src/database/migrations/1789008000000-RepartoPropinas.ts`
-- **Descripción:** `crearReparto` calcula el total de propinas del período consultando `ventas.propina` por rango de fecha, sin verificar en ningún momento si ya existe un reparto previo sobre ese mismo rango o uno que se superponga. No hay columna de vínculo (`reparto_id`) en `Venta` ni constraint de rango en la migración.
-- **Evidencia encontrada:** `reparto-propina.service.ts:34-39` (cálculo del total, sin exclusión de propinas ya repartidas) y líneas 136-182 (`crearReparto`, sin consulta previa a `repartoPropinaRepository`). La migración `1789008000000-RepartoPropinas.ts` no define ningún `EXCLUDE USING gist` ni índice único sobre rangos de fecha.
-- **Impacto:** Ejecutar el reparto de propinas dos veces sobre fechas iguales o superpuestas duplica el monto entregado al personal, sin ninguna alerta del sistema — pérdida contable directa y real para el restaurante.
-- **Escenario reproducible:** Ejecutar `POST /propinas/repartos` con un rango de fechas → ejecutar el mismo endpoint nuevamente con el mismo rango (o uno superpuesto) → se generan dos repartos independientes por el mismo dinero.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería vincular cada venta/propina repartida a su reparto (o registrar el rango ya cubierto) e impedir la creación de un reparto nuevo sobre fechas ya cubiertas o superpuestas.
-- **Pruebas necesarias:** Prueba de integración que ejecute dos repartos sobre el mismo rango de fechas y verifique que el segundo es rechazado o no duplica el monto entregado.
-- **Criterio de aceptación:** No es posible repartir dos veces las propinas del mismo período (o de períodos superpuestos), verificado con prueba automatizada.
+- **Descripción (hallazgo original):** `crearReparto` calcula el total de propinas del período consultando `ventas.propina` por rango de fecha, sin verificar en ningún momento si ya existe un reparto previo sobre ese mismo rango o uno que se superponga. No hay columna de vínculo (`reparto_id`) en `Venta` ni constraint de rango en la migración.
+- **Evidencia encontrada (hallazgo original):** `reparto-propina.service.ts:34-39` (cálculo del total, sin exclusión de propinas ya repartidas) y líneas 136-182 (`crearReparto`, sin consulta previa a `repartoPropinaRepository`). La migración `1789008000000-RepartoPropinas.ts` no define ningún `EXCLUDE USING gist` ni índice único sobre rangos de fecha.
+- **Impacto (hallazgo original):** Ejecutar el reparto de propinas dos veces sobre fechas iguales o superpuestas duplica el monto entregado al personal, sin ninguna alerta del sistema — pérdida contable directa y real para el restaurante.
+- **Escenario reproducible (hallazgo original):** Ejecutar `POST /propinas/repartos` con un rango de fechas → ejecutar el mismo endpoint nuevamente con el mismo rango (o uno superpuesto) → se generan dos repartos independientes por el mismo dinero.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería vincular cada venta/propina repartida a su reparto (o registrar el rango ya cubierto) e impedir la creación de un reparto nuevo sobre fechas ya cubiertas o superpuestas.
+- **Pruebas necesarias (hallazgo original):** Prueba de integración que ejecute dos repartos sobre el mismo rango de fechas y verifique que el segundo es rechazado o no duplica el monto entregado.
+- **Criterio de aceptación:** Para una misma empresa no pueden persistirse dos repartos cuyos intervalos `[fecha_desde, fecha_hasta)` se solapen, incluso bajo solicitudes concurrentes. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+Se agregó un constraint de PostgreSQL `EXCLUDE USING gist`, llamado `EXCL_repartos_propinas_solapamiento`, sobre `repartos_propinas`:
+
+```sql
+EXCLUDE USING gist (
+  empresa_id WITH =,
+  tstzrange(fecha_desde, fecha_hasta, '[)') WITH &&
+)
+```
+
+Esta es la defensa **autoritativa** (a nivel de base de datos, no solo de aplicación) y evita:
+
+- duplicados exactos del mismo rango;
+- solapamientos parciales;
+- rangos contenidos dentro de uno ya existente;
+- condiciones de carrera concurrentes (Postgres rechaza atómicamente el segundo `INSERT`, sin ventana TOCTOU).
+
+Y explícitamente permite (comportamiento deseado, no un defecto):
+
+- rangos adyacentes (`[a,b)` seguido de `[b,c)`, sin solapamiento bajo esta semántica);
+- el mismo rango exacto repetido en empresas distintas (`empresa_id` forma parte de la exclusión).
+
+`calcularTotalPropinas` (`reparto-propina.service.ts`) adoptó la misma semántica temporal `[desde, hasta)` — `creadoEn >= desde AND creadoEn < hasta` (antes `Between`, inclusivo en ambos extremos) — para que el constraint y la selección de ventas elegibles nunca discrepen en el instante exacto que separa dos repartos adyacentes.
+
+Cuando Postgres rechaza un `INSERT` por este constraint (`SQLSTATE 23P01`, `exclusion_violation`), `crearReparto` lo traduce a `HTTP 409` con un mensaje explícito ("Ya existe un reparto de propinas que se superpone con el período indicado"). Cualquier otro error de Postgres se relanza sin modificar — solo esa combinación exacta de código y nombre de constraint se traduce.
+
+##### Migración
+
+`ExclusionRepartosPropinasSolapados1789017000000` (`apps/backend/src/database/migrations/1789017000000-ExclusionRepartosPropinasSolapados.ts`):
+
+- instala `CREATE EXTENSION IF NOT EXISTS "btree_gist"` (necesaria para el operador de igualdad GiST sobre `uuid` combinado con el rango);
+- ejecuta un preflight con `activarBypassRls` (bypass de RLS global, mismo patrón que `UnicoProveedorGlobal`) que busca pares de `repartos_propinas` de la misma empresa cuyos rangos `[)` ya se solaparan antes del fix;
+- **no elimina, no corrige ni reasigna automáticamente ningún dato histórico**: si encuentra un conflicto, la migración **aborta** con un error descriptivo (nombra los repartos en conflicto) y deja los datos intactos;
+- `down()` elimina únicamente el constraint `EXCL_repartos_propinas_solapamiento` — **no** desinstala `btree_gist` (extensión compartida a nivel de base de datos, igual criterio que `uuid-ossp`).
+
+##### Evidencia RED → GREEN
+
+| Escenario | Resultado certificado |
+|---|---|
+| RED-1 — duplicado exacto | segundo request → `409`; BD = 1 reparto |
+| RED-2 — solapamiento parcial | segundo request → `409`; BD = 1 reparto |
+| RED-3 — rango contenido | segundo request → `409`; BD = 1 reparto |
+| RED-4 — rangos adyacentes `[a,b)`/`[b,c)` | `201`/`201`; totales `5`/`10` (la venta en el instante límite exacto cuenta solo para el segundo rango) |
+| RED-5 — multiempresa, mismo rango exacto | `201`/`201`, empresas independientes sin conflicto |
+| RED-6 — concurrencia real (`Promise.all`, sin mocks) | exactamente `[201, 409]`; BD = 1 reparto |
+
+##### Evidencia de validación
+
+```
+reparto-propinas.test.ts: 13/13 PASS
+caja.test.ts, ventas.test.ts, turnos.test.ts: verificados, sin regresión
+Backend typecheck: PASS
+Backend build: PASS
+```
+
+Suite backend completa: en la implementación, 307/307 PASS. En la **revisión independiente de Codex**, la suite completa dio **306 PASS / 1 FAIL** — el único fallo fue `auditoria-secretos.test.ts` (caso `H02/T08`, `409` por RUC ya registrado), y al ejecutar ese archivo de forma aislada dio `12/12 PASS`. Codex lo clasificó como **contaminación/flakiness preexistente entre archivos de test, no una regresión de H20** (no relacionado con `repartos_propinas`, `Venta` ni el constraint agregado).
+
+##### Verificación directa en PostgreSQL (Codex, `restaurant_erp_test`)
+
+```
+constraint:  EXCL_repartos_propinas_solapamiento
+contype:     x (exclusion)
+extension:   btree_gist 1.8
+
+empresa_id:   uuid
+fecha_desde:  timestamptz
+fecha_hasta:  timestamptz
+```
+
+#### Revisión independiente
+
+```
+CERTIFICACIÓN CODEX — H20 APROBABLE CON OBSERVACIONES
+```
+Sin `BLOCKER`, `HIGH` ni `MEDIUM`.
+
+**H20-01 (LOW)** — RED-4 valida correctamente ventas/propinas en el límite temporal exacto, pero no afirma directamente el comportamiento de participantes/horas trabajadas exactamente en ese límite. No bloquea el cierre.
+
+**H20-02 (LOW)** — la API valida `fechaDesde < fechaHasta` en el DTO, pero PostgreSQL todavía no tiene un `CHECK(fecha_desde < fecha_hasta)` propio en la tabla. No permite duplicar propinas por el flujo HTTP normal y no bloquea H20.
+
+**H20-03 (INFO)** — el preflight de la migración usa `set_config('app.bypass_rls', 'on', true)` y depende de que las migraciones corran en modo transaccional normal (comportamiento por defecto de TypeORM en este proyecto, sin excepciones configuradas). Se documenta que las migraciones oficiales de este proyecto deben seguir ejecutándose con transacciones habilitadas.
+
+**H20-04 (INFO)** — flakiness preexistente en la infraestructura de tests (`auditoria-secretos.test.ts`, colisión de RUC entre archivos) — no pertenece a H20.
+
+##### Riesgos residuales (no son defectos abiertos de H20)
+
+- Una venta anulada después de que su propina ya fue incluida en un reparto no recalcula ese reparto histórico (mismo criterio deliberado que `Caja`, ya documentado como fuera de alcance).
+- No existe ningún flujo HTTP normal que permita "backdatear" `Venta.creadoEn`; solo scripts/acceso directo a la base podrían alterar datos históricos, lo cual queda fuera de la garantía que ofrece H20 (que protege el flujo de aplicación real).
+- La vista previa (`GET /vista-previa`) puede seguir calculando un rango que ya tiene un reparto — el conflicto se detecta recién al confirmar (`POST`), que es el único punto que persiste.
+- Ejecutar la migración manualmente fuera del modo transaccional habitual (si alguna vez se invocara así) podría debilitar la garantía del preflight — ver H20-03.
 
 ### H21 — Auditoría fire-and-forget puede perder registros
 
