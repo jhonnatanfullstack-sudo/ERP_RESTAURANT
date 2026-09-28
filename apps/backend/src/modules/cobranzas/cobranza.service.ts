@@ -109,6 +109,26 @@ function armarVista(venta: Venta, cuotas: CuotaVenta[], pagos: PagoVenta[]): Cob
 }
 
 /**
+ * Monto neto pendiente de una venta al crédito, dado el total del cronograma pactado (H15C-01):
+ * el `Amount` del `PaymentTerms` general de la factura (RS 193-2020/SUNAT, Anexo IV, dato 171)
+ * debe reflejar lo que realmente falta cobrar, no simplemente `sum(CuotaVenta.monto)`. Resta lo
+ * ya cobrado con pagos vigentes, con la misma semántica que `armarVista` (nunca cuenta un pago
+ * anulado) — vive acá y no en `facturacion.service.ts` porque el saldo de una venta al crédito
+ * es, por definición, un cálculo de cobranza, y este módulo ya es su única fuente autoritativa.
+ *
+ * No toca el cronograma pactado: quien llama sigue usando `CuotaVenta` (nunca esta función)
+ * para los bloques `CuotaNNN` — ver `facturacion.service.ts: cargarCuotasPactadas`.
+ */
+export async function calcularMontoPendienteCredito(
+  ventaId: string,
+  totalPactado: number,
+): Promise<number> {
+  const pagos = await pagoVentaRepository.find({ where: { venta: { id: ventaId } } });
+  const pagado = redondear(pagos.filter((p) => !p.anulado).reduce((suma, p) => suma + p.monto, 0));
+  return Math.max(0, redondear(totalPactado - pagado));
+}
+
+/**
  * Cronograma de cuotas de una venta al crédito. Si el cajero no pactó cuotas, se genera una
  * sola por el total: SUNAT exige al menos el detalle de una cuota en un comprobante al
  * crédito, así que "sin cronograma" no es una opción válida.
@@ -289,23 +309,54 @@ export async function registrarPago(
   return obtenerCobranza(ventaId);
 }
 
-/** Anula un cobro mal registrado. La fila se conserva con su motivo (nunca se borra) y el
- * saldo vuelve a subir solo, porque se calcula desde los pagos vigentes. */
+/**
+ * Anula un cobro mal registrado. La fila se conserva con su motivo (nunca se borra) y el
+ * saldo vuelve a subir solo, porque se calcula desde los pagos vigentes.
+ *
+ * Bloquea `Venta` con `pessimistic_write` ANTES de tocar el pago — mismo orden global de locks
+ * que `registrarPago` (este mismo archivo) y `facturacion.service.ts`
+ * (`prepararEmisionInicial`/`prepararReintento`): Venta primero, siempre. Sin esto, una emisión
+ * en curso podía leer `PagoVenta` (para el `Amount` general de crédito, H15C-01) mientras esta
+ * función anulaba ese mismo pago en una transacción sin ningún lock que las coordinara — la
+ * emisión terminaba firmando un XML con un saldo que la anulación, ocurrida a la vez, ya había
+ * dejado obsoleto (H15D-01). Con el lock de Venta compartido, ambas quedan serializadas: cual
+ * quiera que llegue primero termina por completo (commit incluido) antes de que la otra pueda
+ * avanzar.
+ */
 export async function anularPago(pagoId: string, dto: AnularPagoDto): Promise<CobranzaVista> {
-  const pago = await pagoVentaRepository.findOne({
+  // Lectura SIN lock, solo para saber qué Venta bloquear a continuación — informativa, no
+  // autoritativa (mismo patrón que `facturacion.service.ts: prepararReintento`). La relectura
+  // del propio pago, ya bajo el lock de Venta, es la única autoridad.
+  const vista = await pagoVentaRepository.findOne({
     where: { id: pagoId },
     relations: { venta: true },
   });
-  if (!pago) {
+  if (!vista) {
     throw new HttpError(404, 'Pago no encontrado');
   }
-  if (pago.anulado) {
-    throw new HttpError(400, 'El pago ya está anulado');
-  }
+  const ventaId = vista.venta.id;
 
-  pago.anulado = true;
-  pago.motivoAnulacion = dto.motivo;
-  await pagoVentaRepository.save(pago);
+  await enTransaccion(async (manager) => {
+    const venta = await manager.findOne(Venta, {
+      where: { id: ventaId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!venta) {
+      throw new HttpError(404, 'Venta no encontrada');
+    }
 
-  return obtenerCobranza(pago.venta.id);
+    const pago = await manager.findOne(PagoVenta, { where: { id: pagoId } });
+    if (!pago) {
+      throw new HttpError(404, 'Pago no encontrado');
+    }
+    if (pago.anulado) {
+      throw new HttpError(400, 'El pago ya está anulado');
+    }
+
+    pago.anulado = true;
+    pago.motivoAnulacion = dto.motivo;
+    await manager.save(PagoVenta, pago);
+  });
+
+  return obtenerCobranza(ventaId);
 }

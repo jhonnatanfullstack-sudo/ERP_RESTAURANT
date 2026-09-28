@@ -768,19 +768,83 @@ Codex comparó el working tree directamente contra el commit `7b2c85c` y confirm
 - **ID:** H15
 - **Prioridad:** P1
 - **Severidad:** MEDIA-ALTA
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Facturación electrónica
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/facturacion/ubl/factura.builder.ts` (229 líneas, completo)
   - `apps/backend/src/modules/ventas/venta.entity.ts` (columna `forma_pago`)
   - `apps/backend/src/modules/cobranzas/cuota-venta.entity.ts`
-- **Descripción:** El constructor del XML UBL 2.1 de factura no genera ningún nodo `PaymentTerms`/`PaymentMeans` ni referencia alguna a `formaPago`/cuotas, pese a que `Venta.formaPago` distingue `CONTADO`/`CREDITO` y el módulo `cobranzas` modela cuotas reales.
-- **Evidencia encontrada:** Lectura completa de `factura.builder.ts`: los únicos nodos generados son los listados por el auditor (Signature, AccountingSupplierParty/CustomerParty, TaxTotal, LegalMonetaryTotal, InvoiceLine, etc.); ninguno corresponde a condiciones de pago o cuotas.
-- **Impacto:** El XML UBL 2.1 firmado y enviado a SUNAT es idéntico para una venta al contado y una al crédito con cuotas — incumplimiento potencial de la ficha técnica de Factura Electrónica de SUNAT respecto al Catálogo que contempla `PaymentTerms`/`PaymentMeans` para ventas al crédito.
-- **Escenario reproducible:** Emitir un comprobante para una venta con `formaPago: credito` y cuotas registradas en `cobranzas`, e inspeccionar el XML UBL generado: no contiene ninguna referencia a la condición de pago ni al cronograma de cuotas.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería agregar el nodo `PaymentTerms`/`PaymentMeans` al builder cuando `venta.formaPago === CREDITO`, con el detalle de cuotas correspondiente.
-- **Pruebas necesarias:** Prueba unitaria del builder que verifique la presencia y contenido correcto del nodo `PaymentTerms` para una venta al crédito, y su ausencia (o forma correcta) para una venta al contado. El efecto exacto ante el ambiente Beta del OSE requiere prueba dinámica adicional.
-- **Criterio de aceptación:** El XML UBL de una venta al crédito incluye la información de condición de pago/cuotas exigida por el catálogo SUNAT correspondiente, verificado con prueba automatizada.
+- **Descripción (hallazgo original):** El constructor del XML UBL 2.1 de factura no genera ningún nodo `PaymentTerms`/`PaymentMeans` ni referencia alguna a `formaPago`/cuotas, pese a que `Venta.formaPago` distingue `CONTADO`/`CREDITO` y el módulo `cobranzas` modela cuotas reales.
+- **Evidencia encontrada (hallazgo original):** Lectura completa de `factura.builder.ts`: los únicos nodos generados son los listados por el auditor (Signature, AccountingSupplierParty/CustomerParty, TaxTotal, LegalMonetaryTotal, InvoiceLine, etc.); ninguno corresponde a condiciones de pago o cuotas.
+- **Impacto (hallazgo original):** El XML UBL 2.1 firmado y enviado a SUNAT es idéntico para una venta al contado y una al crédito con cuotas — incumplimiento potencial de la ficha técnica de Factura Electrónica de SUNAT respecto al Catálogo que contempla `PaymentTerms`/`PaymentMeans` para ventas al crédito.
+- **Escenario reproducible (hallazgo original):** Emitir un comprobante para una venta con `formaPago: credito` y cuotas registradas en `cobranzas`, e inspeccionar el XML UBL generado: no contiene ninguna referencia a la condición de pago ni al cronograma de cuotas.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería agregar el nodo `PaymentTerms`/`PaymentMeans` al builder cuando `venta.formaPago === CREDITO`, con el detalle de cuotas correspondiente.
+- **Pruebas necesarias (hallazgo original):** Prueba unitaria del builder que verifique la presencia y contenido correcto del nodo `PaymentTerms` para una venta al crédito, y su ausencia (o forma correcta) para una venta al contado. El efecto exacto ante el ambiente Beta del OSE requiere prueba dinámica adicional.
+- **Criterio de aceptación:** El XML UBL de una venta al crédito incluye la información de condición de pago/cuotas exigida por el catálogo SUNAT correspondiente, verificado con prueba automatizada. **Cumplido — ver Resolución implementada.**
+
+#### Resolución implementada
+
+`factura.builder.ts: construirPaymentTerms` genera ahora el bloque `cac:PaymentTerms` exigido por RS 193-2020/SUNAT (Anexo IV, Anexo N.° 9-A "Estándar UBL 2.1", datos 170-173):
+
+- **CONTADO** — un único bloque: `cbc:ID = FormaPago`, `cbc:PaymentMeansID = Contado` (sin `Amount` ni `PaymentDueDate`).
+- **CREDITO** — un bloque general (`cbc:ID = FormaPago`, `cbc:PaymentMeansID = Credito`, `cbc:Amount` = monto neto **realmente** pendiente al momento de la **primera** emisión, no simplemente el cronograma pactado) más un bloque por cada cuota (`PaymentMeansID = CuotaNNN`, `Amount`, `PaymentDueDate`), ordenados de forma determinista por `numero` sin confiar en el orden de entrada.
+
+**Fuentes de datos, deliberadamente separadas:**
+
+- El **cronograma** (`CuotaNNN`, monto e importe de cada cuota) viene exclusivamente de `CuotaVenta` (`facturacion.service.ts: cargarCuotasPactadas`), nunca de `PagoVenta`.
+- El **saldo neto pendiente** del bloque general (H15C-01) es `total pactado (suma de CuotaVenta) − PagoVenta vigente/no anulado`, calculado por `cobranza.service.ts: calcularMontoPendienteCredito` (la misma semántica de saldo que ya usa `armarVista`/`registrarPago`, reutilizada en vez de duplicada) y entregado por `facturacion.service.ts` al builder vía `OpcionesFactura.montoPendienteCredito` — el builder nunca consulta PostgreSQL directamente.
+- **`PagoVenta` nunca se convierte en cuota ni modifica el cronograma pactado**: una cobranza parcial registrada antes de la primera emisión ajusta únicamente el `Amount` del bloque general; los bloques `CuotaNNN` siguen reflejando siempre el cronograma originalmente pactado.
+
+##### Crédito sin cuotas
+
+Una venta `CREDITO` sin ninguna `CuotaVenta` registrada (ej. dato histórico, fila borrada por error) **no genera silenciosamente un XML fiscal incompleto**: `prepararEmisionInicial` la rechaza con `409` antes de firmar, antes de persistir ningún `ComprobanteElectronico` nuevo y antes de llamar al OSE.
+
+##### Concurrencia (H15D-01)
+
+Revisión independiente detectó que `registrarPago`/`prepararEmisionInicial` bloqueaban `Venta` con `pessimistic_write`, pero `anularPago` no bloqueaba nada — permitiendo, conceptualmente, que una anulación de pago modificara el saldo mientras la emisión ya lo había leído para congelar el `Amount` del XML, sin ninguna coordinación entre ambas transacciones.
+
+`anularPago` (`cobranza.service.ts`) pasó a ser transaccional y respeta el mismo orden global de locks ya usado por el resto del módulo: **Venta → PagoVenta**, siempre. Con esto, `registrarPago`, `anularPago` y `prepararEmisionInicial` quedan serializados entre sí para la misma venta. La garantía verificada es **serialización**, no un valor fijo del `Amount`: si la emisión gana el lock primero, su XML puede legítimamente reflejar el saldo de ese instante y la anulación queda a la espera hasta que la emisión confirme; si la anulación gana primero, la emisión calcula el saldo ya actualizado. Lo que la corrección impide es que la anulación modifique el pago **mientras** la emisión todavía sostiene el lock coordinador sin haber confirmado.
+
+##### H13-B / reintentos preservados
+
+H15 no modifica la semántica de H13-B: un reintento válido (`prepararReintento`) sigue reutilizando exactamente el mismo `xmlFirmado`, `hashFirma` y `nombreArchivo` del intento original — nunca reconstruye el XML, nunca recalcula cuotas ni saldo, nunca vuelve a firmar. El cálculo de `montoPendienteCredito` y la carga del cronograma ocurren únicamente durante la **emisión inicial** (`prepararEmisionInicial`); un reintento nunca los ejecuta.
+
+##### Compatibilidad histórica (H15D-02)
+
+Antes de H15, `construirXmlFactura` nunca emitía ningún bloque `cac:PaymentTerms` (confirmado: no existe en ningún commit anterior a este trabajo). Por eso, un `ComprobanteElectronico` en `ERROR_ENVIO` cuyo `xmlFirmado` no contenga la representación H15 esperada de la forma de pago es, con certeza, anterior a H15 — tanto para **CONTADO** como para **CREDITO**. `prepararReintento` bloquea ese reintento con `409` **antes** de incrementar `intentos`, antes de cambiar el estado a `ENVIANDO`, antes de persistir cualquier cambio y antes de llamar al OSE — nunca reconstruye ni refirma el XML histórico (H13-B lo prohíbe). Requiere reconciliación fiscal/operativa manual; **no se define aquí** qué procedimiento fiscal específico debe seguirse después del bloqueo, porque eso no fue parte del alcance técnico de H15.
+
+La verificación (`factura.builder.ts: xmlTienePaymentTermsValido`) es semántica, no una simple búsqueda de texto: reconoce los bloques `PaymentTerms` esperados (`ID`/`PaymentMeansID` para `Contado`, o el bloque general `Credito` más al menos una cuota `CuotaNNN` con `Amount` y `PaymentDueDate`) — ver observación **H15O-02**.
+
+##### Tenant / RLS
+
+`CuotaVenta` y `PagoVenta` se consultan siempre bajo el contexto tenant de la petición (`tenantRepository`/`enTransaccion`, mismo mecanismo que el resto del sistema); no se introdujo ningún bypass de RLS. Una prueba de aislamiento cruzado confirmó que un intento de anular un pago de otra empresa se rechaza sin afectar su saldo.
+
+##### Evidencia de validación
+
+- `factura-payment-terms.test.ts`: **16/16 PASS**
+- Matriz relacionada (`cobranzas.test.ts`, `facturacion.test.ts`, `facturacion-h13b.test.ts`, `facturacion-h13b1.test.ts`, `notas-venta.test.ts` + `factura-payment-terms.test.ts`): **80/80 PASS (6/6 archivos)**
+- Suite backend completa: **325/325 PASS (33/33 archivos)**
+- typecheck backend (src): **PASS**
+- typecheck backend (tests): **PASS**
+- build backend: **PASS**
+- ESLint de los archivos tocados por H15: **PASS**
+
+#### Certificación Codex
+
+```
+CERTIFICACIÓN CODEX — H15 APROBABLE CON OBSERVACIONES
+BLOCKER: ninguno
+HIGH: ninguno
+MEDIUM: ninguno
+```
+
+**H15O-01 (LOW)** — `montoPendienteCredito` sigue siendo opcional en el contrato interno del builder (`OpcionesFactura`), con fallback a `sum(cuotas)` si se omite. Contexto: existe un único llamador productivo (`facturacion.service.ts`) y actualmente siempre proporciona el valor para crédito. No bloquea el cierre.
+
+**H15O-02 (LOW)** — `xmlTienePaymentTermsValido` es un reconocedor conservador/textual del XML generado por el propio sistema, no una validación XSD completa; en particular, su validación podría endurecerse frente a `Amount`/fecha vacíos. Contexto: el XML pre-H15 no contiene `PaymentTerms` y queda bloqueado igual; el XML post-H15 generado por el builder siempre trae los campos completos; no existe ninguna ruta productiva que cargue o edite el XML de forma arbitraria. No bloquea el cierre.
+
+**H15O-03 (INFO)** — la prueba de concurrencia (H15D-01) utiliza una ventana temporal autocalibrada (medida contra una petición de referencia en el propio test) para observar el bloqueo, en vez de un `pg_locks`/introspección directa de Postgres.
+
+**H15O-04 (INFO)** — la fórmula de saldo (`total − PagoVenta vigente`) tiene duplicación parcial entre las vistas de cobranza (`armarVista`) y facturación (`calcularMontoPendienteCredito`), sin divergencia funcional actual observada.
 
 ### H16 — Snapshot fiscal incompleto
 

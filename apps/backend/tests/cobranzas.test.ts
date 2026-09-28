@@ -174,6 +174,60 @@ describe('Cuentas por cobrar: registrar y anular pagos', () => {
     expect(anulado.body.data.pagos[0].anulado).toBe(true);
   });
 
+  // H15D-01/H15D-02: `anularPago` pasó a bloquear `Venta` (pessimistic_write) antes de tocar el
+  // pago — regresiones explícitas del comportamiento que YA existía y no debía cambiar.
+  it('un pago ya anulado no puede anularse de nuevo (H15D-01: regresión tras agregar el lock de Venta)', async () => {
+    const ctx = await empresaConProducto(100);
+    const venta = await ventaAlCredito(ctx);
+
+    const cobrado = await api
+      .post(`/api/cuentas-por-cobrar/${venta.id}/pagos`, ctx.sesion, {
+        fechaPago: '2026-01-15',
+        monto: 40,
+        medioPagoId: ctx.catalogos.efectivoId,
+      })
+      .expect(201);
+    const pagoId = cobrado.body.data.pagos[0].id;
+
+    await api
+      .delete(`/api/pagos-venta/${pagoId}`, ctx.sesion)
+      .send({ motivo: 'Primera anulación' })
+      .expect(200);
+
+    const segundaAnulacion = await api
+      .delete(`/api/pagos-venta/${pagoId}`, ctx.sesion)
+      .send({ motivo: 'Segunda anulación, debe rechazarse' });
+    expect(segundaAnulacion.status).toBe(400);
+
+    const cobranza = await cobranzaDe(ctx, venta.id);
+    expect(cobranza.pagos).toHaveLength(1);
+    expect(cobranza.saldo).toBe(100);
+  });
+
+  it('un pago de otra empresa no puede anularse (H15D-01: regresión tras agregar el lock de Venta)', async () => {
+    const a = await empresaConProducto(100);
+    const b = await empresaConProducto();
+    const ventaDeA = await ventaAlCredito(a);
+
+    const cobrado = await api
+      .post(`/api/cuentas-por-cobrar/${ventaDeA.id}/pagos`, a.sesion, {
+        fechaPago: '2026-01-15',
+        monto: 40,
+        medioPagoId: a.catalogos.efectivoId,
+      })
+      .expect(201);
+    const pagoId = cobrado.body.data.pagos[0].id;
+
+    const intento = await api
+      .delete(`/api/pagos-venta/${pagoId}`, b.sesion)
+      .send({ motivo: 'Intento desde otra empresa' });
+    expect(intento.status).toBe(404);
+
+    const cobranza = await cobranzaDe(a, ventaDeA.id);
+    expect(cobranza.pagos[0].anulado).toBe(false);
+    expect(cobranza.saldo).toBe(60);
+  });
+
   it('no se pueden registrar cobros sobre una venta al contado', async () => {
     const ctx = await empresaConProducto();
     const venta = await api

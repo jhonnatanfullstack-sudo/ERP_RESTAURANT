@@ -9,8 +9,15 @@ import {
 import { cifrar, descifrar, descifrarTexto } from '../../utils/cifrado';
 import { resolverTasaIgv } from '../empresa/igv.service';
 import { ventaRepository } from '../ventas/venta.repository';
-import { EstadoVenta, type Venta } from '../ventas/venta.entity';
-import { construirXmlFactura, nombreArchivo } from './ubl/factura.builder';
+import { EstadoVenta, FormaPago, type Venta } from '../ventas/venta.entity';
+import { cuotaVentaRepository } from '../cobranzas/cobranza.repository';
+import { calcularMontoPendienteCredito } from '../cobranzas/cobranza.service';
+import {
+  construirXmlFactura,
+  nombreArchivo,
+  xmlTienePaymentTermsValido,
+  type CuotaComprobante,
+} from './ubl/factura.builder';
 import { firmarXml } from './firma/firmador';
 import { cargarPkcs12DesdeBuffer } from './firma/certificado';
 import { NubefactOseProvider } from './ose/nubefact-ose.provider';
@@ -167,6 +174,44 @@ interface CredencialesYProveedor {
   credenciales: CredencialesOse;
 }
 
+/**
+ * Cronograma pactado (H15, RS 193-2020/SUNAT, Anexo IV) — únicamente para ventas al crédito, y
+ * únicamente durante la emisión inicial: un reintento (`prepararReintento`) nunca llega a
+ * llamar esta función, porque reutiliza el XML ya firmado tal cual, sin volver a construirlo
+ * (H13-B). Se lee de `CuotaVenta` (el cronograma pactado), nunca de `PagoVenta` (la cobranza
+ * real) — ver el docstring de `CuotaVenta`.
+ *
+ * Una venta al crédito sin ninguna cuota registrada no puede facturarse: el comprobante
+ * quedaría incompleto frente a SUNAT. Se rechaza acá, antes de tocar el certificado, firmar o
+ * llamar al OSE — nunca se inventa una cuota implícita (fecha, monto o Cuota001 de relleno).
+ */
+async function cargarCuotasPactadas(
+  ventaId: string,
+  formaPago: FormaPago,
+): Promise<CuotaComprobante[]> {
+  if (formaPago !== FormaPago.CREDITO) {
+    return [];
+  }
+
+  const cuotas = await cuotaVentaRepository.find({
+    where: { venta: { id: ventaId } },
+    order: { numero: 'ASC' },
+  });
+  if (cuotas.length === 0) {
+    throw new HttpError(
+      409,
+      'Esta venta es al crédito pero no tiene cuotas registradas: no se puede emitir el ' +
+        'comprobante sin su cronograma de pago (RS 193-2020/SUNAT).',
+    );
+  }
+
+  return cuotas.map((cuota) => ({
+    numero: cuota.numero,
+    monto: cuota.monto,
+    fechaVencimiento: cuota.fechaVencimiento,
+  }));
+}
+
 /** Valida que la facturación esté activada y que existan credenciales OSE — sin exigir el
  * certificado, que un reintento no necesita (no vuelve a firmar nada). */
 async function credencialesOseFacturables(): Promise<CredencialesYProveedor> {
@@ -231,6 +276,20 @@ async function prepararEmisionInicial(ventaId: string): Promise<PreparacionOse> 
     throw new HttpError(409, 'Esta venta ya tiene un comprobante electrónico emitido');
   }
 
+  const cuotas = await cargarCuotasPactadas(ventaId, ventaBloqueada.formaPago);
+
+  // Monto neto REALMENTE pendiente (H15C-01) — solo aplica al crédito y solo acá (emisión
+  // inicial): un reintento nunca recalcula esto, reutiliza el XML ya firmado tal cual (H13-B).
+  // `sum(cuotas)` es el cronograma pactado; `calcularMontoPendienteCredito` (cobranza.service.ts,
+  // la fuente autoritativa del saldo) le resta lo ya cobrado con `PagoVenta` vigente.
+  const montoPendienteCredito =
+    ventaBloqueada.formaPago === FormaPago.CREDITO
+      ? await calcularMontoPendienteCredito(
+          ventaId,
+          cuotas.reduce((suma, cuota) => suma + cuota.monto, 0),
+        )
+      : undefined;
+
   const { oseProveedor, credenciales } = await credencialesOseFacturables();
   const config = await configuracionDeLaEmpresa();
   if (!config?.certificadoPfxCifrado || !config.certificadoContrasenaCifrada) {
@@ -252,7 +311,13 @@ async function prepararEmisionInicial(ventaId: string): Promise<PreparacionOse> 
     descifrarTexto(config.certificadoContrasenaCifrada),
   );
   const tasaIgv = await resolverTasaIgv();
-  const xml = construirXmlFactura({ venta, empresa: venta.empresa, tasaIgv });
+  const xml = construirXmlFactura({
+    venta,
+    empresa: venta.empresa,
+    tasaIgv,
+    cuotas,
+    montoPendienteCredito,
+  });
   const { xmlFirmado, hash } = firmarXml(xml, certificado);
   const nombre = nombreArchivo(venta.empresa, venta);
 
@@ -313,6 +378,24 @@ async function prepararReintento(comprobanteId: string): Promise<PreparacionOse>
     // Cubre ENVIANDO/RESULTADO_INCIERTO/ACEPTADO/OBSERVADO/RECHAZADO/PENDIENTE por igual, sin
     // caso especial nuevo — solo ERROR_ENVIO es reintentable.
     throw new HttpError(409, 'Solo se puede reintentar un comprobante en error_envio');
+  }
+
+  // H15C-03/H15D-02: antes de H15, `construirXmlFactura` nunca emitía `<cac:PaymentTerms>` (no
+  // existe en ningún commit previo a este cambio) — así que un `xmlFirmado`, de crédito O de
+  // contado, sin la representación H15 esperada de la forma de pago (RS 193-2020/SUNAT, Anexo
+  // IV) es, con certeza, anterior a H15. H13-B prohíbe reconstruirlo aquí (reutiliza el XML
+  // firmado tal cual, nunca vuelve a firmar), así que no hay forma automática segura de
+  // completarlo: se bloquea y se exige reconciliación fiscal/administrativa explícita, en vez de
+  // reenviar a SUNAT un documento que sabemos incompleto. `xmlTienePaymentTermsValido`
+  // (factura.builder.ts) es la única fuente de esta verificación — fail-closed: cualquier
+  // ambigüedad bloquea, nunca deja pasar por omisión.
+  if (!xmlTienePaymentTermsValido(comprobante.xmlFirmado, ventaBloqueada.formaPago)) {
+    throw new HttpError(
+      409,
+      'Este comprobante es anterior a la representación de forma de pago de PaymentTerms ' +
+        '(H15) y no se puede reintentar automáticamente: requiere reconciliación fiscal manual ' +
+        'antes de reenviarse.',
+    );
   }
 
   const { oseProveedor, credenciales } = await credencialesOseFacturables();
