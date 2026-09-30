@@ -207,6 +207,26 @@ export function ventasEnPeriodo(ventas: Venta[], desde: string, hasta: string | 
   });
 }
 
+/**
+ * Efectivo físico que aportan las ventas al contado en efectivo dentro de un conjunto ya
+ * filtrado por período (`ventasEnPeriodo`) — mismo criterio autoritativo que usa el backend al
+ * cerrar caja (`caja.service.ts: calcularVentasEfectivo`): `venta.total + venta.propina`, no
+ * solo `venta.total`.
+ *
+ * H17: `Caja.tsx` y `ReporteCaja.tsx` recalculaban esto cada uno por su cuenta, inline, y se
+ * desincronizaron del backend (ninguno sumaba `propina`) sin que nada lo detectara. Centralizado
+ * acá para que ambos consuman exactamente el mismo número — no vuelve a incluir el filtro de
+ * fechas, que ya resuelve `ventasEnPeriodo` antes de llegar acá.
+ */
+export function efectivoVentasContado(ventas: Venta[]): number {
+  return sumar(
+    ventas.filter(
+      (v) => v.formaPago === 'contado' && v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO,
+    ),
+    (v) => v.total + v.propina,
+  );
+}
+
 /** Cobros en efectivo de ventas al crédito dentro del período de la sesión — plata que entra
  * físicamente al cajón igual que una venta al contado (ver `caja.service.ts:
  * calcularPagosCreditoEfectivo`, mismo criterio del lado del backend). */

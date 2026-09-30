@@ -30,7 +30,7 @@ import { KpiCard } from '../components/ui/KpiCard';
 import { Panel } from '../components/ui/Panel';
 import { GraficoDona } from '../components/charts/GraficoDona';
 import {
-  CODIGO_MEDIO_PAGO_EFECTIVO,
+  efectivoVentasContado,
   pagosEfectivoEnPeriodo,
   segmentosMedioPago,
   ventasEnPeriodo,
@@ -504,10 +504,9 @@ export function Caja() {
     : [];
   // H18: una venta al crédito no mueve el cajón en el momento de crearla (el dinero real entra
   // después, vía cobranza) — mismo criterio que `caja.service.ts: calcularVentasEfectivo` en el
-  // backend, que es la fuente autoritativa; esto solo recalcula lo mismo para la vista en vivo.
-  const efectivoVentasTurno = ventasSesion
-    .filter((v) => v.formaPago === 'contado' && v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO)
-    .reduce((suma, v) => suma + v.total, 0);
+  // backend, que es la fuente autoritativa; `efectivoVentasContado` (H17) recalcula exactamente
+  // lo mismo (incluida la propina) para la vista en vivo.
+  const efectivoVentasTurno = efectivoVentasContado(ventasSesion);
   const segmentosPagoSesion = segmentosMedioPago(ventasSesion);
   // Cobros de deudas (ventas al crédito) pagados en efectivo durante la sesión: mismo criterio
   // que `efectivoVentasTurno`, pero mirando `cobranzasQuery` en vez de `ventasQuery` — es

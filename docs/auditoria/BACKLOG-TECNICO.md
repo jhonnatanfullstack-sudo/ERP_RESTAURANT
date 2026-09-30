@@ -477,19 +477,103 @@ Sin `BLOCKER`. Sin `HIGH`.
 - **ID:** H17
 - **Prioridad:** P1
 - **Severidad:** MEDIO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Caja
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/caja/caja.service.ts` (función `calcularVentasEfectivo`)
   - `apps/frontend/src/pages/Caja.tsx` (`efectivoVentasTurno`)
   - `apps/frontend/src/pages/ReporteCaja.tsx` (`efectivoVentas`)
-- **Descripción:** El backend calcula el efectivo de las ventas al contado como `venta.total + venta.propina`, mientras que `Caja.tsx` y `ReporteCaja.tsx` calculan la misma métrica únicamente como `venta.total`, sin sumar la propina.
-- **Evidencia encontrada:** Detectado durante la investigación y corrección de H18 (revisión independiente de Codex, observación H18-OBS-02). `caja.service.ts`: `ventas.reduce((suma, venta) => suma + venta.total + venta.propina, 0)`. `Caja.tsx`/`ReporteCaja.tsx`: `.reduce((suma, v) => suma + v.total, 0)` — sin `v.propina` en ninguno de los dos.
-- **Impacto:** Cuando una venta al contado en efectivo tiene propina, la interfaz en vivo (`Caja.tsx`) y el reporte impreso (`ReporteCaja.tsx`) pueden mostrar un efectivo esperado **menor** al monto autoritativo que calcula y congela el backend al cerrar la caja — el cajero vería un número distinto en pantalla del que finalmente se usa para determinar la diferencia del arqueo.
-- **Escenario reproducible:** Registrar una venta al contado en efectivo con propina → comparar el "efectivo esperado" mostrado en vivo en `Caja.tsx` (o en `ReporteCaja.tsx`) contra el `montoEsperado` que devuelve `POST /api/cajas/:id/cerrar` para la misma sesión: no coinciden en el monto de la propina.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería que `Caja.tsx`/`ReporteCaja.tsx` sumen también `v.propina`, igualando el criterio ya usado por el backend (fuente autoritativa).
-- **Pruebas necesarias:** Prueba (backend y/o frontend) que registre una venta al contado en efectivo con propina y verifique que backend y frontend reconcilian exactamente el mismo efectivo esperado.
-- **Criterio de aceptación:** El efectivo esperado que muestra la pantalla en vivo y el reporte impreso de caja coincide exactamente, en todos los casos, con el `montoEsperado` autoritativo que calcula y congela el backend — incluyendo ventas con propina.
+- **Descripción (hallazgo original):** El backend calcula el efectivo de las ventas al contado como `venta.total + venta.propina`, mientras que `Caja.tsx` y `ReporteCaja.tsx` calculan la misma métrica únicamente como `venta.total`, sin sumar la propina.
+- **Evidencia encontrada (hallazgo original):** Detectado durante la investigación y corrección de H18 (revisión independiente de Codex, observación H18-OBS-02). `caja.service.ts`: `ventas.reduce((suma, venta) => suma + venta.total + venta.propina, 0)`. `Caja.tsx`/`ReporteCaja.tsx`: `.reduce((suma, v) => suma + v.total, 0)` — sin `v.propina` en ninguno de los dos.
+- **Impacto (hallazgo original):** Cuando una venta al contado en efectivo tiene propina, la interfaz en vivo (`Caja.tsx`) y el reporte impreso (`ReporteCaja.tsx`) pueden mostrar un efectivo esperado **menor** al monto autoritativo que calcula y congela el backend al cerrar la caja — el cajero vería un número distinto en pantalla del que finalmente se usa para determinar la diferencia del arqueo.
+- **Escenario reproducible (hallazgo original):** Registrar una venta al contado en efectivo con propina → comparar el "efectivo esperado" mostrado en vivo en `Caja.tsx` (o en `ReporteCaja.tsx`) contra el `montoEsperado` que devuelve `POST /api/cajas/:id/cerrar` para la misma sesión: no coinciden en el monto de la propina.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería que `Caja.tsx`/`ReporteCaja.tsx` sumen también `v.propina`, igualando el criterio ya usado por el backend (fuente autoritativa).
+- **Pruebas necesarias (hallazgo original):** Prueba (backend y/o frontend) que registre una venta al contado en efectivo con propina y verifique que backend y frontend reconcilian exactamente el mismo efectivo esperado.
+- **Criterio de aceptación:** El efectivo esperado que muestra la pantalla en vivo y el reporte impreso de caja coincide exactamente, en todos los casos, con el `montoEsperado` autoritativo que calcula y congela el backend — incluyendo ventas con propina. **Cumplido para los consumidores productivos actuales (`Caja.tsx`, `ReporteCaja.tsx`) — ver Resolución implementada.**
+
+#### Resolución implementada
+
+**Causa raíz:** el backend autoritativo (`caja.service.ts: calcularVentasEfectivo`) ya calculaba correctamente las ventas al contado en efectivo como `venta.total + venta.propina`, pero `Caja.tsx` y `ReporteCaja.tsx` recalculaban la misma métrica cada uno por su cuenta, inline, usando únicamente `venta.total` — sin la propina. Esto provocaba una subestimación frontend equivalente exactamente al importe de la propina. Ejemplo probado: venta con `total=100`, `propina=10` → backend `110`, frontend (antes) `100`.
+
+**Semántica confirmada (sin alterar):**
+
+- `Venta.total` **excluye** la propina y representa el importe fiscal de la venta.
+- `Venta.propina` se almacena por separado; no forma parte de `subtotal`/`igv`/`total` fiscal.
+- Para una venta **CONTADO + efectivo**, la propina forma parte del efectivo físico recibido. No se afirma que toda propina sea necesariamente efectivo — una propina de una venta con tarjeta, por ejemplo, no mueve el cajón.
+
+**Cambio implementado:** se introdujo `efectivoVentasContado(...)` en `apps/frontend/src/utils/metricas.ts`. Este helper filtra `CONTADO`, filtra medio de pago `efectivo`, y suma `total + propina` sobre ese subconjunto. `Caja.tsx` y `ReporteCaja.tsx` consumen ahora este mismo helper, eliminando la duplicación que originó H17.
+
+**Pipeline de estado y fechas (arquitectura vigente):**
+
+```
+ventasEnPeriodo(...)  →  efectivoVentasContado(...)
+```
+
+`ventasEnPeriodo` restringe a ventas `emitida` y aplica el rango temporal de la sesión. `efectivoVentasContado` recibe ese conjunto ya filtrado, aplica CONTADO + efectivo, y suma `total + propina` — **no filtra estado internamente**; esa es responsabilidad exclusiva de `ventasEnPeriodo`, llamado siempre antes por sus dos consumidores productivos (ver observación **H17D-01**).
+
+**`Caja.tsx`:** `efectivoVentasTurno` se obtiene ahora mediante `efectivoVentasContado(ventasSesion)`, donde `ventasSesion` proviene previamente de `ventasEnPeriodo(...)`. La pantalla en vivo utiliza así el mismo importe financiero que el backend para este concepto.
+
+**`ReporteCaja.tsx`:** la fila "+ Ventas al contado en efectivo" usa el helper corregido. Para una caja **abierta**, el total esperado reconstruido utiliza ese valor. Para una caja **cerrada**, `caja.montoEsperado` sigue siendo el total autoritativo ya persistido por el backend (sin cambios) — el desglose ahora es coherente con ese total en el caso que H17 reportaba.
+
+##### Regresiones validadas
+
+| Caso | Escenario | Resultado |
+|---|---|---|
+| A | CONTADO + efectivo, propina 0 | 100 |
+| B | CONTADO + efectivo, propina 10 | 110 |
+| C | CONTADO + tarjeta | no entra |
+| D | CREDITO | no entra |
+| E | Venta anulada (vía `ventasEnPeriodo` → `efectivoVentasContado`) | excluida |
+| F | Mezcla de ventas | solo aportan las CONTADO + efectivo, cada una con su propia propina |
+
+##### Interacción con H18
+
+H17 **no reabre H18**. Se mantiene intacto: la venta al crédito sigue fuera del cálculo de ventas en efectivo, `medioPago = null` para crédito, la cobranza posterior se sigue contabilizando mediante `PagoVenta` (`calcularPagosCreditoEfectivo`, sin modificar), y no hay doble conteo.
+
+##### Interacción con H20
+
+H17 **no modifica H20**. No se tocaron el reparto de propinas, sus locks, sus exclusiones ni el cálculo del pool en el backend (`reparto-propina.service.ts`). El helper de H17 es exclusivamente frontend, del cálculo de efectivo de Caja.
+
+##### Limitación de modelo — CREDITO + propina (no forma parte de esta corrección)
+
+Una venta `CREDITO` puede persistir `propina`, pero el modelo actual no representa explícitamente cuándo se cobra esa propina ni mediante qué medio. Las cuotas, el saldo y la cobranza se basan en `venta.total`, sin ningún vínculo con `propina`. Esta limitación es **preexistente**: H17 no la introduce ni la empeora. Su resolución, si se decide abordarla, requeriría un diseño separado — no se inventa ninguna solución aquí.
+
+##### Evidencia de validación
+
+RED original:
+
+```
+Expected: 110
+Received: 100
+```
+
+Después de la corrección:
+
+- `ReporteCaja.test.tsx`: **1/1 PASS**
+- `metricas.test.ts`: **6/6 PASS**
+- H17 conjunta: **2 archivos, 7 tests, PASS**
+- Suite frontend completa: **5 archivos, 19 tests, PASS**
+- ESLint (`Caja.tsx`, `ReporteCaja.tsx`, `metricas.ts`, `ReporteCaja.test.tsx`, `metricas.test.ts`): **PASS**
+- TypeScript frontend: **FAIL únicamente** por `apps/frontend/src/routes/AppRoutes.tsx(50,1)` (`TS6133`, `LoginPage` declarado y no utilizado) — **preexistente, no introducido por H17** (mismo error ya documentado como ajeno en H13-B/H14/H18/H20); H17 no agrega ningún error TypeScript nuevo.
+- Warning `Not implemented: Window's scrollTo()` (jsdom) observado durante la suite: **ajeno a H17**.
+
+#### Certificación Codex
+
+```
+H17 APROBABLE CON OBSERVACIONES
+```
+
+Sin `BLOCKER`, `HIGH` ni `MEDIUM` atribuibles a H17-B. No se detectaron defectos funcionales de H17 en los pipelines productivos actuales.
+
+**H17D-01 (LOW)** — `efectivoVentasContado` no filtra internamente `estado === 'emitida'`. Hoy no produce ningún defecto porque sus dos consumidores productivos (`Caja.tsx`, `ReporteCaja.tsx`) siempre le pasan el resultado de `ventasEnPeriodo(...)`, que ya excluye ventas anuladas/no emitidas. Riesgo: un consumidor futuro podría llamar directamente al helper con una venta anulada incluida. Recomendación futura: hacer el helper autosuficiente respecto al estado, o reforzar su contrato/nombre para hacer explícita la precondición. No corregido en esta fase; no se eleva a P1.
+
+**H17D-02 (INFO)** — `ReporteCaja.test.tsx` conserva título/comentarios que describen en presente la conducta antigua (100). La expectativa real de la prueba (110) es correcta y detecta la regresión sin ambigüedad. Impacto exclusivamente de mantenibilidad/documentación del propio test; no se corrige en esta fase ni se convierte en hallazgo independiente.
+
+**H17D-03 (INFO)** — frontend y backend operan con `Number` (no un tipo decimal exacto) para estas sumas. No es una divergencia introducida por H17 ni un defecto de H17.
+
+##### Criterio de aceptación
+
+Cumplido: la pantalla en vivo y el reporte de caja utilizan ahora el mismo criterio funcional que el backend para ventas **emitidas + CONTADO + efectivo + (total + propina)**, dentro del pipeline actual (`ventasEnPeriodo` → `efectivoVentasContado`). No se afirma ninguna garantía más allá de esos consumidores (ver **H17D-01**).
 
 ### H20 — Reparto duplicable de propinas
 

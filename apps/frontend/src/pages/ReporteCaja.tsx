@@ -9,7 +9,7 @@ import { Button } from '../components/ui/Button';
 import { Spinner } from '../components/ui/Spinner';
 import { Badge } from '../components/ui/Badge';
 import {
-  CODIGO_MEDIO_PAGO_EFECTIVO,
+  efectivoVentasContado,
   pagosEfectivoEnPeriodo,
   segmentosMedioPago,
   ventasEnPeriodo,
@@ -40,8 +40,8 @@ const ETIQUETA_TIPO_MOVIMIENTO: Record<'ingreso' | 'egreso', string> = {
  * Funciona tanto para una sesión ya cerrada (con `montoEsperado`/`montoDeclarado`/`diferencia`
  * ya congelados por el backend) como para la sesión **abierta** en curso — un corte antes de
  * decidir cerrar, calculado en vivo con el mismo criterio que la vista previa de `Caja.tsx`
- * (`ventasEnPeriodo`/`pagosEfectivoEnPeriodo` en `utils/metricas.ts`, para que el papel nunca
- * diga algo distinto de lo que decía la pantalla).
+ * (`ventasEnPeriodo`/`efectivoVentasContado`/`pagosEfectivoEnPeriodo` en `utils/metricas.ts`,
+ * para que el papel nunca diga algo distinto de lo que decía la pantalla).
  */
 export function ReporteCaja() {
   const { id = '' } = useParams<{ id: string }>();
@@ -80,9 +80,8 @@ export function ReporteCaja() {
   const ventasSesion = ventasEnPeriodo(ventasQuery.data ?? [], caja.creadoEn, caja.fechaCierre);
   // H18: una venta al crédito no mueve el cajón en el momento de crearla — mismo criterio que
   // `caja.service.ts: calcularVentasEfectivo` (fuente autoritativa) y que `Caja.tsx`.
-  const efectivoVentas = ventasSesion
-    .filter((v) => v.formaPago === 'contado' && v.medioPago?.codigo === CODIGO_MEDIO_PAGO_EFECTIVO)
-    .reduce((suma, v) => suma + v.total, 0);
+  // `efectivoVentasContado` (H17) incluye la propina, igual que el backend.
+  const efectivoVentas = efectivoVentasContado(ventasSesion);
   const pagosCreditoEfectivo = pagosEfectivoEnPeriodo(
     cobranzasQuery.data ?? [],
     caja.creadoEn,
