@@ -9,9 +9,11 @@ import { AppDataSource } from '../src/database/data-source';
 import { api, empresaConProducto } from './ayudantes';
 import type { ResultadoOse } from '../src/modules/facturacion/ose/ose-provider.interface';
 import type { Venta } from '../src/modules/ventas/venta.entity';
-import type { Empresa } from '../src/modules/empresa/empresa.entity';
 import type { DetalleVenta } from '../src/modules/ventas/detalle-venta.entity';
-import type { CuotaComprobante } from '../src/modules/facturacion/ubl/factura.builder';
+import type {
+  CuotaComprobante,
+  DatosEmpresaFiscal,
+} from '../src/modules/facturacion/ubl/factura.builder';
 import type { QueryRunner } from 'typeorm';
 
 /**
@@ -71,14 +73,17 @@ import type { QueryRunner } from 'typeorm';
 
 const TASA_IGV = 0.18;
 
-function empresaFixture(): Empresa {
+/** H16: estas fixtures aisladas del builder ya construyen directamente el `DatosEmpresaFiscal`
+ * resuelto (nunca una `Empresa` completa) — es exactamente lo que `facturacion.service.ts`
+ * (`resolverDatosEmpresaFiscal`) le entrega hoy al builder real. */
+function empresaFiscalFixture(): DatosEmpresaFiscal {
   return {
     ruc: '20123456789',
     razonSocial: 'RESTAURANTE DE PRUEBA SAC',
     nombreComercial: 'RESTAURANTE DE PRUEBA',
     ubigeo: '150101',
     direccionFiscal: 'AV. DE PRUEBA 123',
-  } as unknown as Empresa;
+  };
 }
 
 function detalleFixture(): DetalleVenta {
@@ -125,7 +130,7 @@ function bloquesPaymentTerms(xml: string): string[] {
 describe('H15 — PaymentTerms UBL 2.1 en factura.builder.ts (RS 193-2020/SUNAT, Anexo IV)', () => {
   it('H15-RED-01: venta CONTADO — un único PaymentTerms con FormaPago/Contado, sin Amount ni PaymentDueDate', () => {
     const venta = ventaFixture({ formaPago: FormaPago.CONTADO });
-    const xml = construirXmlFactura({ venta, empresa: empresaFixture(), tasaIgv: TASA_IGV, cuotas: [] });
+    const xml = construirXmlFactura({ venta, empresaFiscal: empresaFiscalFixture(), clienteFiscal: null, tasaIgv: TASA_IGV, cuotas: [] });
 
     const bloques = bloquesPaymentTerms(xml);
     expect(bloques).toHaveLength(1);
@@ -142,7 +147,7 @@ describe('H15 — PaymentTerms UBL 2.1 en factura.builder.ts (RS 193-2020/SUNAT,
     // `CuotaVenta` para `numeroCuotas=1`.
     const venta = ventaFixture({ formaPago: FormaPago.CREDITO, total: 100 });
     const cuotas: CuotaComprobante[] = [{ numero: 1, monto: 100, fechaVencimiento: '2026-10-15' }];
-    const xml = construirXmlFactura({ venta, empresa: empresaFixture(), tasaIgv: TASA_IGV, cuotas });
+    const xml = construirXmlFactura({ venta, empresaFiscal: empresaFiscalFixture(), clienteFiscal: null, tasaIgv: TASA_IGV, cuotas });
 
     const bloques = bloquesPaymentTerms(xml);
     // Dato 171 (general Credito) + datos 172/173 (Cuota001) = 2 bloques.
@@ -176,7 +181,7 @@ describe('H15 — PaymentTerms UBL 2.1 en factura.builder.ts (RS 193-2020/SUNAT,
       { numero: 1, monto: 33.33, fechaVencimiento: '2026-10-15' },
       { numero: 2, monto: 33.33, fechaVencimiento: '2026-11-15' },
     ];
-    const xml = construirXmlFactura({ venta, empresa: empresaFixture(), tasaIgv: TASA_IGV, cuotas });
+    const xml = construirXmlFactura({ venta, empresaFiscal: empresaFiscalFixture(), clienteFiscal: null, tasaIgv: TASA_IGV, cuotas });
 
     const bloques = bloquesPaymentTerms(xml);
     // 1 general (Credito) + 3 cuotas = 4 bloques.
@@ -206,7 +211,7 @@ describe('H15 — PaymentTerms UBL 2.1 en factura.builder.ts (RS 193-2020/SUNAT,
       { numero: 2, monto: 33.33, fechaVencimiento: '2026-11-15' },
       { numero: 3, monto: 33.35, fechaVencimiento: '2026-12-15' },
     ];
-    const xml = construirXmlFactura({ venta, empresa: empresaFixture(), tasaIgv: TASA_IGV, cuotas });
+    const xml = construirXmlFactura({ venta, empresaFiscal: empresaFiscalFixture(), clienteFiscal: null, tasaIgv: TASA_IGV, cuotas });
 
     const bloques = bloquesPaymentTerms(xml);
     expect(bloques.length).toBeGreaterThan(0); // si esto falla, ver RED-02/03 primero.

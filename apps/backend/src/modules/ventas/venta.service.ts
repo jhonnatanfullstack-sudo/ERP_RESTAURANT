@@ -1,8 +1,9 @@
 import type { EntityManager } from 'typeorm';
-import { enTransaccion } from '../../database/tenant-context';
+import { empresaIdActual, enTransaccion } from '../../database/tenant-context';
 import { HttpError } from '../../utils/http-error';
 import { pedidoRepository } from '../pedidos/pedido.repository';
 import { EstadoPedido } from '../pedidos/pedido.entity';
+import { empresaRepository } from '../empresa/empresa.repository';
 import { clienteRepository } from '../clientes/cliente.repository';
 import { productoRepository } from '../productos/producto.repository';
 import { usuarioRepository } from '../usuarios/usuario.repository';
@@ -119,7 +120,13 @@ async function resolverCliente(
   }
 
   if (!clienteId) return null;
-  const cliente = await clienteRepository.findOneBy({ id: clienteId });
+  // H16: se necesita `tipoDocumentoIdentidad.codigo` para el snapshot fiscal del receptor
+  // (`snapshotClienteTipoDocumentoCodigo`) — mismo criterio que ya carga el camino de factura
+  // de arriba, sin volver a consultar Cliente dos veces.
+  const cliente = await clienteRepository.findOne({
+    where: { id: clienteId },
+    relations: { tipoDocumentoIdentidad: true },
+  });
   if (!cliente) {
     throw new HttpError(400, 'El cliente indicado no existe', ['clienteId inválido']);
   }
@@ -442,6 +449,11 @@ export async function crearVenta(usuarioId: string, dto: CrearVentaDto): Promise
 
   const tipoComprobante = await resolverTipoComprobante(dto.tipoComprobanteId);
   const cliente = await resolverCliente(dto.clienteId, tipoComprobante);
+  // H16: snapshot fiscal de Empresa al momento de esta venta (ver `snapshotFiscal` más abajo) —
+  // se resuelve acá, junto con el resto de las relaciones, dentro de la misma transacción de la
+  // petición (`tenantRepository`, sin bypass de RLS); no hace falta esperar a `intentarGuardar`
+  // porque es una lectura, no algo que deshacer si la venta termina fallando.
+  const empresa = await empresaRepository.findOneByOrFail({ id: empresaIdActual() });
   const tipoOperacion = await resolverTipoOperacion(dto.tipoOperacionId);
   const formaPago = dto.formaPago ?? FormaPago.CONTADO;
   const medioPago = await resolverMedioPago(dto.medioPagoId, formaPago);
@@ -485,6 +497,27 @@ export async function crearVenta(usuarioId: string, dto: CrearVentaDto): Promise
         total: lineas.total,
         propina: dto.propina ?? 0,
         tipoCambio: tipoCambio?.venta ?? null,
+        // H16 — snapshot fiscal: congela los mismos 10 campos que `factura.builder.ts` usa
+        // hoy de las relaciones vivas `empresa`/`cliente`, en el mismo instante en que la
+        // venta se crea (atómico con el resto de esta transacción). `snapshotFiscalVersion=1`
+        // marca que esta fila tiene contrato H16 completo — `facturacion.service.ts` nunca
+        // vuelve a leer `empresa`/`cliente` en vivo para una venta marcada así.
+        snapshotFiscalVersion: 1,
+        snapshotEmpresaRuc: empresa.ruc,
+        snapshotEmpresaRazonSocial: empresa.razonSocial,
+        snapshotEmpresaNombreComercial: empresa.nombreComercial,
+        snapshotEmpresaUbigeo: empresa.ubigeo,
+        snapshotEmpresaDireccionFiscal: empresa.direccionFiscal,
+        snapshotClienteTipoDocumentoCodigo: cliente?.tipoDocumentoIdentidad?.codigo ?? null,
+        snapshotClienteNumeroDocumento: cliente?.numeroDocumento ?? null,
+        snapshotClienteRazonSocial: cliente?.razonSocial ?? null,
+        snapshotClienteNombres: cliente?.nombres ?? null,
+        snapshotClienteApellidos: cliente?.apellidos ?? null,
+        // H16D-01 (revisión Codex) — la misma `tasaIgv` ya resuelta arriba y usada para
+        // calcular `subtotal`/`igv`/`total`/cada `DetalleVenta.igv`: se reutiliza tal cual
+        // (nunca se vuelve a derivar) para que el `<cbc:Percent>` del XML de la primera
+        // emisión siempre sea coherente con los importes que ya congeló esta misma venta.
+        snapshotTasaIgv: tasaIgv,
       });
       const ventaGuardada = await manager.save(Venta, venta);
 

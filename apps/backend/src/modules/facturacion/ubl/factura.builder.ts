@@ -1,6 +1,5 @@
 import { cantidad, escaparXml, fechaEmision, horaEmision, monto, montoEnLetras } from './xml.util';
 import { FormaPago } from '../../ventas/venta.entity';
-import type { Empresa } from '../../empresa/empresa.entity';
 import type { Venta } from '../../ventas/venta.entity';
 import type { DetalleVenta } from '../../ventas/detalle-venta.entity';
 
@@ -34,9 +33,14 @@ export function numeroFormateado(venta: Venta): string {
   return `${venta.serie}-${String(venta.numero).padStart(8, '0')}`;
 }
 
-/** Nombre normativo del archivo y del ZIP: `RUC-TIPO-SERIE-CORRELATIVO`. */
-export function nombreArchivo(empresa: Empresa, venta: Venta): string {
-  return `${empresa.ruc}-${venta.tipoComprobante.codigo}-${venta.serie}-${venta.numero}`;
+/**
+ * Nombre normativo del archivo y del ZIP: `RUC-TIPO-SERIE-CORRELATIVO`. Recibe el RUC ya
+ * resuelto (H16: `DatosEmpresaFiscal.ruc`, no `Empresa` directamente) para que el nombre del
+ * archivo use siempre el mismo RUC que declara el contenido del XML — nunca uno vivo y el otro
+ * histórico.
+ */
+export function nombreArchivo(rucEmpresa: string, venta: Venta): string {
+  return `${rucEmpresa}-${venta.tipoComprobante.codigo}-${venta.serie}-${venta.numero}`;
 }
 
 function construirLinea(detalle: DetalleVenta, indice: number, tasaIgv: number): string {
@@ -115,15 +119,39 @@ function construirTotalesImpuestos(detalles: DetalleVenta[]): string {
   }).join('\n');
 }
 
+/**
+ * Datos fiscales efectivos del emisor (H16) — ya resueltos por `facturacion.service.ts` antes
+ * de llamar a este builder: snapshot congelado al momento de la venta (`snapshotFiscalVersion
+ * = 1`) o, para una venta legacy sin ese contrato, los datos vivos de `Empresa` como
+ * compatibilidad best-effort. El builder nunca decide cuál de las dos fuentes usar — solo
+ * serializa lo que recibe.
+ */
+export interface DatosEmpresaFiscal {
+  ruc: string;
+  razonSocial: string;
+  nombreComercial: string | null;
+  ubigeo: string | null;
+  direccionFiscal: string | null;
+}
+
+/** Mismo criterio que `DatosEmpresaFiscal`, para el receptor. `null` cuando la venta no tiene
+ * cliente identificado (boleta a "CLIENTE VARIOS") — no es un caso de error. */
+export type DatosClienteFiscal = {
+  tipoDocumentoCodigo: string | null;
+  numeroDocumento: string | null;
+  razonSocial: string | null;
+  nombres: string | null;
+  apellidos: string | null;
+} | null;
+
 /** Datos del receptor. Una boleta a consumidor final puede ir sin cliente identificado, y en
  * ese caso SUNAT acepta tipo de documento `0` con número `-`. */
-function construirCliente(venta: Venta): string {
-  const cliente = venta.cliente;
-  const tipoDoc = cliente?.tipoDocumentoIdentidad?.codigo ?? '0';
-  const numeroDoc = cliente?.numeroDocumento ?? '-';
+function construirCliente(clienteFiscal: DatosClienteFiscal): string {
+  const tipoDoc = clienteFiscal?.tipoDocumentoCodigo ?? '0';
+  const numeroDoc = clienteFiscal?.numeroDocumento ?? '-';
   const nombre =
-    cliente?.razonSocial ??
-    `${cliente?.nombres ?? ''} ${cliente?.apellidos ?? ''}`.trim() ??
+    clienteFiscal?.razonSocial ??
+    `${clienteFiscal?.nombres ?? ''} ${clienteFiscal?.apellidos ?? ''}`.trim() ??
     'CLIENTE VARIOS';
 
   return `  <cac:AccountingCustomerParty>
@@ -157,7 +185,12 @@ export interface CuotaComprobante {
 
 interface OpcionesFactura {
   venta: Venta;
-  empresa: Empresa;
+  /** Datos fiscales efectivos del emisor (H16) — resueltos por `facturacion.service.ts`
+   * (snapshot congelado o, para legacy, la `Empresa` vigente), nunca la entidad `Empresa`
+   * directamente: este builder no decide snapshot-vs-vivo. */
+  empresaFiscal: DatosEmpresaFiscal;
+  /** Datos fiscales efectivos del receptor (H16) — mismo criterio que `empresaFiscal`. */
+  clienteFiscal: DatosClienteFiscal;
   /** Tasa efectiva aplicada a la venta (0.18 general, 0.105 régimen MYPE de restaurantes).
    * Se pasa desde afuera porque depende de la empresa y ya la resolvió `venta.service`. */
   tasaIgv: number;
@@ -287,7 +320,8 @@ export function xmlTienePaymentTermsValido(xmlFirmado: string, formaPago: FormaP
  */
 export function construirXmlFactura({
   venta,
-  empresa,
+  empresaFiscal,
+  clienteFiscal,
   tasaIgv,
   cuotas,
   montoPendienteCredito,
@@ -315,13 +349,13 @@ export function construirXmlFactura({
   <cbc:Note languageLocaleID="1000"><![CDATA[${montoEnLetras(venta.total)}]]></cbc:Note>
   <cbc:DocumentCurrencyCode>${MONEDA}</cbc:DocumentCurrencyCode>
   <cac:Signature>
-    <cbc:ID>${escaparXml(empresa.ruc)}</cbc:ID>
+    <cbc:ID>${escaparXml(empresaFiscal.ruc)}</cbc:ID>
     <cac:SignatoryParty>
       <cac:PartyIdentification>
-        <cbc:ID>${escaparXml(empresa.ruc)}</cbc:ID>
+        <cbc:ID>${escaparXml(empresaFiscal.ruc)}</cbc:ID>
       </cac:PartyIdentification>
       <cac:PartyName>
-        <cbc:Name><![CDATA[${empresa.razonSocial}]]></cbc:Name>
+        <cbc:Name><![CDATA[${empresaFiscal.razonSocial}]]></cbc:Name>
       </cac:PartyName>
     </cac:SignatoryParty>
     <cac:DigitalSignatureAttachment>
@@ -333,18 +367,18 @@ export function construirXmlFactura({
   <cac:AccountingSupplierParty>
     <cac:Party>
       <cac:PartyIdentification>
-        <cbc:ID schemeID="6" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${escaparXml(empresa.ruc)}</cbc:ID>
+        <cbc:ID schemeID="6" schemeName="Documento de Identidad" schemeAgencyName="PE:SUNAT" schemeURI="urn:pe:gob:sunat:cpe:see:gem:catalogos:catalogo06">${escaparXml(empresaFiscal.ruc)}</cbc:ID>
       </cac:PartyIdentification>
       <cac:PartyName>
-        <cbc:Name><![CDATA[${empresa.nombreComercial ?? empresa.razonSocial}]]></cbc:Name>
+        <cbc:Name><![CDATA[${empresaFiscal.nombreComercial ?? empresaFiscal.razonSocial}]]></cbc:Name>
       </cac:PartyName>
       <cac:PartyLegalEntity>
-        <cbc:RegistrationName><![CDATA[${empresa.razonSocial}]]></cbc:RegistrationName>
+        <cbc:RegistrationName><![CDATA[${empresaFiscal.razonSocial}]]></cbc:RegistrationName>
         <cac:RegistrationAddress>
-          <cbc:ID>${escaparXml(empresa.ubigeo ?? '')}</cbc:ID>
+          <cbc:ID>${escaparXml(empresaFiscal.ubigeo ?? '')}</cbc:ID>
           <cbc:AddressTypeCode>0000</cbc:AddressTypeCode>
           <cac:AddressLine>
-            <cbc:Line><![CDATA[${empresa.direccionFiscal ?? '-'}]]></cbc:Line>
+            <cbc:Line><![CDATA[${empresaFiscal.direccionFiscal ?? '-'}]]></cbc:Line>
           </cac:AddressLine>
           <cac:Country>
             <cbc:IdentificationCode>PE</cbc:IdentificationCode>
@@ -353,7 +387,7 @@ export function construirXmlFactura({
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingSupplierParty>
-${construirCliente(venta)}
+${construirCliente(clienteFiscal)}
 ${construirPaymentTerms(venta, cuotas, montoPendienteCredito)}
   <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${MONEDA}">${monto(venta.igv)}</cbc:TaxAmount>

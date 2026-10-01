@@ -935,20 +935,121 @@ MEDIUM: ninguno
 - **ID:** H16
 - **Prioridad:** P1
 - **Severidad:** MEDIO
-- **Estado:** PENDIENTE
+- **Estado:** RESUELTO
 - **Módulo afectado:** Facturación electrónica / Empresa / Clientes
-- **Archivos implicados:**
+- **Archivos implicados (hallazgo original):**
   - `apps/backend/src/modules/facturacion/facturacion.service.ts` (líneas 26-32, 180-183)
   - `apps/backend/src/modules/empresa/empresa.entity.ts`
   - `apps/backend/src/modules/clientes/cliente.entity.ts`
   - `apps/backend/src/modules/facturacion/ubl/factura.builder.ts` (función `construirCliente`, líneas 119-138; bloque `AccountingSupplierParty`, líneas 194-216)
-- **Descripción:** Al emitir un comprobante, `facturacion.service.ts` carga los datos de `Empresa` y `Cliente` **actuales** al momento de la emisión (que puede ocurrir días o semanas después de la venta, por diseño), en vez de usar un snapshot histórico correspondiente al momento de la venta. Nota: para `Producto`/`tipoAfectacionIgv` esto **no** aplica — `DetalleVenta` sí guarda snapshot propio, confirmado por evidencia directa (falso positivo descartado para ese campo).
-- **Evidencia encontrada:** `facturacion.service.ts:180-183` — la consulta de la venta para emitir incluye relaciones en vivo a `empresa` y `cliente`; no existe ninguna tabla de snapshot histórico de esos datos vinculada a `Venta`.
-- **Impacto:** Si entre la venta y la emisión del comprobante se edita la razón social/dirección de la Empresa, o el nombre/documento del Cliente, el XML UBL reflejará los datos nuevos en vez de los vigentes al momento histórico de la venta — riesgo de comprobantes legales con datos fiscales incorrectos respecto al momento que representan.
-- **Escenario reproducible:** Crear una venta con un cliente → editar la razón social de ese cliente → emitir el comprobante de la venta original: el XML UBL refleja la razón social nueva, no la vigente al momento de la venta.
-- **Solución conceptual:** No implementada en esta tarea. Conceptualmente correspondería guardar un snapshot de los datos fiscales relevantes de Empresa y Cliente en el momento de crear la venta, similar al patrón ya usado en `DetalleVenta` para Producto.
-- **Pruebas necesarias:** Prueba de integración que edite Empresa/Cliente entre la creación de la venta y la emisión del comprobante, y verifique qué datos aparecen en el XML resultante.
-- **Criterio de aceptación:** El comprobante electrónico refleja los datos fiscales de Empresa y Cliente vigentes al momento de la venta, no los actuales al momento de la emisión, verificado con prueba automatizada.
+- **Descripción (hallazgo original):** Al emitir un comprobante, `facturacion.service.ts` carga los datos de `Empresa` y `Cliente` **actuales** al momento de la emisión (que puede ocurrir días o semanas después de la venta, por diseño), en vez de usar un snapshot histórico correspondiente al momento de la venta. Nota: para `Producto`/`tipoAfectacionIgv` esto **no** aplica — `DetalleVenta` sí guarda snapshot propio, confirmado por evidencia directa (falso positivo descartado para ese campo).
+- **Evidencia encontrada (hallazgo original):** `facturacion.service.ts:180-183` — la consulta de la venta para emitir incluye relaciones en vivo a `empresa` y `cliente`; no existe ninguna tabla de snapshot histórico de esos datos vinculada a `Venta`.
+- **Impacto (hallazgo original):** Si entre la venta y la emisión del comprobante se edita la razón social/dirección de la Empresa, o el nombre/documento del Cliente, el XML UBL reflejará los datos nuevos en vez de los vigentes al momento histórico de la venta — riesgo de comprobantes legales con datos fiscales incorrectos respecto al momento que representan.
+- **Escenario reproducible (hallazgo original):** Crear una venta con un cliente → editar la razón social de ese cliente → emitir el comprobante de la venta original: el XML UBL refleja la razón social nueva, no la vigente al momento de la venta.
+- **Solución conceptual (hallazgo original):** No implementada en esta tarea. Conceptualmente correspondería guardar un snapshot de los datos fiscales relevantes de Empresa y Cliente en el momento de crear la venta, similar al patrón ya usado en `DetalleVenta` para Producto.
+- **Pruebas necesarias (hallazgo original):** Prueba de integración que edite Empresa/Cliente entre la creación de la venta y la emisión del comprobante, y verifique qué datos aparecen en el XML resultante.
+- **Criterio de aceptación:** El comprobante electrónico refleja los datos fiscales de Empresa y Cliente vigentes al momento de la venta, no los actuales al momento de la emisión, verificado con prueba automatizada. **Cumplido — ver Resolución implementada.** Acotado: para ventas creadas bajo `snapshotFiscalVersion=1`, la primera emisión usa datos fiscales históricos congelados al crear la venta; para ventas legacy pre-H16, compatibilidad best-effort sin garantía retroactiva (el dato histórico real ya no es reconstruible).
+
+#### Resolución implementada
+
+**Causa raíz:** la `Venta` ya congelaba correlativo, fecha, importes y detalle de productos (`DetalleVenta`), pero no congelaba los datos fiscales de `Empresa`/`Cliente`: la primera emisión cargaba esas dos relaciones **en vivo**. Durante la implementación (H16-B) se descubrió además que la tasa IGV del XML (`<cbc:Percent>`) también dependía de `Empresa.acogidoRegimenMypeRestaurantes` **actual**, pese a que los importes de `DetalleVenta` ya estaban congelados a la tasa histórica. Por tanto, una modificación posterior de Empresa o Cliente podía alterar emisor, receptor, RUC, denominación, dirección, ubigeo o la tasa IGV declarada, sin alterar en absoluto los importes ya congelados de la venta — una inconsistencia fiscal interna dentro del mismo documento.
+
+**Snapshot fiscal versionado:** `Venta.snapshotFiscalVersion` — `NULL` (venta legacy, anterior a H16) o `1` (venta protegida por H16); cualquier otro valor es inválido y se rechaza explícitamente (nunca se determina legacy por la sola presencia/ausencia de columnas snapshot individuales, porque varios campos son legítimamente opcionales incluso con el contrato H16 completo).
+
+**Snapshot de Empresa** (5 campos + tasa): `ruc`, `razonSocial`, `nombreComercial`, `ubigeo`, `direccionFiscal`, y `snapshotTasaIgv` — la tasa **efectiva** realmente aplicada a esa venta, no el booleano `acogidoRegimenMypeRestaurantes` (un booleano no habría bastado para reconstruir el `Percent` del XML sin volver a derivar la tasa desde la Empresa viva).
+
+**Snapshot de Cliente** (5 campos): código de tipo de documento, número de documento, razón social, nombres, apellidos — exactamente los que el XML actual consume. No incluye `email`/`teléfono`/`dirección` de Cliente porque el XML no los usa.
+
+**Snapshot de tasa IGV:** `snapshotTasaIgv`, `numeric(5,4)`. La misma tasa resuelta una sola vez al crear la venta (`venta.service.ts: crearVenta`) alimenta las líneas, el IGV, el subtotal, el total, cada `DetalleVenta` **y** `snapshotTasaIgv` — no existe una segunda resolución que pudiera divergir. En la emisión de una venta H16, el XML usa exclusivamente esta tasa snapshot.
+
+##### Migración
+
+`1789018000000-SnapshotFiscalVenta.ts` agrega 12 columnas a `ventas` (5 de Empresa, 5 de Cliente, 1 de versión, 1 de tasa) más el constraint `CHK_ventas_snapshot_fiscal_version CHECK (snapshot_fiscal_version IS NULL OR snapshot_fiscal_version = 1)`. Sin backfill: no se copiaron datos actuales de Empresa/Cliente a filas existentes fingiendo que fueran históricos — el dato real de esas ventas ya no es reconstruible con certeza.
+
+##### Ventas nuevas
+
+Toda venta creada mediante el flujo productivo `crearVenta` recibe `snapshotFiscalVersion = 1` y captura los 12 campos dentro de la misma transacción que crea la venta (Empresa/Cliente se leen una sola vez cada uno, sin consultas redundantes). Su primera emisión usa exclusivamente ese snapshot — nunca vuelve a leer las relaciones vivas para reconstruir sus datos fiscales.
+
+##### Ventas legacy
+
+Las ventas anteriores a H16 quedan con `snapshotFiscalVersion = NULL` y sin ninguna garantía histórica retroactiva (el dato real pudo perderse antes de esta corrección). Su primera emisión sigue usando las relaciones actuales de Empresa/Cliente como compatibilidad best-effort, exactamente como funcionaba antes de H16. No se les fabrica snapshot tardío ni se promueven automáticamente a `snapshotFiscalVersion = 1` en ningún flujo. Este comportamiento **no se presenta como históricamente exacto** — es continuidad operativa, documentada como tal en el propio código.
+
+##### Fail-closed Empresa
+
+Una venta `snapshotFiscalVersion = 1` falla cerrado (antes de generar XML, firmar, persistir comprobante o llamar al OSE) si falta `ruc` o `razonSocial` del snapshot (los dos únicos campos obligatorios en `Empresa` misma), o si `snapshotTasaIgv` es `NULL` o no es una de las tasas realmente soportadas. No existe fallback a la Empresa actual para una venta H16.
+
+##### Fail-closed Cliente
+
+La existencia histórica de un cliente se determina por el FK inmutable de la propia venta (`venta.cliente`, fijado al crearla, nunca reasignado después) — nunca por la nulabilidad de las columnas snapshot. Para un cliente real: debe existir denominación (razón social o nombres), tipo y número de documento deben ser ambos presentes o ambos ausentes, y para FACTURA se exige específicamente tipo RUC (`6`) con número presente (mismo contrato que ya exige `resolverCliente` al crear la venta, sin inventar una regla más estricta). Un snapshot corrupto produce error, sin llamar al OSE y sin persistir comprobante — nunca se degrada a consumidor final.
+
+##### Boleta sin cliente
+
+Una boleta sin cliente real identificado sigue siendo un caso legítimo (tipo de documento `0`, número `-`, "CLIENTE VARIOS") — comportamiento preexistente, sin cambios. Es un caso explícitamente distinto de una venta que **sí** tenía cliente real con snapshot corrupto (ver Fail-closed Cliente arriba).
+
+##### Versión desconocida
+
+Defensa en profundidad: un `CHECK` de PostgreSQL (`CHK_ventas_snapshot_fiscal_version`) y una validación explícita en el service, ambas con la misma regla — `NULL` (legacy) o `1` (H16) son los únicos valores válidos; cualquier otro se rechaza sin ningún fallback silencioso a legacy.
+
+##### `factura.builder.ts` desacoplado
+
+El builder recibe `empresaFiscal`, `clienteFiscal` y la tasa IGV efectiva ya resueltos, y únicamente los serializa — no decide snapshot-vs-legacy, no consulta Empresa/Cliente por sí mismo.
+
+##### Nombre de archivo
+
+Para una venta H16, `nombreArchivo` usa el RUC del snapshot — el mismo que declara el contenido del XML, nunca uno histórico y otro vivo dentro del mismo comprobante. Para legacy, usa el RUC vivo (best-effort). En un reintento, se reutiliza exactamente el nombre ya persistido del intento original.
+
+##### H13 preservado
+
+`PREPARAR → COMMIT ANTICIPADO → OSE → FINALIZAR` permanece intacto. Los tres fail-closed de H16 (versión desconocida, Empresa/tasa, Cliente) ocurren dentro de `prepararEmisionInicial`, siempre antes de construir XML, firmar, persistir comprobante, incrementar intentos o llamar al OSE. Un reintento (`prepararReintento`) nunca resuelve snapshot ni tasa nueva, nunca reconstruye XML, nunca refirma, y reutiliza exactamente `xmlFirmado`/`hashFirma`/`nombreArchivo` del intento original — confirmado sin cambios en el código de `prepararReintento`/`cargarCuotasPactadas`/`xmlTienePaymentTermsValido`.
+
+##### H15 preservado
+
+Sin cambios funcionales en `PaymentTerms`, `CuotaVenta`, `PagoVenta`, saldo pendiente ni cronograma pactado. `factura-payment-terms.test.ts` únicamente adaptó sus fixtures aisladas del builder (nuevo parámetro `empresaFiscal`/`clienteFiscal` en vez de `empresa`/`venta.cliente`, consecuencia directa del desacople del builder) — sus 16 casos mantienen exactamente sus expectativas originales.
+
+##### Producto
+
+H16 no amplió su alcance a Producto: `DetalleVenta` ya conservaba snapshot propio de los datos económicos/productivos relevantes (`descripcionProducto`, `precioUnitario`, `valorVenta`, `igv`, `subtotal`), confirmado por evidencia directa durante la investigación — el falso positivo del backlog original queda descartado con certeza.
+
+##### Evidencia RED original
+
+Cliente: esperado `HISTORICO CLIENTEUNO`, recibido antes del fix `RENOMBRADO CLIENTEDOS`. Empresa: esperado `EMPRESA HISTORICA SAC`, recibido antes `EMPRESA RENOMBRADA SAC` (y `AV NUEVA 200` en vez de `AV HISTORICA 100`). Ambos tests originales eran RED antes de H16-B.
+
+##### Evidencia de validación
+
+- `snapshot-fiscal.test.ts`: **10/10 PASS** — Cliente mutado (nombre + tipo/número de documento), Empresa completa mutada (razón social/nombre comercial/dirección/ubigeo), RUC/`nombreArchivo`, régimen IGV mutado, legacy, Empresa corrupta (fail-closed), boleta con Cliente corrupto (fail-closed), factura con tipo de documento corrupto (fail-closed), CHECK de base de datos, y versión desconocida en la lógica del service.
+- Suites relacionadas (`ventas.test.ts`, `facturacion.test.ts`, `facturacion-h13b.test.ts`, `facturacion-h13b1.test.ts`, `factura-payment-terms.test.ts` + el propio `snapshot-fiscal.test.ts`): **6 archivos, 76/76 PASS**.
+- Suite backend completa: **34 archivos, 335/335 PASS**.
+- TypeScript backend (src): **PASS**. TypeScript backend (tests): **PASS**.
+- Build backend: **PASS**.
+- ESLint de los siete archivos H16 tocados: **PASS**.
+
+##### Migración validada
+
+`UP` → PASS, `DOWN` → PASS, `UP` nuevamente → PASS, verificado manualmente sobre una base de datos de prueba aislada (`restaurant_erp_test_migcheck`, creada y destruida solo para esta verificación). No se afirma que esta migración se haya ejecutado sobre producción.
+
+#### Certificación Codex
+
+```
+H16 APROBABLE CON OBSERVACIONES
+```
+
+- H16D-01 (HIGH): **CERRADO**
+- H16D-02 (MEDIUM): **CERRADO**
+- H16D-03 (LOW): **CERRADO**
+- H16D-04 (LOW): **RESIDUAL** — ver abajo.
+- H16D-05 (INFO): **CERRADO**
+
+Sin `BLOCKER`, `HIGH` ni `MEDIUM` abiertos.
+
+**H16D-04 (LOW, residual)** — Empresa, Cliente y la tasa IGV se leen en consultas separadas bajo `READ COMMITTED` al crear la venta; existe una ventana estrecha en la que una actualización concurrente de Empresa o Cliente podría producir una fotografía híbrida entre esas dos lecturas. La tasa y los importes sí permanecen coherentes entre sí porque reutilizan la misma variable ya resuelta (ver "Snapshot de tasa IGV" arriba). No bloquea el cierre de H16. Recomendación futura: definir un instante lógico único o aplicar locking/aislamiento adicional si el dominio llegara a exigir una fotografía estrictamente simultánea.
+
+**H16D-06 (LOW)** — el test de versión desconocida (`snapshot-fiscal.test.ts`) retira temporalmente el `CHECK` de la base de pruebas y lo reinstala con `NOT VALID`, dejando para el resto de esa base de datos de test: el constraint sin revalidar y una fila con `snapshotFiscalVersion=2` inválida. Impacto exclusivamente de higiene/aislamiento de la base de datos de pruebas — no afecta producción ni el comportamiento de H16. Recomendación: envolver la operación en `finally`, restaurar la fila a un valor válido y ejecutar `VALIDATE CONSTRAINT` al terminar. No se convierte en hallazgo P1 nuevo.
+
+**H16D-07 (INFO)** — el test del `CHECK` de PostgreSQL usa `rejects.toThrow()` genérico, sin comprobar explícitamente el `SQLSTATE` (`23514`) ni el nombre del constraint. La evidencia actual es suficiente para el cierre; queda como mejora futura de especificidad. No se convierte en hallazgo nuevo.
+
+**Riesgo conocido — legacy:** las ventas legacy siguen dependiendo de datos vivos de Empresa/Cliente en su primera emisión, deliberadamente, porque no existe ninguna fuente histórica confiable para reconstruirlas. No se presenta como un fallo de H16-B.1.
+
+**Observación — RUC y certificado:** un cambio legal de RUC de la Empresa puede dejar una venta histórica cuyo `snapshotEmpresaRuc` deba, en algún reintento futuro, firmarse o tramitarse con credenciales/certificado OSE **actuales** (asociados al RUC vigente, no al histórico) — un desacople operativo entre el dato fiscal congelado y las credenciales técnicas vivas. H16 nunca snapshotea certificados, claves OSE, usuario, contraseña, endpoint ni ambiente (son credenciales técnicas actuales, no datos históricos del cuerpo UBL). No se clasifica como defecto de H16-B.1.
 
 ---
 

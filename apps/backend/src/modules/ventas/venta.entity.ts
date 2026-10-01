@@ -131,6 +131,109 @@ export class Venta {
   @Column({ type: 'enum', enum: EstadoVenta, default: EstadoVenta.EMITIDA })
   estado!: EstadoVenta;
 
+  /**
+   * H16 — marca si esta venta tiene snapshot fiscal propio (Empresa/Cliente congelados al
+   * momento de crearla) o no. `null` en toda venta creada ANTES de esta migración ("legacy"):
+   * su dato histórico real ya no es reconstruible, así que no se le asigna `1` con un backfill
+   * que fingiría un histórico que no existe (ver `venta.service.ts`/`facturacion.service.ts`).
+   * `1` en toda venta creada a partir de este contrato: sus columnas `snapshotEmpresa*`/
+   * `snapshotCliente*` de abajo son la única fuente válida para facturarla, nunca la relación
+   * viva `empresa`/`cliente`. No se deriva de si alguna columna snapshot es `null`, porque
+   * varios campos (`nombreComercial`, `direccionFiscal`, todo `Cliente`) son legítimamente
+   * opcionales incluso en una venta con contrato H16 completo.
+   *
+   * Solo `null` o `1` son valores válidos — la migración agrega un `CHECK` de Postgres que lo
+   * exige (H16D-03, revisión Codex), y `facturacion.service.ts` lo vuelve a exigir
+   * explícitamente antes de emitir (fail-closed, no confía únicamente en el `CHECK`): cualquier
+   * otro valor nunca debe tratarse como legacy.
+   */
+  @Column({ name: 'snapshot_fiscal_version', type: 'smallint', nullable: true })
+  snapshotFiscalVersion!: number | null;
+
+  /** Snapshot de `Empresa` al momento de crear la venta (H16) — mismos 5 campos que
+   * `factura.builder.ts` consume hoy de la relación viva (`ruc`, `razonSocial`,
+   * `nombreComercial`, `ubigeo`, `direccionFiscal`). `ruc`/`razonSocial` son obligatorios en
+   * `Empresa` misma, pero la columna sigue siendo nullable acá porque toda venta legacy
+   * (`snapshotFiscalVersion = null`) no tiene ninguno de estos valores. */
+  @Column({ name: 'snapshot_empresa_ruc', type: 'varchar', length: 11, nullable: true })
+  snapshotEmpresaRuc!: string | null;
+
+  @Column({
+    name: 'snapshot_empresa_razon_social',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  snapshotEmpresaRazonSocial!: string | null;
+
+  @Column({
+    name: 'snapshot_empresa_nombre_comercial',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  snapshotEmpresaNombreComercial!: string | null;
+
+  @Column({ name: 'snapshot_empresa_ubigeo', type: 'varchar', length: 255, nullable: true })
+  snapshotEmpresaUbigeo!: string | null;
+
+  @Column({
+    name: 'snapshot_empresa_direccion_fiscal',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  snapshotEmpresaDireccionFiscal!: string | null;
+
+  /** Snapshot de `Cliente` al momento de crear la venta (H16) — mismos 5 campos que
+   * `factura.builder.ts: construirCliente` consume hoy de la relación viva. Todos nullable
+   * incluso con `snapshotFiscalVersion = 1`: una venta puede legítimamente no tener cliente
+   * identificado (boleta a "CLIENTE VARIOS"), igual que hoy `venta.cliente` puede ser `null`. */
+  @Column({
+    name: 'snapshot_cliente_tipo_documento_codigo',
+    type: 'varchar',
+    length: 2,
+    nullable: true,
+  })
+  snapshotClienteTipoDocumentoCodigo!: string | null;
+
+  @Column({
+    name: 'snapshot_cliente_numero_documento',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  snapshotClienteNumeroDocumento!: string | null;
+
+  @Column({
+    name: 'snapshot_cliente_razon_social',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  snapshotClienteRazonSocial!: string | null;
+
+  @Column({ name: 'snapshot_cliente_nombres', type: 'varchar', length: 150, nullable: true })
+  snapshotClienteNombres!: string | null;
+
+  @Column({ name: 'snapshot_cliente_apellidos', type: 'varchar', length: 150, nullable: true })
+  snapshotClienteApellidos!: string | null;
+
+  /** Tasa IGV EFECTIVA usada para calcular `subtotal`/`igv`/`total` de esta venta y cada
+   * `DetalleVenta.igv` (H16D-01, revisión Codex) — nunca `Empresa.acogidoRegimenMypeRestaurantes`
+   * (un booleano no basta para reconstruir el `<cbc:Percent>` del XML sin volver a derivar la
+   * tasa desde la Empresa VIVA, que es justamente el problema que este snapshot evita). Mismo
+   * criterio de nullabilidad que el resto: `null` en toda venta legacy. */
+  @Column({
+    name: 'snapshot_tasa_igv',
+    type: 'numeric',
+    precision: 5,
+    scale: 4,
+    nullable: true,
+    transformer: numericTransformer,
+  })
+  snapshotTasaIgv!: number | null;
+
   @OneToMany(() => DetalleVenta, (detalle) => detalle.venta)
   detalles!: DetalleVenta[];
 

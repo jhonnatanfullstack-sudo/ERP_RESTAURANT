@@ -7,16 +7,23 @@ import {
   contextoActual,
 } from '../../database/tenant-context';
 import { cifrar, descifrar, descifrarTexto } from '../../utils/cifrado';
-import { resolverTasaIgv } from '../empresa/igv.service';
+import {
+  resolverTasaIgv,
+  TASA_IGV_GENERAL,
+  TASA_IGV_MYPE_RESTAURANTES,
+} from '../empresa/igv.service';
 import { ventaRepository } from '../ventas/venta.repository';
 import { EstadoVenta, FormaPago, type Venta } from '../ventas/venta.entity';
 import { cuotaVentaRepository } from '../cobranzas/cobranza.repository';
 import { calcularMontoPendienteCredito } from '../cobranzas/cobranza.service';
+import { CODIGO_FACTURA } from '../catalogos/codigos-sunat';
 import {
   construirXmlFactura,
   nombreArchivo,
   xmlTienePaymentTermsValido,
   type CuotaComprobante,
+  type DatosClienteFiscal,
+  type DatosEmpresaFiscal,
 } from './ubl/factura.builder';
 import { firmarXml } from './firma/firmador';
 import { cargarPkcs12DesdeBuffer } from './firma/certificado';
@@ -169,6 +176,212 @@ function validarVentaFacturable(venta: Pick<Venta, 'estado'>): void {
   }
 }
 
+/** Catálogo SUNAT N° 06 — mismo código que ya usan, cada uno con su propia constante local,
+ * `venta.service.ts: resolverCliente` y `cliente.service.ts: esPersonaJuridica` (no existía
+ * ningún punto central compartido; se mantiene el mismo patrón acá en vez de crear uno nuevo). */
+const CODIGO_RUC = '6';
+
+/**
+ * H16D-03 (revisión Codex) — `snapshotFiscalVersion` solo puede ser `null` (legacy) o `1`
+ * (contrato H16 completo); cualquier otro valor (`0`, `2`, `-1`, ...) es una anomalía de datos,
+ * nunca un legacy implícito. Antes de esta corrección, `resolverDatosEmpresaFiscal`/
+ * `resolverDatosClienteFiscal` solo comprobaban `=== 1` y trataban cualquier otra cosa como
+ * legacy — incluyendo un valor desconocido, que habría caído en la relación viva sin ninguna
+ * garantía ni aviso. Se llama antes que cualquier otro resolver de esta venta. La migración
+ * agrega además un `CHECK` de Postgres con la misma regla (`CHK_ventas_snapshot_fiscal_version`)
+ * — esta función no confía únicamente en él, por si la fila llegó por otra vía (una migración
+ * futura, una corrección manual) que lo hubiera evitado.
+ */
+function validarVersionSnapshotFiscalConocida(venta: Pick<Venta, 'snapshotFiscalVersion'>): void {
+  if (venta.snapshotFiscalVersion !== null && venta.snapshotFiscalVersion !== 1) {
+    throw new HttpError(
+      500,
+      `Venta con snapshotFiscalVersion desconocida (${venta.snapshotFiscalVersion}): no es ` +
+        'NULL (legacy) ni 1 (contrato H16). Requiere revisión manual antes de poder emitirla.',
+    );
+  }
+}
+
+/**
+ * H16 — datos fiscales efectivos de Empresa para el XML de la PRIMERA emisión, resueltos acá
+ * (no en `factura.builder.ts`, que nunca decide snapshot-vs-vivo por sí mismo — ver el
+ * docstring de `DatosEmpresaFiscal` ahí). Asume que `validarVersionSnapshotFiscalConocida` ya
+ * corrió antes (H16D-03) — por eso solo distingue `=== 1` de "lo demás" (legacy), sin
+ * necesidad de repetir esa validación acá.
+ *
+ * - `venta.snapshotFiscalVersion === 1` (venta creada bajo el contrato H16, ver
+ *   `venta.service.ts: crearVenta`): usa EXCLUSIVAMENTE las columnas `snapshotEmpresa*` —
+ *   nunca la relación viva `venta.empresa`. Editar `Empresa` después de esta venta no puede
+ *   cambiar su XML. Fail-closed: si falta `snapshotEmpresaRuc` o `snapshotEmpresaRazonSocial`
+ *   (los dos únicos campos obligatorios en `Empresa` misma — el resto son legítimamente
+ *   opcionales, igual que en la entidad real), lanza ANTES de construir el XML, firmar o
+ *   llamar al OSE — nunca cae en silencio a datos vivos como respaldo.
+ * - `venta.snapshotFiscalVersion == null` ("legacy", venta creada antes de esta migración):
+ *   compatibilidad best-effort con la relación viva `venta.empresa`, tal como funcionaba antes
+ *   de H16 — **sin ninguna garantía histórica**: el dato real vigente al momento de esa venta
+ *   ya no es reconstruible. Esta ruta nunca asigna `snapshotFiscalVersion = 1` ni modifica la
+ *   fila para fingir que tiene snapshot propio.
+ */
+function resolverDatosEmpresaFiscal(venta: Venta): DatosEmpresaFiscal {
+  if (venta.snapshotFiscalVersion === 1) {
+    if (!venta.snapshotEmpresaRuc || !venta.snapshotEmpresaRazonSocial) {
+      throw new HttpError(
+        500,
+        'Snapshot fiscal de Empresa incompleto para una venta con contrato H16 ' +
+          '(snapshotFiscalVersion=1): faltan campos obligatorios. No se genera el comprobante ' +
+          'usando datos vigentes como respaldo; requiere revisión manual de esta fila.',
+      );
+    }
+    return {
+      ruc: venta.snapshotEmpresaRuc,
+      razonSocial: venta.snapshotEmpresaRazonSocial,
+      nombreComercial: venta.snapshotEmpresaNombreComercial,
+      ubigeo: venta.snapshotEmpresaUbigeo,
+      direccionFiscal: venta.snapshotEmpresaDireccionFiscal,
+    };
+  }
+
+  // Legacy — ver docstring de arriba.
+  return {
+    ruc: venta.empresa.ruc,
+    razonSocial: venta.empresa.razonSocial,
+    nombreComercial: venta.empresa.nombreComercial,
+    ubigeo: venta.empresa.ubigeo,
+    direccionFiscal: venta.empresa.direccionFiscal,
+  };
+}
+
+/** Mismo criterio que `resolverDatosEmpresaFiscal`, para el receptor. Todos los campos de
+ * Cliente son legítimamente opcionales (ver `DatosClienteFiscal`) — nunca se bloquea por esto,
+ * ni siquiera con `snapshotFiscalVersion = 1`: una venta puede no tener cliente identificado.
+ * La *coherencia* del snapshot (cuando sí hay cliente) se valida aparte, en
+ * `validarSnapshotClienteCoherente` — ver H16D-02. */
+function resolverDatosClienteFiscal(venta: Venta): DatosClienteFiscal {
+  if (venta.snapshotFiscalVersion === 1) {
+    return {
+      tipoDocumentoCodigo: venta.snapshotClienteTipoDocumentoCodigo,
+      numeroDocumento: venta.snapshotClienteNumeroDocumento,
+      razonSocial: venta.snapshotClienteRazonSocial,
+      nombres: venta.snapshotClienteNombres,
+      apellidos: venta.snapshotClienteApellidos,
+    };
+  }
+
+  // Legacy — ver docstring de `resolverDatosEmpresaFiscal`.
+  if (!venta.cliente) return null;
+  return {
+    tipoDocumentoCodigo: venta.cliente.tipoDocumentoIdentidad?.codigo ?? null,
+    numeroDocumento: venta.cliente.numeroDocumento,
+    razonSocial: venta.cliente.razonSocial,
+    nombres: venta.cliente.nombres,
+    apellidos: venta.cliente.apellidos,
+  };
+}
+
+/**
+ * H16D-02 (revisión Codex) — valida que el snapshot de Cliente sea coherente cuando la venta
+ * SÍ tenía un cliente real identificado. `venta.cliente` (la relación, cargada siempre por
+ * `RELACIONES_VENTA_FACTURACION`) es el FK `cliente_id` de la propia `Venta` — inmutable desde
+ * que se creó (no existe ningún flujo que reasigne el cliente de una venta ya creada), así que
+ * "¿esta venta tenía un cliente real?" se responde con ese FK, no adivinando a partir de si las
+ * columnas snapshot están en `null` (eso es justo lo que se quiere evitar: una factura/boleta
+ * con cliente real cuyo snapshot se corrompió no debe degradarse en silencio a "CLIENTE
+ * VARIOS" solo porque los campos quedaron vacíos).
+ *
+ * Solo aplica a `snapshotFiscalVersion === 1` con `venta.cliente !== null` — una venta legacy
+ * sigue con su compatibilidad best-effort sin esta validación (nunca tuvo esta garantía), y una
+ * venta sin cliente (consumidor final, boleta) sigue siendo válida sin cliente.
+ *
+ * Reglas, derivadas de las que YA exige `venta.service.ts: resolverCliente`/`cliente.service.ts`
+ * al crear/editar un cliente — no inventadas:
+ * - tipo y número de documento: ambos presentes o ambos ausentes (un cliente sin documento es
+ *   legítimo para una boleta; "tipo sin número" o viceversa es un snapshot roto).
+ * - debe existir al menos un nombre (`razonSocial` o `nombres`) — sin esto, el builder
+ *   degradaría el receptor a "CLIENTE VARIOS" pese a que la venta sí tenía cliente.
+ * - para FACTURA: el snapshot debe conservar RUC (tipo documento = '6') con número de
+ *   documento — el mismo contrato que `resolverCliente` ya exige para poder crear la venta
+ *   (esa función no exige `razonSocial` específicamente: un RUC de persona natural usa
+ *   `nombres`, ya cubierto por la regla de nombre de arriba — no se inventa acá una exigencia
+ *   más estricta que la que el dominio actual realmente tiene).
+ *
+ * Fail-closed: cualquier incumplimiento lanza ANTES de construir el XML, firmar, persistir o
+ * llamar al OSE — nunca vuelve a consultar el Cliente vivo para "arreglar" un snapshot roto, y
+ * nunca degrada a consumidor final.
+ */
+function validarSnapshotClienteCoherente(venta: Venta, clienteFiscal: DatosClienteFiscal): void {
+  if (venta.snapshotFiscalVersion !== 1 || !venta.cliente) return;
+
+  const tieneTipoDocumento = clienteFiscal?.tipoDocumentoCodigo != null;
+  const tieneNumeroDocumento = clienteFiscal?.numeroDocumento != null;
+  const tieneNombre = !!(clienteFiscal?.razonSocial || clienteFiscal?.nombres);
+
+  if (tieneTipoDocumento !== tieneNumeroDocumento) {
+    throw new HttpError(
+      500,
+      'Snapshot fiscal de Cliente incoherente para una venta con contrato H16 ' +
+        '(snapshotFiscalVersion=1): el tipo y el número de documento no están ambos presentes ' +
+        'ni ambos ausentes. No se genera el comprobante usando el Cliente vigente como ' +
+        'respaldo; requiere revisión manual de esta fila.',
+    );
+  }
+  if (!tieneNombre) {
+    throw new HttpError(
+      500,
+      'Snapshot fiscal de Cliente incompleto para una venta con contrato H16 ' +
+        '(snapshotFiscalVersion=1): esta venta tenía un cliente identificado, pero el ' +
+        'snapshot no conserva ni razón social ni nombres. No se degrada a "CLIENTE VARIOS"; ' +
+        'requiere revisión manual de esta fila.',
+    );
+  }
+  if (
+    venta.tipoComprobante.codigo === CODIGO_FACTURA &&
+    (clienteFiscal?.tipoDocumentoCodigo !== CODIGO_RUC || !clienteFiscal.numeroDocumento)
+  ) {
+    throw new HttpError(
+      500,
+      'Snapshot fiscal de Cliente no cumple el contrato de FACTURA (RUC con número de ' +
+        'documento) para una venta con contrato H16 (snapshotFiscalVersion=1). No se genera ' +
+        'el comprobante usando el Cliente vigente como respaldo; requiere revisión manual de ' +
+        'esta fila.',
+    );
+  }
+}
+
+/**
+ * H16D-01 (revisión Codex) — tasa IGV histórica EFECTIVA para el `<cbc:Percent>` del XML de la
+ * PRIMERA emisión. Mismo criterio de snapshot-vs-legacy que `resolverDatosEmpresaFiscal`.
+ *
+ * - `venta.snapshotFiscalVersion === 1`: usa EXCLUSIVAMENTE `venta.snapshotTasaIgv` — nunca
+ *   `resolverTasaIgv()` (que resolvería contra `Empresa.acogidoRegimenMypeRestaurantes` VIVO,
+ *   exactamente el problema que este snapshot existe para evitar: los importes de
+ *   `DetalleVenta` ya están congelados a la tasa histórica, así que el `Percent` del XML tiene
+ *   que coincidir con esos importes, no con el régimen actual de la Empresa). Fail-closed si
+ *   es `null` o no es una de las dos tasas realmente soportadas hoy — nunca cae a
+ *   `resolverTasaIgv()` como respaldo.
+ * - legacy (`snapshotFiscalVersion == null`): compatibilidad best-effort con
+ *   `resolverTasaIgv()`, tal como funcionaba antes de H16 — sin garantía histórica.
+ */
+async function resolverTasaIgvFiscal(venta: Venta): Promise<number> {
+  if (venta.snapshotFiscalVersion === 1) {
+    if (
+      venta.snapshotTasaIgv === null ||
+      (venta.snapshotTasaIgv !== TASA_IGV_GENERAL &&
+        venta.snapshotTasaIgv !== TASA_IGV_MYPE_RESTAURANTES)
+    ) {
+      throw new HttpError(
+        500,
+        'Snapshot fiscal de tasa IGV ausente o inválido para una venta con contrato H16 ' +
+          '(snapshotFiscalVersion=1). No se deriva la tasa desde la Empresa vigente como ' +
+          'respaldo; requiere revisión manual de esta fila.',
+      );
+    }
+    return venta.snapshotTasaIgv;
+  }
+
+  // Legacy — ver docstring de `resolverDatosEmpresaFiscal`.
+  return resolverTasaIgv();
+}
+
 interface CredencialesYProveedor {
   oseProveedor: ProveedorOse;
   credenciales: CredencialesOse;
@@ -306,20 +519,31 @@ async function prepararEmisionInicial(ventaId: string): Promise<PreparacionOse> 
     throw new HttpError(404, 'Venta no encontrada');
   }
 
+  // H16 — fail-closed ANTES de tocar el certificado/firma/OSE: si la venta tiene una
+  // `snapshotFiscalVersion` desconocida (H16D-03), o tiene contrato H16 (`=1`) pero le falta
+  // un campo obligatorio del snapshot de Empresa/Cliente/tasa IGV (H16D-01/H16D-02), esto
+  // lanza acá mismo, sin construir XML, sin firmar, sin persistir un comprobante nuevo y sin
+  // incrementar `intentos`.
+  validarVersionSnapshotFiscalConocida(venta);
+  const empresaFiscal = resolverDatosEmpresaFiscal(venta);
+  const clienteFiscal = resolverDatosClienteFiscal(venta);
+  validarSnapshotClienteCoherente(venta, clienteFiscal);
+
   const certificado = cargarPkcs12DesdeBuffer(
     descifrar(config.certificadoPfxCifrado),
     descifrarTexto(config.certificadoContrasenaCifrada),
   );
-  const tasaIgv = await resolverTasaIgv();
+  const tasaIgv = await resolverTasaIgvFiscal(venta);
   const xml = construirXmlFactura({
     venta,
-    empresa: venta.empresa,
+    empresaFiscal,
+    clienteFiscal,
     tasaIgv,
     cuotas,
     montoPendienteCredito,
   });
   const { xmlFirmado, hash } = firmarXml(xml, certificado);
-  const nombre = nombreArchivo(venta.empresa, venta);
+  const nombre = nombreArchivo(empresaFiscal.ruc, venta);
 
   const comprobante = comprobanteElectronicoRepository.create({ venta });
   comprobante.nombreArchivo = nombre;
